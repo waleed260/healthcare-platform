@@ -1,0 +1,94 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: healthcare
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d healthcare"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+      - name: High-confidence secret scan
+        working-directory: .
+        run: |
+          if git grep -nE -- '-----BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE KEY-----'; then
+            echo "Private key material must not be committed"
+            exit 1
+          fi
+      - name: Compile API
+        run: python -m compileall -q app tests ../../infra/performance
+      - name: Verify committed OpenAPI contract
+        run: |
+          PYTHONPATH=. python scripts/export_openapi.py
+          git -C ../.. diff --exit-code -- packages/contracts/openapi.json
+      - name: Create restricted runtime role
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d healthcare -c "CREATE ROLE healthcare_runtime LOGIN PASSWORD 'healthcare_runtime_dev' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;"
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
+        run: alembic upgrade head
+      - name: Verify offline migration SQL and safe head downgrade
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
+        run: |
+          alembic upgrade head --sql > /tmp/healthcare-offline.sql
+          test -s /tmp/healthcare-offline.sql
+          alembic downgrade -1
+          alembic upgrade head
+      - name: Run API and isolation tests
+        env:
+          TEST_ADMIN_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
+          TEST_DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost:5432/healthcare
+        run: pytest
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - name: Dependency audit
+        run: npm audit --omit=optional --audit-level=high
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -f apps/api/Dockerfile apps/api
+      - name: Build production web image
+        run: docker build --build-arg API_URL=http://api:8000 -f apps/web/Dockerfile apps/web

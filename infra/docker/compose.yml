@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: healthcare
+      POSTGRES_USER: healthcare_migrator
+      POSTGRES_PASSWORD: healthcare_migrator_dev
+      HEALTHCARE_RUNTIME_PASSWORD: healthcare_runtime_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthcare_migrator -d healthcare"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@db:5432/healthcare
+    volumes:
+      - ../../apps/api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+  migrate:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://healthcare_migrator:healthcare_migrator_dev@db:5432/healthcare
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      API_URL: http://api:8000
+    volumes:
+      - ../../apps/web:/app
+      - web_node_modules:/app/node_modules
+    command: npm run dev
+    depends_on:
+      api:
+        condition: service_started
+volumes:
+  web_node_modules:
+  postgres_data:

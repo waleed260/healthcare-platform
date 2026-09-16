@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = ["integration: requires a PostgreSQL database"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

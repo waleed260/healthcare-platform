@@ -1,0 +1,22 @@
+# Phase 10 private files traceability
+
+| Requirement | Evidence |
+| --- | --- |
+| Private patient-document metadata | `0010_private_files.py`, `patient_documents` with generated storage key, hash, retention, legal hold, archive, and scan status |
+| Scan/quarantine state | `file_scan_events`, pending-scan default, `app/modules/files/scanner.py`, magic-byte verification, clean-only signed-access command |
+| Upload limits and allowlist | `app/modules/files/service.py`: PDF/JPEG/PNG only, extension matching, SHA-256 format, 20 MiB limit, generated keys |
+| Streamed private upload | `POST /api/v1/patients/{patient_id}/documents/upload` validates actual bytes, digest, magic signature, size, and MIME before writing a mode-0600 private object |
+| Private object adapter | `app/modules/files/storage.py` uses traversal-safe atomic writes under the configured private root, or the server-only Supabase Storage API when `STORAGE_BACKEND=supabase`; scan jobs can load objects through the same adapter |
+| Tenant/object authorization | Forced RLS and composite patient/uploader FKs; all routes resolve session tenant, reapply the centralized CRM patient scope, and return scoped 404s |
+| Signed access safety | Access tokens are HMAC-bound to document, user, expiry, and nonce; `document_access_events` and audit events record access without storage keys, signed URLs, or file contents |
+| Authorized download | `GET /api/v1/documents/{document_id}/download` requires the authenticated user-bound short-lived token, clean scan state, tenant scope, and records a `downloaded` access event |
+| Scan job lifecycle | Uploads enqueue an idempotent `document_scan` background job; `run_next_document_scan` claims with `SKIP LOCKED`, delegates to the signature scanner, and records bounded failure/retry state |
+
+The patient-document collection endpoint is bounded by a signed cursor scoped to
+the patient, defaults to 50 records, caps pages at 100, and returns
+`meta.next_cursor` for continuation.
+
+Remaining Phase 10 work: bucket/policy provisioning evidence, encrypted metadata, external
+scanner binding, and full cross-tenant/expired/quarantined download tests. The application
+proxy, quota checks, archive audit, public-media pipeline, scan event API, and worker
+scheduling are implemented; Supabase service credentials remain server-only.
