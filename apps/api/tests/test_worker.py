@@ -27,6 +27,11 @@ def test_worker_parser_supports_tenant_scoped_retention_cleanup():
     assert args.job_type == "retention_cleanup"
 
 
+def test_worker_parser_supports_tenant_scoped_metadata_encryption():
+    args = build_parser().parse_args(["--clinic-id", str(uuid4()), "--job-type", "document_metadata_encrypt", "--once"])
+    assert args.job_type == "document_metadata_encrypt"
+
+
 def test_expired_artifact_cleanup_deletes_objects_and_keeps_metadata():
     clinic_id = uuid4()
     export_id = uuid4()

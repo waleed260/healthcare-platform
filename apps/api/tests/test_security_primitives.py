@@ -1,5 +1,8 @@
 from app.core.security import (
+    decrypt_field,
     decode_cursor,
+    encrypt_field,
+    generate_field_key,
     encode_cursor,
     generate_recovery_codes,
     generate_totp_secret,
@@ -8,6 +11,7 @@ from app.core.security import (
     verify_password,
     verify_totp,
 )
+from app.core.config import get_settings
 
 
 def test_argon2id_password_hashes_are_not_reversible() -> None:
@@ -36,3 +40,16 @@ def test_collection_cursor_is_signed_and_namespace_bound() -> None:
     assert decode_cursor(cursor, "patients") == {"full_name": "Synthetic Patient", "id": "00000000-0000-0000-0000-000000000001"}
     assert decode_cursor(cursor + "x", "patients") is None
     assert decode_cursor(cursor, "appointments") is None
+
+
+def test_field_encryption_supports_staged_key_rotation(monkeypatch) -> None:
+    old_key, new_key = generate_field_key(), generate_field_key()
+    monkeypatch.setenv("FIELD_ENCRYPTION_KEYS", old_key)
+    get_settings.cache_clear()
+    old_ciphertext = encrypt_field("synthetic private value")
+
+    monkeypatch.setenv("FIELD_ENCRYPTION_KEYS", f"{new_key},{old_key}")
+    get_settings.cache_clear()
+    assert decrypt_field(old_ciphertext) == "synthetic private value"
+    assert decrypt_field(encrypt_field("new synthetic private value")) == "new synthetic private value"
+    get_settings.cache_clear()

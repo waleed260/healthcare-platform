@@ -38,6 +38,15 @@ class Settings(BaseSettings):
         value = self.cors_origins or self.csrf_allowed_origins
         return {origin.strip() for origin in value.split(",") if origin.strip()}
 
+    @property
+    def field_encryption_keys(self) -> tuple[str, ...]:
+        """Return the active encryption key followed by optional retired keys.
+
+        ``FIELD_ENCRYPTION_KEYS`` is comma-separated so decryption can survive
+        a staged key rotation. New ciphertext is always written with item zero.
+        """
+        return tuple(key.strip() for key in self.field_encryption_key.split(",") if key.strip())
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         if self.storage_backend not in {"local", "supabase"}:
@@ -46,7 +55,7 @@ class Settings(BaseSettings):
             missing = []
             if self.session_hmac_key == "local-development-session-hmac-key-change-me":
                 missing.append("SESSION_HMAC_KEY")
-            if not self.field_encryption_key:
+            if not self.field_encryption_keys:
                 missing.append("FIELD_ENCRYPTION_KEYS")
             if self.database_url.startswith("postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost"):
                 missing.append("DATABASE_URL")

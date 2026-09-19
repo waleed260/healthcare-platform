@@ -96,6 +96,22 @@ test.describe("core responsive browser flows", () => {
     await expect(page.getByRole("button", { name: /load more patient records/i })).toHaveCount(0);
   });
 
+  test("patient detail renders only the authorized care-team response", async ({ page }) => {
+    await page.route("**/api/v1/patients/patient-1**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      let data: unknown = [];
+      if (path.endsWith("/care-team")) data = [{ doctor_id: "doctor-1", public_name: "Synthetic Care Doctor", specialty: "General care", created_at: "2026-01-01T09:00:00Z" }];
+      else if (path.endsWith("/notes")) data = [{ id: "note-1", note_type: "care", visibility: "care_team", body: "Synthetic scoped note", created_at: "2026-01-01T09:00:00Z" }];
+      else if (path.endsWith("/contacts")) data = [];
+      else data = { id: "patient-1", patient_number: "SYN-0001", full_name: "Synthetic First", normalized_email: null, normalized_phone: null, date_of_birth: null, status: "active", version: 1 };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data, meta: { request_id: "00000000-0000-0000-0000-000000000002" } }) });
+    });
+    await page.goto("/patients/patient-1");
+    await expect(page.getByRole("heading", { name: "Assigned clinicians" })).toBeVisible();
+    await expect(page.getByText("Synthetic Care Doctor")).toBeVisible();
+    await expect(page.getByText("Synthetic scoped note")).toBeVisible();
+  });
+
   test("queue appends the next cursor page", async ({ page }) => {
     let cursorRequests = 0;
     await page.route("**/api/v1/operations/queue*", async (route) => {

@@ -12,7 +12,7 @@ from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.core.security import decode_cursor, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
-from app.modules.crm.schemas import ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
+from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -54,7 +54,7 @@ def _write_authorized(db: Session, request: Request, session_token: str | None, 
 
 
 def _patient_scope_sql(alias: str = "p") -> str:
-    """Enforce branch and linked-doctor object scope for CRM reads/writes."""
+    """Enforce branch and linked-doctor/care-team object scope for CRM access."""
     return f"""
       AND (
         NOT EXISTS (
@@ -99,6 +99,18 @@ def _patient_scope_sql(alias: str = "p") -> str:
             AND doctor_appointment.patient_id = {alias}.id
             AND linked_doctor.user_id = :user_id
         )
+        OR EXISTS (
+          SELECT 1
+          FROM patient_care_team care_team
+          JOIN doctor_profiles care_team_doctor
+            ON care_team_doctor.clinic_id = care_team.clinic_id
+           AND care_team_doctor.id = care_team.doctor_id
+          WHERE care_team.clinic_id = :clinic_id
+            AND care_team.patient_id = {alias}.id
+            AND care_team_doctor.user_id = :user_id
+            AND care_team_doctor.status = 'active'
+            AND care_team_doctor.archived_at IS NULL
+        )
       )
     """
 
@@ -111,6 +123,50 @@ def _require_patient(db: Session, session: dict, patient_id: UUID) -> None:
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "patient_id": patient_id}).scalar_one_or_none()
     if exists is None:
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
+
+
+def _authoring_doctor(db: Session, session: dict, patient_id: UUID, *, require_care_team: bool) -> UUID:
+    """Return the caller's active doctor profile only when it may author notes.
+
+    Private notes require a doctor assigned to this patient through an
+    appointment or care-team relationship. Care-team notes require the more
+    specific, explicitly managed care-team relationship.
+    """
+    relationship = """
+        EXISTS (
+          SELECT 1 FROM patient_care_team care_team
+          WHERE care_team.clinic_id = doctor.clinic_id
+            AND care_team.patient_id = :patient_id
+            AND care_team.doctor_id = doctor.id
+        )
+    """
+    if not require_care_team:
+        relationship = f"""({relationship} OR EXISTS (
+          SELECT 1 FROM appointments appointment
+          WHERE appointment.clinic_id = doctor.clinic_id
+            AND appointment.patient_id = :patient_id
+            AND appointment.doctor_id = doctor.id
+        ))"""
+    doctor_id = db.execute(text(f"""
+        SELECT doctor.id
+        FROM doctor_profiles doctor
+        WHERE doctor.clinic_id = :clinic_id
+          AND doctor.user_id = :user_id
+          AND doctor.status = 'active'
+          AND doctor.archived_at IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM user_roles user_role
+            JOIN roles role ON role.id = user_role.role_id
+            WHERE user_role.clinic_id = :clinic_id
+              AND user_role.user_id = :user_id
+              AND role.name = 'doctor'
+          )
+          AND {relationship}
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "patient_id": patient_id}).scalar_one_or_none()
+    if doctor_id is None:
+        raise _error("FORBIDDEN", "Only an assigned doctor may author this note.", status.HTTP_403_FORBIDDEN)
+    return doctor_id
 
 
 @tags_router.get("")
@@ -190,6 +246,59 @@ def duplicate_candidates(payload: PatientCreate, request: Request, db: Session =
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "review_required": bool(rows)}}
 
 
+@router.get("/care-policy")
+def care_team_policy_get(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    """Return the fail-closed manager access policy for care-team notes."""
+    session = _authorized(db, session_token, "clinic.update")
+    policy = db.execute(text("""
+        SELECT allow_manager_care_team_notes, version, updated_at
+        FROM clinic_care_policies
+        WHERE clinic_id = :clinic_id
+    """), {"clinic_id": session["clinic_id"]}).mappings().one_or_none()
+    db.commit()
+    data = dict(policy) if policy else {
+        "allow_manager_care_team_notes": False,
+        "version": 0,
+        "updated_at": None,
+    }
+    return {"data": data, "meta": {"request_id": request.state.request_id}}
+
+
+@router.patch("/care-policy")
+def care_team_policy_update(payload: CareTeamPolicyUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    """Change manager care-team-note access with optimistic locking and audit."""
+    session = _write_authorized(db, request, session_token, "clinic.update", csrf_token)
+    current = db.execute(text("""
+        SELECT version FROM clinic_care_policies
+        WHERE clinic_id = :clinic_id
+        FOR UPDATE
+    """), {"clinic_id": session["clinic_id"]}).scalar_one_or_none()
+    if current is None:
+        if payload.expected_version != 0:
+            raise _error("VERSION_CONFLICT", "The care-team policy changed before update.", status.HTTP_409_CONFLICT)
+        policy = db.execute(text("""
+            INSERT INTO clinic_care_policies
+                (clinic_id, allow_manager_care_team_notes, updated_by_user_id)
+            VALUES (:clinic_id, :allow, :actor)
+            RETURNING allow_manager_care_team_notes, version, updated_at
+        """), {"clinic_id": session["clinic_id"], "allow": payload.allow_manager_care_team_notes, "actor": session["user_id"]}).mappings().one()
+    else:
+        if current != payload.expected_version:
+            raise _error("VERSION_CONFLICT", "The care-team policy changed before update.", status.HTTP_409_CONFLICT)
+        policy = db.execute(text("""
+            UPDATE clinic_care_policies
+            SET allow_manager_care_team_notes = :allow,
+                updated_by_user_id = :actor,
+                version = version + 1,
+                updated_at = now()
+            WHERE clinic_id = :clinic_id AND version = :expected_version
+            RETURNING allow_manager_care_team_notes, version, updated_at
+        """), {"clinic_id": session["clinic_id"], "allow": payload.allow_manager_care_team_notes, "actor": session["user_id"], "expected_version": payload.expected_version}).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="clinic.care_team_policy.update", entity_type="clinic", entity_id=session["clinic_id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"manager_care_team_notes": payload.allow_manager_care_team_notes})
+    db.commit()
+    return {"data": dict(policy), "meta": {"request_id": request.state.request_id}}
+
+
 @router.get("/{patient_id}/history")
 def patient_history(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.read")
@@ -210,6 +319,65 @@ def patient_history(patient_id: UUID, request: Request, db: Session = Depends(ge
     events = sorted((dict(row) for row in [*appointments, *merges]), key=lambda row: (row["created_at"], str(row["id"])), reverse=True)
     db.commit()
     return {"data": events[:200], "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/{patient_id}/care-team")
+def care_team_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "patient.read")
+    _require_patient(db, session, patient_id)
+    rows = db.execute(text("""
+        SELECT team.doctor_id, doctor.public_name, doctor.specialty, team.created_at
+        FROM patient_care_team team
+        JOIN doctor_profiles doctor
+          ON doctor.clinic_id = team.clinic_id AND doctor.id = team.doctor_id
+        WHERE team.clinic_id = :clinic_id AND team.patient_id = :patient_id
+          AND doctor.status = 'active' AND doctor.archived_at IS NULL
+        ORDER BY doctor.public_name, doctor.id
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{patient_id}/care-team", status_code=status.HTTP_201_CREATED)
+def care_team_add(patient_id: UUID, payload: CareTeamMemberCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    doctor = db.execute(text("""
+        SELECT id, public_name, specialty
+        FROM doctor_profiles
+        WHERE clinic_id = :clinic_id AND id = :doctor_id
+          AND status = 'active' AND archived_at IS NULL
+    """), {"clinic_id": session["clinic_id"], "doctor_id": payload.doctor_id}).mappings().one_or_none()
+    if doctor is None:
+        raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
+    try:
+        membership = db.execute(text("""
+            INSERT INTO patient_care_team (clinic_id, patient_id, doctor_id, assigned_by_user_id)
+            VALUES (:clinic_id, :patient_id, :doctor_id, :actor)
+            RETURNING created_at
+        """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "doctor_id": payload.doctor_id, "actor": session["user_id"]}).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _error("DUPLICATE", "This doctor is already on the patient's care team.", status.HTTP_409_CONFLICT) from exc
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.care_team.assign", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"doctor_id": str(payload.doctor_id)})
+    db.commit()
+    return {"data": {**dict(doctor), **dict(membership)}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.delete("/{patient_id}/care-team/{doctor_id}")
+def care_team_remove(patient_id: UUID, doctor_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    removed = db.execute(text("""
+        DELETE FROM patient_care_team
+        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND doctor_id = :doctor_id
+        RETURNING doctor_id
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "doctor_id": doctor_id}).mappings().one_or_none()
+    if removed is None:
+        raise _error("NOT_FOUND", "Care-team membership not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.care_team.remove", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"doctor_id": str(doctor_id)})
+    db.commit()
+    return {"data": {"doctor_id": doctor_id, "removed": True}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/{patient_id}")
@@ -298,6 +466,8 @@ def patient_merge(patient_id: UUID, payload: PatientMerge, request: Request, db:
     db.execute(text("UPDATE patient_notes SET patient_id = :target, updated_at = now(), version = version + 1 WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
     db.execute(text("UPDATE consent_records SET patient_id = :target WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
     db.execute(text("UPDATE patient_contacts SET patient_id = :target, updated_at = now() WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
+    db.execute(text("INSERT INTO patient_care_team (clinic_id, patient_id, doctor_id, assigned_by_user_id) SELECT clinic_id, :target, doctor_id, assigned_by_user_id FROM patient_care_team WHERE clinic_id = :clinic_id AND patient_id = :source ON CONFLICT DO NOTHING"), params)
+    db.execute(text("DELETE FROM patient_care_team WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
     db.execute(text("INSERT INTO patient_tags (clinic_id, patient_id, tag_id) SELECT clinic_id, :target, tag_id FROM patient_tags WHERE clinic_id = :clinic_id AND patient_id = :source ON CONFLICT DO NOTHING"), params)
     db.execute(text("DELETE FROM patient_tags WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
     db.execute(text("UPDATE patients SET duplicate_of = :target, status = 'merged', archived_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :source"), params)
@@ -333,13 +503,62 @@ def contact_create(patient_id: UUID, payload: ContactCreate, request: Request, d
 def note_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.note.read")
     _require_patient(db, session, patient_id)
-    private_allowed = ""
+    private_filter = " OR (note.visibility = 'private_doctor' AND note.author_user_id = :user_id)"
     try:
         require_permission(db, session["user_id"], session["clinic_id"], "patient.private_note.read")
-        private_allowed = " OR visibility = 'private_doctor'"
+        private_filter = " OR note.visibility = 'private_doctor'"
     except ForbiddenError:
         pass
-    rows = db.execute(text(f"SELECT id, author_user_id, note_type, visibility, body, version, created_at, updated_at FROM patient_notes WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL AND (visibility = 'clinic'{private_allowed}) ORDER BY created_at DESC"), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+    rows = db.execute(text(f"""
+        SELECT note.id, note.author_user_id, note.note_type, note.visibility,
+               note.body, note.version, note.created_at, note.updated_at
+        FROM patient_notes note
+        WHERE note.clinic_id = :clinic_id AND note.patient_id = :patient_id
+          AND note.archived_at IS NULL
+          AND (
+            note.visibility = 'clinic'
+            OR (
+              note.visibility = 'care_team'
+              AND (
+                EXISTS (
+                  SELECT 1
+                  FROM patient_care_team care_team
+                  JOIN doctor_profiles doctor
+                    ON doctor.clinic_id = care_team.clinic_id
+                   AND doctor.id = care_team.doctor_id
+                  WHERE care_team.clinic_id = :clinic_id
+                    AND care_team.patient_id = :patient_id
+                    AND doctor.user_id = :user_id
+                    AND doctor.status = 'active'
+                    AND doctor.archived_at IS NULL
+                )
+                OR EXISTS (
+                  SELECT 1 FROM user_roles user_role
+                  JOIN roles role ON role.id = user_role.role_id
+                  WHERE user_role.clinic_id = :clinic_id
+                    AND user_role.user_id = :user_id
+                    AND role.name = 'owner'
+                )
+                OR (
+                  EXISTS (
+                    SELECT 1 FROM user_roles user_role
+                    JOIN roles role ON role.id = user_role.role_id
+                    WHERE user_role.clinic_id = :clinic_id
+                      AND user_role.user_id = :user_id
+                      AND role.name = 'manager'
+                  )
+                  AND COALESCE((
+                    SELECT allow_manager_care_team_notes
+                    FROM clinic_care_policies
+                    WHERE clinic_id = :clinic_id
+                  ), false)
+                )
+              )
+            )
+            {private_filter}
+          )
+        ORDER BY note.created_at DESC
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"]}).mappings().all()
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
@@ -353,6 +572,9 @@ def note_create(patient_id: UUID, payload: PatientNoteCreate, request: Request, 
             require_permission(db, session["user_id"], session["clinic_id"], "patient.private_note.write")
         except ForbiddenError as exc:
             raise _error("FORBIDDEN", "Private doctor notes are restricted.", status.HTTP_403_FORBIDDEN) from exc
+        _authoring_doctor(db, session, patient_id, require_care_team=False)
+    elif payload.visibility == "care_team":
+        _authoring_doctor(db, session, patient_id, require_care_team=True)
     try:
         note = db.execute(text("""
             INSERT INTO patient_notes (clinic_id, patient_id, author_user_id, note_type, visibility, body)
@@ -362,6 +584,7 @@ def note_create(patient_id: UUID, payload: PatientNoteCreate, request: Request, 
     except IntegrityError as exc:
         db.rollback()
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_note.create", entity_type="patient_note", entity_id=note["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"visibility": payload.visibility})
     db.commit()
     return {"data": dict(note), "meta": {"request_id": request.state.request_id}}
 
@@ -370,16 +593,22 @@ def note_create(patient_id: UUID, payload: PatientNoteCreate, request: Request, 
 def note_update(patient_id: UUID, note_id: UUID, payload: PatientNoteUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "patient.note.write", csrf_token)
     _require_patient(db, session, patient_id)
-    note = db.execute(text("SELECT id, version, visibility FROM patient_notes WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "id": note_id}).mappings().one_or_none()
+    note = db.execute(text("SELECT id, version, visibility, author_user_id FROM patient_notes WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "id": note_id}).mappings().one_or_none()
     if note is None:
         raise _error("NOT_FOUND", "Note not found.", status.HTTP_404_NOT_FOUND)
     if note["version"] != payload.expected_version:
         raise _error("VERSION_CONFLICT", "The note changed before update.", status.HTTP_409_CONFLICT)
-    if note["visibility"] == "private_doctor" or payload.visibility == "private_doctor":
+    target_visibility = payload.visibility or note["visibility"]
+    if note["visibility"] == "private_doctor" or target_visibility == "private_doctor":
         try:
             require_permission(db, session["user_id"], session["clinic_id"], "patient.private_note.write")
         except ForbiddenError as exc:
             raise _error("FORBIDDEN", "Private doctor notes are restricted.", status.HTTP_403_FORBIDDEN) from exc
+        if note["visibility"] == "private_doctor" and note["author_user_id"] != session["user_id"]:
+            raise _error("FORBIDDEN", "Only the authoring doctor may correct a private note.", status.HTTP_403_FORBIDDEN)
+        _authoring_doctor(db, session, patient_id, require_care_team=False)
+    if note["visibility"] == "care_team" or target_visibility == "care_team":
+        _authoring_doctor(db, session, patient_id, require_care_team=True)
     result = db.execute(text("""
         UPDATE patient_notes
         SET body = COALESCE(:body, body), note_type = COALESCE(:note_type, note_type),

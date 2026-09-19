@@ -6,6 +6,10 @@ providing `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and the private/public
 bucket names through the secret manager. The service-role key is server-only;
 never expose it to the browser or use it in a `NEXT_PUBLIC_*` variable.
 
+Patient-document display filenames are encrypted with `FIELD_ENCRYPTION_KEYS`.
+Use the key-rotation runbook before retiring a key; a missing key makes private
+document upload fail closed rather than writing plaintext metadata.
+
 Create and policy the buckets before deploying the application. Keep patient
 documents in a private bucket. Public website assets may use a public bucket
 only after the application has made them clean and public in its own tenant-

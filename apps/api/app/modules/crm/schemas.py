@@ -48,7 +48,7 @@ class PatientNoteCreate(BaseModel):
 
     body: str = Field(min_length=1, max_length=10000)
     note_type: str = Field(default="general", min_length=1, max_length=40)
-    visibility: str = Field(default="clinic", pattern="^(clinic|private_doctor)$")
+    visibility: str = Field(default="clinic", pattern="^(clinic|care_team|private_doctor)$")
 
 
 class PatientNoteUpdate(BaseModel):
@@ -57,7 +57,7 @@ class PatientNoteUpdate(BaseModel):
     expected_version: int = Field(ge=1)
     body: str | None = Field(default=None, min_length=1, max_length=10000)
     note_type: str | None = Field(default=None, min_length=1, max_length=40)
-    visibility: str | None = Field(default=None, pattern="^(clinic|private_doctor)$")
+    visibility: str | None = Field(default=None, pattern="^(clinic|care_team|private_doctor)$")
 
     @model_validator(mode="after")
     def requires_a_change(self):
@@ -78,3 +78,24 @@ class ConsentRevoke(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
+
+
+class CareTeamMemberCreate(BaseModel):
+    """Explicitly assign an active doctor to a patient care team."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    doctor_id: UUID
+
+
+class CareTeamPolicyUpdate(BaseModel):
+    """A versioned, fail-closed policy for manager care-team-note access.
+
+    Version zero represents the implicit default (no persisted policy row and
+    managers cannot read care-team notes).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=0)
+    allow_manager_care_team_notes: bool

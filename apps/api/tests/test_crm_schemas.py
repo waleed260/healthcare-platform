@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.modules.crm.schemas import ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
+from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
 
 
 def test_patient_create_normalizes_shape_and_rejects_extra_fields() -> None:
@@ -23,6 +23,16 @@ def test_merge_requires_a_reason_and_note_visibility_is_closed() -> None:
     assert ConsentRevoke(expected_version=1).expected_version == 1
     with pytest.raises(ValidationError):
         PatientNoteUpdate(expected_version=1)
+
+
+def test_care_team_note_and_policy_contracts_are_explicit_and_fail_closed() -> None:
+    assert PatientNoteCreate(body="Synthetic care-team note", visibility="care_team").visibility == "care_team"
+    with pytest.raises(ValidationError):
+        PatientNoteCreate(body="Synthetic note", visibility="team")
+    assert CareTeamMemberCreate(doctor_id=uuid4()).doctor_id
+    assert CareTeamPolicyUpdate(expected_version=0, allow_manager_care_team_notes=False).expected_version == 0
+    with pytest.raises(ValidationError):
+        CareTeamPolicyUpdate(expected_version=-1, allow_manager_care_team_notes=True)
 
 
 def test_consent_status_is_explicit() -> None:

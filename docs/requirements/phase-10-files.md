@@ -3,6 +3,7 @@
 | Requirement | Evidence |
 | --- | --- |
 | Private patient-document metadata | `0010_private_files.py`, `patient_documents` with generated storage key, hash, retention, legal hold, archive, and scan status |
+| Encrypted filename metadata | `0041_encrypt_private_document_metadata.py` and `app/modules/files/service.py`: new writes encrypt the original display filename; legacy rows are migrated by tenant-scoped jobs while retaining only a generic extension-based name for rolling compatibility |
 | Scan/quarantine state | `file_scan_events`, pending-scan default, `app/modules/files/scanner.py`, magic-byte verification, clean-only signed-access command |
 | Upload limits and allowlist | `app/modules/files/service.py`: PDF/JPEG/PNG only, extension matching, SHA-256 format, 20 MiB limit, generated keys |
 | Streamed private upload | `POST /api/v1/patients/{patient_id}/documents/upload` validates actual bytes, digest, magic signature, size, and MIME before writing a mode-0600 private object |
@@ -16,7 +17,7 @@ The patient-document collection endpoint is bounded by a signed cursor scoped to
 the patient, defaults to 50 records, caps pages at 100, and returns
 `meta.next_cursor` for continuation.
 
-Remaining Phase 10 work: bucket/policy provisioning evidence, encrypted metadata, external
-scanner binding, and full cross-tenant/expired/quarantined download tests. The application
+Remaining Phase 10 work: bucket/policy provisioning evidence, external scanner
+binding, and full cross-tenant/expired/quarantined download tests. The application
 proxy, quota checks, archive audit, public-media pipeline, scan event API, and worker
 scheduling are implemented; Supabase service credentials remain server-only.

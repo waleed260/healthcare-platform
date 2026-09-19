@@ -5,21 +5,30 @@
 | CRM patient records and normalized search | `0006_appointments_engine.py`, `0009_crm_foundation.py`, `app/modules/crm/routes.py` |
 | Duplicate control | `POST /api/v1/patients` returns `DUPLICATE_REVIEW_REQUIRED`; merge is a dedicated command with a reason and immutable `patient_merge_events` record |
 | Tenant isolation | Composite tenant foreign keys and forced RLS on contacts, tags, patient tags, notes, consent, merge events; all routes set validated transaction context and subresource lookups return scoped 404s |
-| Note visibility and lifecycle | Private doctor notes require `patient.private_note.read/write`; reception uses only clinic-visible notes; note updates use version locking and audit events |
+| Note visibility and lifecycle | `0040_crm_care_team_notes.py` adds the care-team relationship and fail-closed manager policy; care-team notes require explicit membership, private-note corrections remain author-only, and note updates use version locking and audit events |
 | Archive behavior | Archive is an explicit command and excludes archived/merged patients from normal lists |
 | Consent records | Dedicated read/manage endpoints, explicit versioned revocation, and append-only consent history rows |
 | Patient history | `GET /api/v1/patients/{patient_id}/history` returns bounded appointment/merge timeline metadata without note bodies |
 
-Branch-scoped CRM visibility now applies the explicit branch scope to patients
-through their appointment branches, and linked doctor users are limited to
-patients with appointments assigned to their doctor profile. Detail and
-subresource commands use the same scoped object check and return a uniform 404
-outside scope. The integration suite includes a synthetic branch-visibility
-case; care-team relationships and clinic policy overrides remain intentionally
-open because their data contract is not yet present in the repository.
+Branch-scoped CRM visibility applies the explicit branch scope to patients
+through their appointment branches. Linked doctor users are limited to patients
+with an appointment assigned to their doctor profile or an explicit care-team
+relationship. Detail and subresource commands use the same scoped object check
+and return a uniform 404 outside scope. The integration suite includes synthetic
+branch-visibility and care-team/RLS cases.
 
-Remaining Phase 9 work: care-team policy data model, audited exports, privacy
-workflow integration, and the full two-clinic CRM isolation suite.
+The explicit care-team relationship is now backed by the RLS-protected
+`patient_care_team` table. Doctor patient scope accepts a currently active
+care-team relationship in addition to an assigned appointment; manager reading
+of `care_team` notes remains denied until the versioned clinic policy explicitly
+enables it. Care-team membership and policy changes are CSRF-protected and
+audited. `test_crm_care_team_integration.py` verifies that the relationship
+grants only its assigned doctor access and cannot be read or written across a
+tenant context.
+
+Remaining Phase 9 work: audited exports, privacy workflow integration, and
+execution of the full two-clinic CRM isolation suite against a local or hosted
+PostgreSQL instance.
 
 The staff browser CRM directory is now available at `/patients`. It uses the
 tenant-scoped patient list/search endpoint, exposes only basic directory fields,

@@ -521,6 +521,43 @@
         "title": "BranchUpdate",
         "type": "object"
       },
+      "CareTeamMemberCreate": {
+        "additionalProperties": false,
+        "description": "Explicitly assign an active doctor to a patient care team.",
+        "properties": {
+          "doctor_id": {
+            "format": "uuid",
+            "title": "Doctor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doctor_id"
+        ],
+        "title": "CareTeamMemberCreate",
+        "type": "object"
+      },
+      "CareTeamPolicyUpdate": {
+        "additionalProperties": false,
+        "description": "A versioned, fail-closed policy for manager care-team-note access.\n\nVersion zero represents the implicit default (no persisted policy row and\nmanagers cannot read care-team notes).",
+        "properties": {
+          "allow_manager_care_team_notes": {
+            "title": "Allow Manager Care Team Notes",
+            "type": "boolean"
+          },
+          "expected_version": {
+            "minimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "allow_manager_care_team_notes"
+        ],
+        "title": "CareTeamPolicyUpdate",
+        "type": "object"
+      },
       "CatalogStatusUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -1461,7 +1498,7 @@
           },
           "visibility": {
             "default": "clinic",
-            "pattern": "^(clinic|private_doctor)$",
+            "pattern": "^(clinic|care_team|private_doctor)$",
             "title": "Visibility",
             "type": "string"
           }
@@ -1509,7 +1546,7 @@
           "visibility": {
             "anyOf": [
               {
-                "pattern": "^(clinic|private_doctor)$",
+                "pattern": "^(clinic|care_team|private_doctor)$",
                 "type": "string"
               },
               {
@@ -10607,6 +10644,134 @@
         ]
       }
     },
+    "/api/v1/patients/care-policy": {
+      "get": {
+        "description": "Return the fail-closed manager access policy for care-team notes.",
+        "operationId": "care_team_policy_get_api_v1_patients_care_policy_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Care Team Policy Get Api V1 Patients Care Policy Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Care Team Policy Get",
+        "tags": [
+          "crm"
+        ]
+      },
+      "patch": {
+        "description": "Change manager care-team-note access with optimistic locking and audit.",
+        "operationId": "care_team_policy_update_api_v1_patients_care_policy_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CareTeamPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Care Team Policy Update Api V1 Patients Care Policy Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Care Team Policy Update",
+        "tags": [
+          "crm"
+        ]
+      }
+    },
     "/api/v1/patients/duplicate-candidates": {
       "post": {
         "description": "Return ranked possible matches before a staff member creates a patient.",
@@ -10887,6 +11052,239 @@
           }
         },
         "summary": "Patient Archive",
+        "tags": [
+          "crm"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/care-team": {
+      "get": {
+        "operationId": "care_team_list_api_v1_patients__patient_id__care_team_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Care Team List Api V1 Patients  Patient Id  Care Team Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Care Team List",
+        "tags": [
+          "crm"
+        ]
+      },
+      "post": {
+        "operationId": "care_team_add_api_v1_patients__patient_id__care_team_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CareTeamMemberCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Care Team Add Api V1 Patients  Patient Id  Care Team Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Care Team Add",
+        "tags": [
+          "crm"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/care-team/{doctor_id}": {
+      "delete": {
+        "operationId": "care_team_remove_api_v1_patients__patient_id__care_team__doctor_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "doctor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Doctor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Care Team Remove Api V1 Patients  Patient Id  Care Team  Doctor Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Care Team Remove",
         "tags": [
           "crm"
         ]

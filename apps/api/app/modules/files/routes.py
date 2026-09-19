@@ -15,7 +15,7 @@ from app.db.tenant import set_tenant_context
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.crm.routes import _require_patient
 from app.modules.files.schemas import DocumentAccess, DocumentCreate
-from app.modules.files.service import MAX_PATIENT_DOCUMENT_BYTES, create_access_token, new_storage_key, validate_magic_bytes, validate_upload, verify_access_token
+from app.modules.files.service import MAX_PATIENT_DOCUMENT_BYTES, MetadataEncryptionError, create_access_token, display_original_filename, encrypt_original_filename, generic_filename, new_storage_key, validate_magic_bytes, validate_upload, verify_access_token
 from app.modules.files.storage import delete_private_object, put_private_object
 from app.modules.governance.limits import FeatureLimitExceeded, consume_feature_limit
 from app.modules.audit.service import record_event
@@ -57,6 +57,20 @@ def _require_document(db: Session, session: dict, document_id: UUID) -> None:
     _require_patient(db, session, patient_id)
 
 
+def _document_public_data(row: object) -> dict:
+    """Return decrypted metadata only after the caller has passed object scope."""
+    data = dict(row)
+    try:
+        data["original_filename"] = display_original_filename(
+            data.pop("original_filename_ciphertext", None),
+            data.get("original_filename"),
+            data["mime_type"],
+        )
+    except MetadataEncryptionError as exc:
+        raise _error("DOCUMENT_UNAVAILABLE", "Document metadata is not currently available.", status.HTTP_404_NOT_FOUND) from exc
+    return data
+
+
 @router.get("/patients/{patient_id}/documents")
 def document_list(patient_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.document.read")
@@ -70,7 +84,7 @@ def document_list(patient_id: UUID, request: Request, cursor: str | None = Query
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT id, original_filename, mime_type, size_bytes, scan_status, retention_class, created_at, version
+        SELECT id, original_filename, original_filename_ciphertext, mime_type, size_bytes, scan_status, retention_class, created_at, version
         FROM patient_documents
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL
           AND (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
@@ -83,7 +97,7 @@ def document_list(patient_id: UUID, request: Request, cursor: str | None = Query
     if has_next and rows:
         next_cursor = encode_cursor("patient-documents", {"patient_id": str(patient_id), "created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])})
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
+    return {"data": [_document_public_data(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("/patients/{patient_id}/documents", status_code=status.HTTP_201_CREATED)
@@ -92,8 +106,11 @@ def document_create(patient_id: UUID, payload: DocumentCreate, request: Request,
     _require_patient(db, session, patient_id)
     try:
         safe_name = validate_upload(payload.original_filename, payload.mime_type, payload.size_bytes, payload.content_sha256)
+        filename_ciphertext = encrypt_original_filename(safe_name)
     except ValueError as exc:
         raise _error("INVALID_UPLOAD", str(exc), status.HTTP_400_BAD_REQUEST) from exc
+    except MetadataEncryptionError as exc:
+        raise _error("DOCUMENT_UPLOAD_UNAVAILABLE", "Private document uploads require configured metadata encryption.", status.HTTP_503_SERVICE_UNAVAILABLE) from exc
     try:
         consume_feature_limit(db, session["clinic_id"], "patient_document_bytes", payload.size_bytes)
     except FeatureLimitExceeded as exc:
@@ -103,10 +120,10 @@ def document_create(patient_id: UUID, payload: DocumentCreate, request: Request,
     storage_key = new_storage_key(str(session["clinic_id"]), str(patient_id), str(document_id), safe_name)
     try:
         row = db.execute(text("""
-            INSERT INTO patient_documents (id, clinic_id, patient_id, uploaded_by_user_id, storage_key, original_filename, mime_type, size_bytes, content_sha256)
-            VALUES (:id, :clinic_id, :patient_id, :user_id, :storage_key, :filename, :mime_type, :size_bytes, :sha256)
-            RETURNING id, original_filename, mime_type, size_bytes, scan_status, created_at, version
-        """), {"id": document_id, "clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"], "storage_key": storage_key, "filename": safe_name, "mime_type": payload.mime_type, "size_bytes": payload.size_bytes, "sha256": payload.content_sha256.lower()}).mappings().one()
+            INSERT INTO patient_documents (id, clinic_id, patient_id, uploaded_by_user_id, storage_key, original_filename, original_filename_ciphertext, mime_type, size_bytes, content_sha256)
+            VALUES (:id, :clinic_id, :patient_id, :user_id, :storage_key, :legacy_filename, :filename_ciphertext, :mime_type, :size_bytes, :sha256)
+            RETURNING id, original_filename, original_filename_ciphertext, mime_type, size_bytes, scan_status, created_at, version
+        """), {"id": document_id, "clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"], "storage_key": storage_key, "legacy_filename": generic_filename(payload.mime_type), "filename_ciphertext": filename_ciphertext, "mime_type": payload.mime_type, "size_bytes": payload.size_bytes, "sha256": payload.content_sha256.lower()}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
@@ -117,7 +134,7 @@ def document_create(patient_id: UUID, payload: DocumentCreate, request: Request,
     """), {"clinic_id": session["clinic_id"], "job_key": f"document-scan:{document_id}"})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="document.upload", entity_type="patient_document", entity_id=document_id, outcome="pending_scan", request_id=UUID(request.state.request_id))
     db.commit()
-    return {"data": dict(row), "meta": {"request_id": request.state.request_id, "upload_status": "pending_scan"}}
+    return {"data": _document_public_data(row), "meta": {"request_id": request.state.request_id, "upload_status": "pending_scan"}}
 
 
 @router.post("/patients/{patient_id}/documents/upload", status_code=status.HTTP_201_CREATED)
@@ -135,8 +152,11 @@ async def document_upload(patient_id: UUID, request: Request, db: Session = Depe
     try:
         safe_name = validate_upload(original_filename, mime_type, len(content), content_sha256)
         validate_magic_bytes(mime_type, content[:16])
+        filename_ciphertext = encrypt_original_filename(safe_name)
     except ValueError as exc:
         raise _error("INVALID_UPLOAD", str(exc), status.HTTP_400_BAD_REQUEST) from exc
+    except MetadataEncryptionError as exc:
+        raise _error("DOCUMENT_UPLOAD_UNAVAILABLE", "Private document uploads require configured metadata encryption.", status.HTTP_503_SERVICE_UNAVAILABLE) from exc
     try:
         consume_feature_limit(db, session["clinic_id"], "patient_document_bytes", len(content))
     except FeatureLimitExceeded as exc:
@@ -147,10 +167,10 @@ async def document_upload(patient_id: UUID, request: Request, db: Session = Depe
     try:
         put_private_object(storage_key, content)
         row = db.execute(text("""
-            INSERT INTO patient_documents (id, clinic_id, patient_id, uploaded_by_user_id, storage_key, original_filename, mime_type, size_bytes, content_sha256)
-            VALUES (:id, :clinic_id, :patient_id, :user_id, :storage_key, :filename, :mime_type, :size_bytes, :sha256)
-            RETURNING id, original_filename, mime_type, size_bytes, scan_status, created_at, version
-        """), {"id": document_id, "clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"], "storage_key": storage_key, "filename": safe_name, "mime_type": mime_type, "size_bytes": len(content), "sha256": content_sha256}).mappings().one()
+            INSERT INTO patient_documents (id, clinic_id, patient_id, uploaded_by_user_id, storage_key, original_filename, original_filename_ciphertext, mime_type, size_bytes, content_sha256)
+            VALUES (:id, :clinic_id, :patient_id, :user_id, :storage_key, :legacy_filename, :filename_ciphertext, :mime_type, :size_bytes, :sha256)
+            RETURNING id, original_filename, original_filename_ciphertext, mime_type, size_bytes, scan_status, created_at, version
+        """), {"id": document_id, "clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"], "storage_key": storage_key, "legacy_filename": generic_filename(mime_type), "filename_ciphertext": filename_ciphertext, "mime_type": mime_type, "size_bytes": len(content), "sha256": content_sha256}).mappings().one()
         db.execute(text("""
             INSERT INTO background_jobs (clinic_id, job_key, job_type, status)
             VALUES (:clinic_id, :job_key, 'document_scan', 'queued')
@@ -166,7 +186,7 @@ async def document_upload(patient_id: UUID, request: Request, db: Session = Depe
         db.rollback()
         delete_private_object(storage_key)
         raise
-    return {"data": dict(row), "meta": {"request_id": request.state.request_id, "upload_status": "pending_scan"}}
+    return {"data": _document_public_data(row), "meta": {"request_id": request.state.request_id, "upload_status": "pending_scan"}}
 
 
 @router.get("/documents/{document_id}/scan-status")
@@ -202,7 +222,7 @@ def document_download(document_id: UUID, request: Request, access_token: str | N
     """Serve a clean private object through a short-lived, user-bound proxy."""
     session = _authorized(db, session_token, "patient.document.read")
     _require_document(db, session, document_id)
-    row = db.execute(text("SELECT id, storage_key, original_filename, mime_type, scan_status FROM patient_documents WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": document_id}).mappings().one_or_none()
+    row = db.execute(text("SELECT id, storage_key, original_filename, original_filename_ciphertext, mime_type, scan_status FROM patient_documents WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": document_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Document not found.", status.HTTP_404_NOT_FOUND)
     if row["scan_status"] != "clean" or not access_token or access_expires is None or access_expires <= int(time.time()) or not verify_access_token(access_token, str(document_id), str(session["user_id"]), access_expires):
@@ -216,7 +236,7 @@ def document_download(document_id: UUID, request: Request, access_token: str | N
     db.execute(text("INSERT INTO document_access_events (clinic_id, document_id, user_id, action, request_id) VALUES (:clinic_id, :document_id, :user_id, 'downloaded', :request_id)"), {"clinic_id": session["clinic_id"], "document_id": document_id, "user_id": session["user_id"], "request_id": UUID(request.state.request_id)})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="document.download", entity_type="patient_document", entity_id=document_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
-    safe_filename = row["original_filename"].replace("\r", "").replace("\n", "").replace('"', "")
+    safe_filename = _document_public_data(row)["original_filename"].replace("\r", "").replace("\n", "").replace('"', "")
     return Response(content=content, media_type=row["mime_type"], headers={"Content-Disposition": f'attachment; filename="{safe_filename}"', "Cache-Control": "private, no-store"})
 
 

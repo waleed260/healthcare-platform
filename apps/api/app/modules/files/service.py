@@ -5,7 +5,7 @@ import hmac
 import re
 from pathlib import PurePosixPath
 
-from app.core.security import hash_token, new_opaque_token
+from app.core.security import decrypt_field, encrypt_field, hash_token, new_opaque_token
 
 MAX_PATIENT_DOCUMENT_BYTES = 20 * 1024 * 1024
 ALLOWED_TYPES = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}
@@ -14,6 +14,39 @@ MAGIC_PREFIXES = {
     "image/jpeg": (b"\xff\xd8\xff",),
     "image/png": (b"\x89PNG\r\n\x1a\n",),
 }
+
+
+class MetadataEncryptionError(RuntimeError):
+    """Raised without exposing a key, ciphertext, or patient metadata."""
+
+
+def generic_filename(mime_type: str) -> str:
+    """A backwards-compatible non-sensitive filename for legacy readers."""
+    extension = ALLOWED_TYPES.get(mime_type)
+    if extension is None:
+        raise ValueError("file type is not permitted")
+    return f"document{extension}"
+
+
+def encrypt_original_filename(filename: str) -> str:
+    try:
+        return encrypt_field(filename)
+    except (RuntimeError, ValueError) as exc:
+        raise MetadataEncryptionError("private metadata encryption is unavailable") from exc
+
+
+def display_original_filename(ciphertext: str | None, legacy_filename: str | None, mime_type: str) -> str:
+    """Decrypt the authorized display name, falling back only for legacy rows."""
+    try:
+        value = decrypt_field(ciphertext) if ciphertext else legacy_filename
+    except (RuntimeError, ValueError) as exc:
+        raise MetadataEncryptionError("private metadata decryption is unavailable") from exc
+    if not value:
+        return generic_filename(mime_type)
+    safe_name = PurePosixPath(value.replace("\\", "/")).name
+    if not safe_name or "\x00" in safe_name:
+        raise MetadataEncryptionError("private metadata is invalid")
+    return safe_name
 
 
 def validate_upload(filename: str, mime_type: str, size_bytes: int, content_sha256: str) -> str:

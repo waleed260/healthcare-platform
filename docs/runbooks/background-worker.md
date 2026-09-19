@@ -7,6 +7,8 @@ runtime role. A trusted scheduler may launch one process per active clinic.
 ## Supported job types
 
 - `document_scan` — validates private patient-document size, digest, and magic bytes.
+- `document_metadata_encrypt` — migrates legacy private document display names
+  into encrypted metadata; it never reads or changes document bytes.
 - `website_media_scan` — validates private draft image objects before publishing.
 - `export` — creates a short-lived private privacy/audit export.
 - `retention_cleanup` — expires delivered exports and removes expired/revoked

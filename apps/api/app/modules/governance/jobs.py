@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_token
 from app.db.tenant import set_tenant_context
+from app.modules.files.service import display_original_filename
 from app.modules.files.storage import delete_private_object, put_private_object
 from app.modules.operations.jobs import claim_next_job, complete_job, fail_job
 
@@ -47,7 +48,13 @@ def _build_export(db: Session, clinic_id: UUID, job: dict) -> dict[str, object]:
         "notes": _rows(db, "SELECT note_type, visibility, body, created_at, updated_at FROM patient_notes WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL ORDER BY created_at", {"clinic_id": clinic_id, "patient_id": patient_id}),
         "consents": _rows(db, "SELECT consent_type, status, version, recorded_at, withdrawn_at, metadata FROM consent_records WHERE clinic_id = :clinic_id AND patient_id = :patient_id ORDER BY recorded_at", {"clinic_id": clinic_id, "patient_id": patient_id}),
         "appointments": _rows(db, "SELECT reference, starts_at, ends_at, status, source, created_at FROM appointments WHERE clinic_id = :clinic_id AND patient_id = :patient_id ORDER BY starts_at", {"clinic_id": clinic_id, "patient_id": patient_id}),
-        "documents": _rows(db, "SELECT id, original_filename, mime_type, size_bytes, scan_status, created_at, archived_at FROM patient_documents WHERE clinic_id = :clinic_id AND patient_id = :patient_id ORDER BY created_at", {"clinic_id": clinic_id, "patient_id": patient_id}),
+        "documents": [
+            {
+                **document,
+                "original_filename": display_original_filename(document.pop("original_filename_ciphertext", None), document.get("original_filename"), document["mime_type"]),
+            }
+            for document in _rows(db, "SELECT id, original_filename, original_filename_ciphertext, mime_type, size_bytes, scan_status, created_at, archived_at FROM patient_documents WHERE clinic_id = :clinic_id AND patient_id = :patient_id ORDER BY created_at", {"clinic_id": clinic_id, "patient_id": patient_id})
+        ],
     }
 
 

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pyotp
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import get_settings
 
@@ -71,17 +71,22 @@ def new_csrf_token() -> str:
 
 
 def encrypt_field(value: str) -> str:
-    key = get_settings().field_encryption_key
-    if not key:
-        raise RuntimeError("FIELD_ENCRYPTION_KEY is required for encrypted fields")
-    return Fernet(key.encode()).encrypt(value.encode()).decode()
+    keys = get_settings().field_encryption_keys
+    if not keys:
+        raise RuntimeError("FIELD_ENCRYPTION_KEYS is required for encrypted fields")
+    return Fernet(keys[0].encode()).encrypt(value.encode()).decode()
 
 
 def decrypt_field(value: str) -> str:
-    key = get_settings().field_encryption_key
-    if not key:
-        raise RuntimeError("FIELD_ENCRYPTION_KEY is required for encrypted fields")
-    return Fernet(key.encode()).decrypt(value.encode()).decode()
+    keys = get_settings().field_encryption_keys
+    if not keys:
+        raise RuntimeError("FIELD_ENCRYPTION_KEYS is required for encrypted fields")
+    for key in keys:
+        try:
+            return Fernet(key.encode()).decrypt(value.encode()).decode()
+        except InvalidToken:
+            continue
+    raise ValueError("encrypted field could not be decrypted with configured keys")
 
 
 def generate_totp_secret() -> str:
