@@ -19,11 +19,15 @@ def claim_next_job(db: Session, clinic_id: UUID, *, job_type: str | None = None,
     """Claim one ready or stale job with PostgreSQL row-level serialization."""
     current = now or datetime.now(timezone.utc)
     set_tenant_context(db, clinic_id)
-    row = db.execute(text("""
+    job_type_filter = "AND job_type = :job_type" if job_type is not None else ""
+    parameters = {"clinic_id": clinic_id, "now": current, "stale_before": current - timedelta(minutes=5)}
+    if job_type is not None:
+        parameters["job_type"] = job_type
+    row = db.execute(text(f"""
         SELECT id, clinic_id, job_key, job_type, status, attempts, available_at
         FROM background_jobs
         WHERE clinic_id = :clinic_id
-          AND (:job_type IS NULL OR job_type = :job_type)
+          {job_type_filter}
           AND (
               (status IN ('queued', 'failed') AND available_at <= :now)
               OR (status = 'running' AND locked_at < :stale_before)
@@ -31,7 +35,7 @@ def claim_next_job(db: Session, clinic_id: UUID, *, job_type: str | None = None,
         ORDER BY available_at, created_at, id
         FOR UPDATE SKIP LOCKED
         LIMIT 1
-    """), {"clinic_id": clinic_id, "job_type": job_type, "now": current, "stale_before": current - timedelta(minutes=5)}).mappings().one_or_none()
+    """), parameters).mappings().one_or_none()
     if row is None:
         return None
     claimed = db.execute(text("""

@@ -5,7 +5,7 @@ Requirement IDs: SEC-011, CRM-010, REL-003.
 from alembic import op
 
 
-revision = "0041_encrypt_private_document_metadata"
+revision = "0041_encrypt_document_metadata"
 down_revision = "0040_crm_care_team_notes"
 branch_labels = None
 depends_on = None

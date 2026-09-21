@@ -2,7 +2,7 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0004_catalog_onboarding_foundation"
+revision = "0004_catalog_onboarding"
 down_revision = "0003_rbac_branch_scopes"
 branch_labels = None
 depends_on = None

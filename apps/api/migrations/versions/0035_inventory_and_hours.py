@@ -10,7 +10,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("uq_branch_hours_day", "branch_hours", type_="unique")
+    # Migration 0013 replaces the original one-row-per-day constraint with
+    # this interval-aware constraint. Drop the current constraint before
+    # introducing the indexed multi-interval variant.
+    op.drop_constraint("uq_branch_hours_interval", "branch_hours", type_="unique")
     op.add_column("branch_hours", sa.Column("interval_index", sa.SmallInteger(), nullable=False, server_default="0"))
     op.create_check_constraint("ck_branch_hours_interval_index", "branch_hours", "interval_index >= 0")
     op.create_unique_constraint("uq_branch_hours_interval", "branch_hours", ["clinic_id", "branch_id", "weekday", "interval_index"])
