@@ -35,6 +35,10 @@ jobs:
       - name: High-confidence secret scan
         working-directory: .
         run: |
+          if git ls-files | grep -E '(^|/)\.env(\.|$)'; then
+            echo "Environment files must not be committed; use the CI secret store"
+            exit 1
+          fi
           if git grep -nE -- '-----BEGIN (RSA|OPENSSH|EC|DSA|PGP) PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}'; then
             echo "Private key material or a high-confidence access token must not be committed"
             exit 1
