@@ -10,7 +10,6 @@ __pycache__/
 .venv/
 .env
 .env.*
-!.env.example
 coverage.xml
 htmlcov/
 *.log
