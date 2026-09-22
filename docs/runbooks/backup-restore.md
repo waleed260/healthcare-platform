@@ -21,8 +21,13 @@ Provision a disposable PostgreSQL database, apply the dump, then run:
 ```bash
 BACKUP_FILE='./backups/healthcare-<timestamp>.dump' \
 RESTORE_DATABASE_URL='postgresql://...' \
+ISOLATED_RESTORE=YES \
 CONFIRM_RESTORE=YES ./infra/backup/restore-verify.sh
 ```
+
+`ISOLATED_RESTORE=YES` is an operator assertion that the target is a
+disposable, isolated database. If `DATABASE_URL` is also present, the script
+rejects an identical source and target URL.
 
 Record the restore timestamp, dump checksum, schema migration version, forced
 RLS count, and operator in the release evidence. Destroy the disposable restore

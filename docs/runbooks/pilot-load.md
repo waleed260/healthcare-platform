@@ -29,9 +29,16 @@ python3 infra/performance/load_profile.py \
   --base-url https://staging.example.invalid \
   --profile api-list \
   --request-plan /secure/path/synthetic-api-list.json \
-  --duration 60 --rate 20 --concurrency 50 \
+  --duration 60 --rate 20 --concurrency 50 --sessions 50 \
+  --session-cookie-file /secure/path/short-lived-synthetic-cookies.txt \
   > /secure/path/load-api-list.json
 ```
+
+For an authenticated staff profile, the cookie file must contain exactly one
+short-lived synthetic staging `Cookie` header per session. The tool rotates
+these headers across requests and reports the authenticated session count
+without writing cookie values to the result. Public-only profiles may omit the
+file and will report zero authenticated sessions.
 
 Use `--profile availability`, `--profile booking`, or `--profile dashboard`
 for the corresponding threshold. Set `LOAD_AUTHORIZATION` and/or `LOAD_COOKIE`

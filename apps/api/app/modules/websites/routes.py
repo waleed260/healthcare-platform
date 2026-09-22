@@ -4,13 +4,13 @@ import re
 import secrets
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
-from app.core.security import hash_token
+from app.core.security import decode_cursor, encode_cursor, hash_token
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
@@ -26,6 +26,15 @@ router = APIRouter(prefix="/api/v1/websites", tags=["websites"])
 public_router = APIRouter(prefix="/api/v1/public/sites", tags=["public-websites"])
 
 
+def _collection_cursor(cursor: str | None, namespace: str) -> dict[str, str]:
+    if not cursor:
+        return {}
+    values = decode_cursor(cursor, namespace)
+    if values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    return values
+
+
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
     session = _session_or_401(db, session_token)
     if session["clinic_id"] is None:
@@ -39,11 +48,21 @@ def _authorized(db: Session, session_token: str | None, permission: str) -> dict
 
 
 @router.get("")
-def website_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def website_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")
-    rows = db.execute(text("SELECT id, name, template_key, status, draft_version_id, live_version_id, version, created_at, updated_at FROM websites WHERE clinic_id = :clinic_id AND archived_at IS NULL ORDER BY created_at DESC, id"), {"clinic_id": session["clinic_id"]}).mappings().all()
+    after = _collection_cursor(cursor, "websites")
+    rows = db.execute(text("""
+        SELECT id, name, template_key, status, draft_version_id, live_version_id, version, created_at, updated_at
+        FROM websites
+        WHERE clinic_id = :clinic_id AND archived_at IS NULL
+          AND (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
+        ORDER BY created_at DESC, id DESC LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "after_created_at": after.get("created_at"), "after_id": UUID(after["id"]) if after.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("websites", {"created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -100,24 +119,39 @@ def website_archive(website_id: UUID, payload: WebsiteArchiveRequest, request: R
 
 
 @router.get("/{website_id}/versions")
-def version_list(website_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def version_list(website_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")
+    after = _collection_cursor(cursor, "website-versions")
     rows = db.execute(text("""
         SELECT id, version_number, schema_version, checksum, created_by, published_at, created_at
         FROM website_versions
         WHERE clinic_id = :clinic_id AND website_id = :website_id
-        ORDER BY version_number DESC, id DESC
-    """), {"clinic_id": session["clinic_id"], "website_id": website_id}).mappings().all()
+          AND (:after_version IS NULL OR version_number < :after_version OR (version_number = :after_version AND id < :after_id))
+        ORDER BY version_number DESC, id DESC LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "after_version": int(after["version"]) if after.get("version") else None, "after_id": UUID(after["id"]) if after.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("website-versions", {"version": str(rows[-1]["version_number"]), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.get("/{website_id}/pages")
-def page_list(website_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def page_list(website_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")
-    rows = db.execute(text("SELECT id, slug, title, seo_title, seo_description, version, created_at, updated_at FROM website_pages WHERE clinic_id = :clinic_id AND website_id = :website_id ORDER BY slug, id"), {"clinic_id": session["clinic_id"], "website_id": website_id}).mappings().all()
+    after = _collection_cursor(cursor, "website-pages")
+    rows = db.execute(text("""
+        SELECT id, slug, title, seo_title, seo_description, version, created_at, updated_at
+        FROM website_pages
+        WHERE clinic_id = :clinic_id AND website_id = :website_id
+          AND (:after_slug IS NULL OR slug > :after_slug OR (slug = :after_slug AND id > :after_id))
+        ORDER BY slug, id LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "after_slug": after.get("slug"), "after_id": UUID(after["id"]) if after.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("website-pages", {"slug": rows[-1]["slug"], "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("/{website_id}/pages", status_code=status.HTTP_201_CREATED)
@@ -180,17 +214,22 @@ def page_delete(website_id: UUID, page_id: UUID, payload: WebsiteVersionCommand,
 
 
 @router.get("/{website_id}/pages/{page_id}/sections")
-def section_list(website_id: UUID, page_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def section_list(website_id: UUID, page_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")
+    after = _collection_cursor(cursor, "website-sections")
     rows = db.execute(text("""
         SELECT s.id, s.section_type, s.layout_key, s.position, s.content, s.is_visible, s.version, s.created_at, s.updated_at
         FROM website_sections s
         JOIN website_pages p ON p.clinic_id = s.clinic_id AND p.id = s.page_id
         WHERE s.clinic_id = :clinic_id AND p.website_id = :website_id AND p.id = :page_id
-        ORDER BY s.position, s.id
-    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "page_id": page_id}).mappings().all()
+          AND (:after_position IS NULL OR s.position > :after_position OR (s.position = :after_position AND s.id > :after_id))
+        ORDER BY s.position, s.id LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "page_id": page_id, "after_position": int(after["position"]) if after.get("position") else None, "after_id": UUID(after["id"]) if after.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("website-sections", {"position": str(rows[-1]["position"]), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.patch("/{website_id}/pages/{page_id}/sections/{section_id}")
@@ -317,11 +356,21 @@ def _media_extension(mime_type: str) -> str:
 
 
 @router.get("/media")
-def media_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def media_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")
-    rows = db.execute(text("SELECT id, alt_text, mime_type, scan_status, is_public, version, created_at FROM website_media WHERE clinic_id = :clinic_id ORDER BY created_at DESC, id"), {"clinic_id": session["clinic_id"]}).mappings().all()
+    after = _collection_cursor(cursor, "website-media")
+    rows = db.execute(text("""
+        SELECT id, alt_text, mime_type, scan_status, is_public, version, created_at
+        FROM website_media
+        WHERE clinic_id = :clinic_id
+          AND (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
+        ORDER BY created_at DESC, id DESC LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "after_created_at": after.get("created_at"), "after_id": UUID(after["id"]) if after.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("website-media", {"created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("/media", status_code=status.HTTP_201_CREATED)
@@ -413,11 +462,21 @@ def media_delete(media_id: UUID, payload: WebsiteVersionCommand, request: Reques
 
 
 @router.get("/domains")
-def domain_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def domain_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")
-    rows = db.execute(text("SELECT id, hostname, observed_status, certificate_status, checked_at, failure_reason, created_at FROM domain_verifications WHERE clinic_id = :clinic_id ORDER BY hostname"), {"clinic_id": session["clinic_id"]}).mappings().all()
+    after = _collection_cursor(cursor, "website-domains")
+    rows = db.execute(text("""
+        SELECT id, hostname, observed_status, certificate_status, checked_at, failure_reason, created_at
+        FROM domain_verifications
+        WHERE clinic_id = :clinic_id
+          AND (:after_hostname IS NULL OR hostname > :after_hostname OR (hostname = :after_hostname AND id > :after_id))
+        ORDER BY hostname, id LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "after_hostname": after.get("hostname"), "after_id": UUID(after["id"]) if after.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("website-domains", {"hostname": rows[-1]["hostname"], "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("/{website_id}/preview-token")

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Header, Request, status
+from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -10,9 +10,10 @@ from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
-from app.modules.identity.service import SessionError, create_staff_invitation, verify_csrf
+from app.modules.identity.service import SessionError, create_manual_reset, create_staff_invitation, verify_csrf
 from app.modules.audit.service import record_event
-from app.modules.staff.schemas import BranchScopeCreate, RoleAssignment, StaffInvitationCreate, StaffStatusUpdate
+from app.modules.staff.schemas import BranchScopeCreate, ManualResetCreate, RoleAssignment, StaffInvitationCreate, StaffStatusUpdate
+from app.core.security import decode_cursor, encode_cursor
 
 router = APIRouter(prefix="/api/v1/staff", tags=["staff"])
 
@@ -26,19 +27,32 @@ def _revoke_user_sessions(db: Session, user_id: UUID) -> None:
 
 
 @router.get("/roles")
-def role_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def role_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "staff.read")
+    cursor_values = decode_cursor(cursor, "staff-roles") if cursor else None
+    if cursor and cursor_values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    try:
+        after_name = cursor_values["name"] if cursor_values else None
+        after_id = UUID(cursor_values["id"]) if cursor_values else None
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
         SELECT r.id, r.name, r.is_system,
                COALESCE(jsonb_agg(jsonb_build_object('code', p.code) ORDER BY p.code) FILTER (WHERE p.code IS NOT NULL), '[]'::jsonb) AS permissions
         FROM roles r
         LEFT JOIN role_permissions rp ON rp.role_id = r.id
-        LEFT JOIN permissions p ON p.id = rp.permission_id
-        WHERE r.clinic_id IS NULL OR r.clinic_id = :clinic_id
-        GROUP BY r.id, r.name, r.is_system ORDER BY r.name
-    """), {"clinic_id": session["clinic_id"]}).mappings().all()
+        LEFT JOIN permissions p ON p.code = rp.permission_code
+        WHERE (r.clinic_id IS NULL OR r.clinic_id = :clinic_id)
+          AND (:after_name IS NULL OR r.name > :after_name OR (r.name = :after_name AND r.id > :after_id))
+        GROUP BY r.id, r.name, r.is_system ORDER BY r.name, r.id
+        LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "after_name": after_name, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("staff-roles", {"name": rows[-1]["name"], "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.get("/permissions")
@@ -96,14 +110,29 @@ def _write_authorized(db: Session, request: Request, session_token: str | None, 
 
 
 @router.get("/users")
-def user_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def user_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "staff.read")
+    cursor_values = decode_cursor(cursor, "staff-users") if cursor else None
+    if cursor and cursor_values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    try:
+        after_name = cursor_values["display_name"] if cursor_values else None
+        after_id = UUID(cursor_values["id"]) if cursor_values else None
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
         SELECT id, normalized_email, display_name, status, failed_login_count, last_login_at, version, created_at, updated_at
-        FROM users WHERE clinic_id = :clinic_id AND archived_at IS NULL ORDER BY display_name, id
-    """), {"clinic_id": session["clinic_id"]}).mappings().all()
+        FROM users
+        WHERE clinic_id = :clinic_id AND archived_at IS NULL
+          AND (:after_name IS NULL OR display_name > :after_name OR (display_name = :after_name AND id > :after_id))
+        ORDER BY display_name, id
+        LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "after_name": after_name, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("staff-users", {"display_name": rows[-1]["display_name"], "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.get("/users/{user_id}")
@@ -129,11 +158,53 @@ def user_detail(user_id: UUID, request: Request, db: Session = Depends(get_db), 
     return {"data": {**dict(user), "roles": [dict(row) for row in roles], "branch_scopes": [dict(row) for row in scopes]}, "meta": {"request_id": request.state.request_id}}
 
 
+@router.post("/users/{user_id}/manual-reset", status_code=status.HTTP_201_CREATED)
+def manual_reset_create(user_id: UUID, payload: ManualResetCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    """Issue a one-time staff reset link after the owner verifies identity offline."""
+    session = _write_authorized(db, request, session_token, "staff.password_reset", csrf_token)
+    target = db.execute(text("""
+        SELECT u.id, u.status,
+               EXISTS (
+                   SELECT 1 FROM user_roles ur
+                   JOIN roles r ON r.id = ur.role_id
+                   WHERE ur.clinic_id = u.clinic_id AND ur.user_id = u.id AND r.name = 'owner'
+               ) AS is_owner
+        FROM users u
+        WHERE u.clinic_id = :clinic_id AND u.id = :user_id AND u.archived_at IS NULL
+    """), {"clinic_id": session["clinic_id"], "user_id": user_id}).mappings().one_or_none()
+    if target is None or target["status"] != "active":
+        raise _error("NOT_FOUND", "Staff member not found or inactive.", status.HTTP_404_NOT_FOUND)
+    if target["is_owner"]:
+        raise _error("FORBIDDEN", "Owner recovery requires platform-admin verification.", status.HTTP_403_FORBIDDEN)
+    token = create_manual_reset(db, user_id)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="auth.manual_reset_issue", entity_type="user", entity_id=user_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"reason_length": len(payload.reason.strip())})
+    db.commit()
+    setup_url = f"{get_settings().public_app_url.rstrip('/')}/reset-password?token={token}"
+    return {"data": {"setup_url": setup_url, "expires_in_seconds": 60 * 60}, "meta": {"request_id": request.state.request_id}}
+
+
 @router.post("/users/{user_id}/status")
 def user_status(user_id: UUID, payload: StaffStatusUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
     if user_id == session["user_id"] and payload.status != "active":
         raise _error("INVALID_INPUT", "You cannot deactivate your own current account.", status.HTTP_400_BAD_REQUEST)
+    if payload.status != "active":
+        owner_state = db.execute(text("""
+            SELECT EXISTS (
+                SELECT 1 FROM user_roles ur
+                JOIN roles r ON r.id = ur.role_id
+                WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id AND r.name = 'owner'
+            ) AS is_owner,
+            (
+                SELECT COUNT(*)
+                FROM users u
+                JOIN user_roles ur ON ur.clinic_id = u.clinic_id AND ur.user_id = u.id
+                JOIN roles r ON r.id = ur.role_id AND r.name = 'owner'
+                WHERE u.clinic_id = :clinic_id AND u.status = 'active' AND u.archived_at IS NULL
+            ) AS active_owner_count
+        """), {"clinic_id": session["clinic_id"], "user_id": user_id}).mappings().one()
+        if owner_state["is_owner"] and owner_state["active_owner_count"] <= 1:
+            raise _error("LAST_OWNER_REQUIRED", "A clinic must retain one active owner.", status.HTTP_409_CONFLICT)
     row = db.execute(text("""
         UPDATE users SET status = :status, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :user_id AND archived_at IS NULL AND version = :expected_version
@@ -143,6 +214,7 @@ def user_status(user_id: UUID, payload: StaffStatusUpdate, request: Request, db:
         raise _error("VERSION_CONFLICT", "The staff record changed before this command.", status.HTTP_409_CONFLICT)
     if payload.status != "active":
         db.execute(text("UPDATE sessions SET revoked_at = now() WHERE user_id = :user_id AND revoked_at IS NULL"), {"user_id": user_id})
+        db.execute(text("UPDATE password_reset_tokens SET consumed_at = now() WHERE user_id = :user_id AND consumed_at IS NULL"), {"user_id": user_id})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="staff.status_change", entity_type="user", entity_id=user_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"status": payload.status})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
@@ -197,6 +269,20 @@ def user_role_add(user_id: UUID, payload: RoleAssignment, request: Request, db: 
 @router.delete("/users/{user_id}/roles/{role_id}")
 def user_role_remove(user_id: UUID, role_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    owner_state = db.execute(text("""
+        SELECT r.name = 'owner' AS is_owner,
+               (
+                   SELECT COUNT(*)
+                   FROM users u
+                   JOIN user_roles active_ur ON active_ur.clinic_id = u.clinic_id AND active_ur.user_id = u.id
+                   JOIN roles active_r ON active_r.id = active_ur.role_id AND active_r.name = 'owner'
+                   WHERE u.clinic_id = :clinic_id AND u.status = 'active' AND u.archived_at IS NULL
+               ) AS active_owner_count
+        FROM roles r
+        WHERE r.id = :role_id AND (r.clinic_id = :clinic_id OR r.clinic_id IS NULL)
+    """), {"clinic_id": session["clinic_id"], "role_id": role_id}).mappings().one_or_none()
+    if owner_state and owner_state["is_owner"] and owner_state["active_owner_count"] <= 1:
+        raise _error("LAST_OWNER_REQUIRED", "A clinic must retain one active owner.", status.HTTP_409_CONFLICT)
     deleted = db.execute(text("DELETE FROM user_roles WHERE clinic_id = :clinic_id AND user_id = :user_id AND role_id = :role_id RETURNING role_id"), {"clinic_id": session["clinic_id"], "user_id": user_id, "role_id": role_id}).scalar_one_or_none()
     if deleted is None:
         raise _error("NOT_FOUND", "Role assignment not found.", status.HTTP_404_NOT_FOUND)

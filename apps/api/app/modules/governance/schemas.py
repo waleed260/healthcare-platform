@@ -1,3 +1,5 @@
+import json
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -68,6 +70,27 @@ class PlanLimitUpdate(BaseModel):
 
     limit_value: int | None = Field(default=None, ge=0)
     enabled: bool = True
+
+
+class RetentionPolicyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160)
+    jurisdiction: str = Field(min_length=2, max_length=120)
+    rules: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("rules")
+    @classmethod
+    def validate_rules_size(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(json.dumps(value, separators=(",", ":"), sort_keys=True)) > 16000:
+            raise ValueError("retention rules are too large")
+        return value
+
+
+class RetentionPolicyAssign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_id: UUID
 
 
 class AnnouncementCreate(BaseModel):

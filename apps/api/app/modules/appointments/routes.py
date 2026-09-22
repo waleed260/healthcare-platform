@@ -5,7 +5,7 @@ import secrets
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Cookie, Header, Query, Request, Response, status
+from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Request, Response, status
 from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -33,8 +33,24 @@ management_router = APIRouter(prefix="/api/v1/public/booking-management", tags=[
 question_router = APIRouter(prefix="/api/v1/public/booking-questions", tags=["public-booking-questions"])
 
 
+def _public_catalog_cursor(cursor: str | None) -> dict[str, str | None]:
+    if not cursor:
+        return {}
+    values = decode_cursor(cursor, "public-catalog")
+    if values is None or "state" not in values:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    try:
+        state = json.loads(values["state"])
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
+    if not isinstance(state, dict) or not all(value is None or isinstance(value, str) for value in state.values()):
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    return state
+
+
 @catalog_router.get("")
-def public_catalog(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), db: Session = Depends(get_db)) -> dict:
+def public_catalog(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
+    state = _public_catalog_cursor(cursor)
     clinic_id = db.execute(text("SELECT id, name, timezone, locale FROM clinics WHERE slug = :slug AND archived_at IS NULL AND status = 'active'"), {"slug": clinic_slug.strip().casefold()}).mappings().one_or_none()
     if clinic_id is None:
         raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
@@ -43,16 +59,20 @@ def public_catalog(*, request: Request, clinic_slug: str = Query(min_length=1, m
         SELECT id, code, name, timezone, address, phone
         FROM branches
         WHERE clinic_id = :clinic_id AND status = 'active' AND archived_at IS NULL
+          AND (:after_name IS NULL OR name > :after_name OR (name = :after_name AND id > :after_id))
         ORDER BY name, id
-    """), {"clinic_id": clinic_id["id"]}).mappings().all()
+        LIMIT :page_size
+    """), {"clinic_id": clinic_id["id"], "after_name": state.get("branch_name"), "after_id": UUID(state["branch_id"]) if state.get("branch_id") else None, "page_size": limit + 1}).mappings().all()
     services = db.execute(text("""
         SELECT s.id, s.name, s.category, s.short_description, s.duration_minutes,
                s.amount_minor, s.currency, bs.branch_id
         FROM services s
         JOIN branch_services bs ON bs.clinic_id = s.clinic_id AND bs.service_id = s.id
         WHERE s.clinic_id = :clinic_id AND s.status = 'active' AND s.visibility = 'public'
+          AND (:after_name IS NULL OR s.name > :after_name OR (s.name = :after_name AND (s.id > :after_id OR (s.id = :after_id AND bs.branch_id > :after_branch_id))))
         ORDER BY s.name, s.id, bs.branch_id
-    """), {"clinic_id": clinic_id["id"]}).mappings().all()
+        LIMIT :page_size
+    """), {"clinic_id": clinic_id["id"], "after_name": state.get("service_name"), "after_id": UUID(state["service_id"]) if state.get("service_id") else None, "after_branch_id": UUID(state["service_branch_id"]) if state.get("service_branch_id") else None, "page_size": limit + 1}).mappings().all()
     doctors = db.execute(text("""
         SELECT d.id, d.public_name, d.specialty, bd.branch_id, ds.service_id
         FROM doctor_profiles d
@@ -60,10 +80,24 @@ def public_catalog(*, request: Request, clinic_slug: str = Query(min_length=1, m
         JOIN doctor_services ds ON ds.clinic_id = d.clinic_id AND ds.doctor_id = d.id
         JOIN branch_services bs ON bs.clinic_id = d.clinic_id AND bs.branch_id = bd.branch_id AND bs.service_id = ds.service_id
         WHERE d.clinic_id = :clinic_id AND d.status = 'active' AND d.archived_at IS NULL
-        ORDER BY d.public_name, d.id
-    """), {"clinic_id": clinic_id["id"]}).mappings().all()
+          AND (:after_name IS NULL OR d.public_name > :after_name OR (d.public_name = :after_name AND (d.id > :after_id OR (d.id = :after_id AND (bd.branch_id > :after_branch_id OR (bd.branch_id = :after_branch_id AND ds.service_id > :after_service_id))))))
+        ORDER BY d.public_name, d.id, bd.branch_id, ds.service_id
+        LIMIT :page_size
+    """), {"clinic_id": clinic_id["id"], "after_name": state.get("doctor_name"), "after_id": UUID(state["doctor_id"]) if state.get("doctor_id") else None, "after_branch_id": UUID(state["doctor_branch_id"]) if state.get("doctor_branch_id") else None, "after_service_id": UUID(state["doctor_service_id"]) if state.get("doctor_service_id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = any(len(rows) > limit for rows in (branches, services, doctors))
+    branches = branches[:limit]
+    services = services[:limit]
+    doctors = doctors[:limit]
+    next_state = dict(state)
+    if branches:
+        next_state.update(branch_name=branches[-1]["name"], branch_id=str(branches[-1]["id"]))
+    if services:
+        next_state.update(service_name=services[-1]["name"], service_id=str(services[-1]["id"]), service_branch_id=str(services[-1]["branch_id"]))
+    if doctors:
+        next_state.update(doctor_name=doctors[-1]["public_name"], doctor_id=str(doctors[-1]["id"]), doctor_branch_id=str(doctors[-1]["branch_id"]), doctor_service_id=str(doctors[-1]["service_id"]))
+    next_cursor = encode_cursor("public-catalog", {"state": json.dumps(next_state, sort_keys=True, separators=(",", ":"))}) if has_next else None
     db.commit()
-    return {"data": {"clinic": dict(clinic_id), "branches": [dict(row) for row in branches], "services": [dict(row) for row in services], "doctors": [dict(row) for row in doctors]}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"clinic": dict(clinic_id), "branches": [dict(row) for row in branches], "services": [dict(row) for row in services], "doctors": [dict(row) for row in doctors]}, "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 def _validate_availability_range(from_date: date, to_date: date) -> None:
@@ -428,11 +462,19 @@ def public_availability(*, request: Request, clinic_slug: str = Query(min_length
 
 
 @question_router.get("")
-def public_booking_questions(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), service_id: UUID = Query(), db: Session = Depends(get_db)) -> dict:
+def public_booking_questions(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), service_id: UUID = Query(), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
     clinic_id = db.execute(text("SELECT id FROM clinics WHERE slug = :slug AND archived_at IS NULL AND status = 'active'"), {"slug": clinic_slug.strip().casefold()}).scalar_one_or_none()
     if clinic_id is None:
         raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
     set_tenant_context(db, clinic_id)
+    cursor_values = decode_cursor(cursor, "public-booking-questions") if cursor else None
+    if cursor and cursor_values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    try:
+        after_position = int(cursor_values["position"]) if cursor_values else None
+        after_id = UUID(cursor_values["id"]) if cursor_values else None
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
         SELECT q.id, q.prompt, q.input_type, q.options, q.required, sbq.position
         FROM service_booking_questions sbq
@@ -440,10 +482,15 @@ def public_booking_questions(*, request: Request, clinic_slug: str = Query(min_l
         JOIN services s ON s.clinic_id = sbq.clinic_id AND s.id = sbq.service_id
         WHERE sbq.clinic_id = :clinic_id AND sbq.service_id = :service_id
           AND q.active AND s.status = 'active' AND s.archived_at IS NULL AND s.visibility = 'public'
+          AND (:after_position IS NULL OR sbq.position > :after_position OR (sbq.position = :after_position AND q.id > :after_id))
         ORDER BY sbq.position, q.id
-    """), {"clinic_id": clinic_id, "service_id": service_id}).mappings().all()
+        LIMIT :page_size
+    """), {"clinic_id": clinic_id, "service_id": service_id, "after_position": after_position, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("public-booking-questions", {"position": str(rows[-1]["position"]), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 def _normalize_email(value: str | None) -> str | None:
@@ -584,6 +631,23 @@ def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doct
         raise _booking_unavailable()
 
 
+def _record_public_booking_conflict(db: Session, clinic_id: UUID, request: Request) -> None:
+    """Persist a privacy-safe conflict metric after the booking transaction rolls back."""
+    set_tenant_context(db, clinic_id)
+    record_event(
+        db,
+        clinic_id=clinic_id,
+        actor_user_id=None,
+        action="public_appointment.conflict",
+        entity_type="appointment",
+        entity_id=None,
+        outcome="conflict",
+        request_id=UUID(request.state.request_id),
+        metadata={"source": "public"},
+    )
+    db.commit()
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_public_booking(payload: PublicBookingRequest, request: Request, db: Session = Depends(get_db), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), clinic_slug: str | None = Header(default=None, alias="X-Clinic-Slug")) -> dict:
     if not idempotency_key or len(idempotency_key) > 128:
@@ -598,7 +662,7 @@ def create_public_booking(payload: PublicBookingRequest, request: Request, db: S
     body_hash = hashlib.sha256(json.dumps(raw_body, sort_keys=True).encode()).hexdigest()
     existing = db.execute(text("SELECT id, reference, status FROM appointments WHERE clinic_id = :clinic_id AND idempotency_key = :key"), {"clinic_id": clinic_id, "key": idempotency_key}).mappings().one_or_none()
     if existing:
-        if db.execute(text("SELECT idempotency_body_hash FROM appointments WHERE id = :id"), {"id": existing["id"]}).scalar_one() != body_hash:
+        if db.execute(text("SELECT idempotency_body_hash FROM appointments WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": clinic_id, "id": existing["id"]}).scalar_one() != body_hash:
             raise _error("IDEMPOTENCY_MISMATCH", "This idempotency key was already used with different data.", status.HTTP_409_CONFLICT)
         db.commit()
         return {"data": {"reference": existing["reference"], "status": existing["status"]}, "meta": {"request_id": request.state.request_id}}
@@ -658,18 +722,24 @@ def create_public_booking(payload: PublicBookingRequest, request: Request, db: S
     ends_at = starts_at + timedelta(minutes=service["duration_minutes"])
     occupancy_start = starts_at - timedelta(minutes=service["buffer_before_minutes"])
     occupancy_end = ends_at + timedelta(minutes=service["buffer_after_minutes"])
-    _validate_commit_time(
-        db=db,
-        clinic_id=clinic_id,
-        branch_id=payload.branch_id,
-        doctor_id=doctor_id,
-        service_id=payload.service_id,
-        branch_timezone=branch["timezone"],
-        starts_at=starts_at,
-        ends_at=ends_at,
-        occupancy_start=occupancy_start,
-        occupancy_end=occupancy_end,
-    )
+    try:
+        _validate_commit_time(
+            db=db,
+            clinic_id=clinic_id,
+            branch_id=payload.branch_id,
+            doctor_id=doctor_id,
+            service_id=payload.service_id,
+            branch_timezone=branch["timezone"],
+            starts_at=starts_at,
+            ends_at=ends_at,
+            occupancy_start=occupancy_start,
+            occupancy_end=occupancy_end,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_409_CONFLICT:
+            db.rollback()
+            _record_public_booking_conflict(db, clinic_id, request)
+        raise
     normalized_email = _normalize_email(payload.email)
     normalized_phone = _normalize_phone(payload.phone)
     patient = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone)) ORDER BY created_at LIMIT 1"), {"clinic_id": clinic_id, "email": normalized_email, "phone": normalized_phone}).scalar_one_or_none()
@@ -707,10 +777,12 @@ def create_public_booking(payload: PublicBookingRequest, request: Request, db: S
             if replay is not None:
                 return replay
         if "no_doctor_overlap" in str(exc):
+            _record_public_booking_conflict(db, clinic_id, request)
             raise _error("APPOINTMENT_CONFLICT", "The selected time is no longer available.", status.HTTP_409_CONFLICT) from exc
         raise
     except Exception as exc:
         db.rollback()
         if "no_doctor_overlap" in str(exc):
+            _record_public_booking_conflict(db, clinic_id, request)
             raise _error("APPOINTMENT_CONFLICT", "The selected time is no longer available.", status.HTTP_409_CONFLICT) from exc
         raise

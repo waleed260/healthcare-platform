@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -6,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Healthcare Platform API"
-    app_env: str = "development"
+    app_env: Literal["local", "test", "staging", "production"] = "local"
     api_version: str = "v1"
     database_url: str = "postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost:5432/healthcare"
     database_migration_url: str = ""
@@ -69,6 +70,8 @@ class Settings(BaseSettings):
                 missing.append("CORS_ORIGINS(HTTPS)")
             if not self.public_app_url.startswith("https://"):
                 missing.append("PUBLIC_APP_URL(HTTPS)")
+            if not self.sentry_dsn:
+                missing.append("SENTRY_DSN")
             if self.storage_backend != "supabase":
                 missing.append("STORAGE_BACKEND(supabase)")
             elif not self.supabase_url.startswith("https://") or not self.supabase_service_role_key:

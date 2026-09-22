@@ -13,26 +13,33 @@ from app.db.tenant import set_tenant_context
 from app.modules.files.service import display_original_filename
 from app.modules.files.storage import delete_private_object, put_private_object
 from app.modules.operations.jobs import claim_next_job, complete_job, fail_job
+from app.modules.audit.service import record_event
+
+JOB_BATCH_SIZE = 500
 
 
 def _rows(db: Session, query: str, params: dict[str, object]) -> list[dict]:
     return [dict(row) for row in db.execute(text(query), params).mappings().all()]
 
 
-def _build_export(db: Session, clinic_id: UUID, job: dict) -> dict[str, object]:
+def _build_export(db: Session, clinic_id: UUID, job: dict) -> tuple[dict[str, object], dict[str, object]]:
     export = db.execute(text("""
-        SELECT id, export_type, patient_id, privacy_request_id
+        SELECT id, export_type, patient_id, privacy_request_id, requested_by_user_id
         FROM export_jobs
         WHERE clinic_id = :clinic_id AND id = :id
         FOR UPDATE
     """), {"clinic_id": clinic_id, "id": job["export_id"]}).mappings().one_or_none()
     if export is None:
         raise ValueError("export job not found")
+    audit_context = {
+        "requested_by_user_id": export["requested_by_user_id"],
+        "export_type": export["export_type"],
+    }
     if export["export_type"] == "audit":
         return {"export_type": "audit", "events": _rows(db, """
             SELECT actor_user_id, action, entity_type, entity_id, outcome, request_id, ip_hash, metadata, created_at
             FROM audit_events WHERE clinic_id = :clinic_id ORDER BY created_at, id
-        """, {"clinic_id": clinic_id})}
+        """, {"clinic_id": clinic_id})}, audit_context
     patient = db.execute(text("""
         SELECT id, patient_number, full_name, normalized_email, normalized_phone,
                date_of_birth, status, duplicate_of, created_at, updated_at
@@ -55,7 +62,7 @@ def _build_export(db: Session, clinic_id: UUID, job: dict) -> dict[str, object]:
             }
             for document in _rows(db, "SELECT id, original_filename, original_filename_ciphertext, mime_type, size_bytes, scan_status, created_at, archived_at FROM patient_documents WHERE clinic_id = :clinic_id AND patient_id = :patient_id ORDER BY created_at", {"clinic_id": clinic_id, "patient_id": patient_id})
         ],
-    }
+    }, audit_context
 
 
 def run_next_export_job(db: Session, clinic_id: UUID) -> str | None:
@@ -67,7 +74,7 @@ def run_next_export_job(db: Session, clinic_id: UUID) -> str | None:
     try:
         set_tenant_context(db, clinic_id)
         db.execute(text("UPDATE export_jobs SET status = 'running' WHERE clinic_id = :clinic_id AND id = :id AND status = 'queued'"), {"clinic_id": clinic_id, "id": export_id})
-        document = _build_export(db, clinic_id, job)
+        document, audit_context = _build_export(db, clinic_id, job)
         storage_key = f"exports/{clinic_id}/{export_id}.json"
         put_private_object(storage_key, json.dumps(document, default=str, sort_keys=True).encode("utf-8"))
         db.execute(text("""
@@ -76,6 +83,16 @@ def run_next_export_job(db: Session, clinic_id: UUID) -> str | None:
                 expires_at = now() + interval '24 hours', completed_at = now(), failure_code = NULL
             WHERE clinic_id = :clinic_id AND id = :id
         """), {"clinic_id": clinic_id, "id": export_id, "storage_key": storage_key})
+        record_event(
+            db,
+            clinic_id=clinic_id,
+            actor_user_id=audit_context["requested_by_user_id"],
+            action="export.complete",
+            entity_type="export_job",
+            entity_id=export_id,
+            outcome="success",
+            metadata={"export_type": audit_context["export_type"]},
+        )
         complete_job(db, clinic_id, job["id"])
         db.commit()
         return "completed"
@@ -101,8 +118,9 @@ def run_expired_artifact_cleanup(db: Session, clinic_id: UUID) -> dict[str, int]
           AND status = 'completed'
           AND expires_at IS NOT NULL
           AND expires_at <= now()
+        LIMIT :batch_size
         FOR UPDATE
-    """), {"clinic_id": clinic_id}).mappings().all()
+    """), {"clinic_id": clinic_id, "batch_size": JOB_BATCH_SIZE}).mappings().all()
     expired_count = 0
     for export in expired_exports:
         if export["storage_key"]:

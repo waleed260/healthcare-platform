@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -11,9 +12,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.tenant import set_platform_context, set_tenant_context
 from app.modules.audit.service import record_event
-from app.modules.governance.schemas import AnnouncementCreate, PlanCreate, PlanLimitUpdate
-from app.modules.identity.routes import _error, _session_or_401, _validate_origin
-from app.modules.identity.service import SessionError, verify_csrf
+from app.modules.governance.schemas import AnnouncementCreate, PlanCreate, PlanLimitUpdate, RetentionPolicyAssign, RetentionPolicyCreate
+from app.modules.identity.routes import _error, _session_or_401, _set_session_cookies, _validate_origin
+from app.modules.identity.service import SessionError, rotate_session, verify_csrf
 from app.core.observability import request_metrics
 from app.db.session import engine
 from app.core.security import decode_cursor, encode_cursor
@@ -39,6 +40,44 @@ def _write(db: Session, request: Request, session_token: str | None, csrf_token:
     except SessionError as exc:
         raise _error("CSRF_INVALID", "The CSRF token is invalid.", status.HTTP_403_FORBIDDEN) from exc
     return session
+
+
+@router.post("/support-access/{access_id}/activate")
+def support_access_activate(access_id: UUID, response: Response, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    access = db.execute(text("""
+        SELECT id, clinic_id, permissions, starts_at, expires_at
+        FROM support_access_sessions
+        WHERE id = :id AND revoked_at IS NULL AND starts_at <= now() AND expires_at > now()
+    """), {"id": access_id}).mappings().one_or_none()
+    if access is None:
+        raise _error("SUPPORT_ACCESS_EXPIRED", "The support session is missing, expired, or revoked.", status.HTTP_409_CONFLICT)
+    rotation = rotate_session(db, session, support_access_id=access_id)
+    set_tenant_context(db, access["clinic_id"], session["user_id"])
+    record_event(db, clinic_id=access["clinic_id"], actor_user_id=session["user_id"], support_session_id=access_id, action="support_access.activate", entity_type="support_access_session", entity_id=access_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    _set_session_cookies(response, rotation.session_token, rotation.csrf_token, clinic_id=None)
+    return {"data": {"clinic_id": access["clinic_id"], "support_access_id": access_id, "permissions": access["permissions"], "expires_at": access["expires_at"]}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/support-access/{access_id}/exit")
+def support_access_exit(access_id: UUID, response: Response, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    _validate_origin(request)
+    session = _session_or_401(db, session_token)
+    if not session.get("is_platform_admin") or session.get("support_access_id") != access_id:
+        raise _error("FORBIDDEN", "An active support context is required.", status.HTTP_403_FORBIDDEN)
+    if not csrf_token:
+        raise _error("CSRF_REQUIRED", "A CSRF token is required.", status.HTTP_403_FORBIDDEN)
+    try:
+        verify_csrf(session, csrf_token)
+    except SessionError as exc:
+        raise _error("CSRF_INVALID", "The CSRF token is invalid.", status.HTTP_403_FORBIDDEN) from exc
+    rotation = rotate_session(db, session, clear_support_context=True)
+    set_tenant_context(db, session["clinic_id"], session["user_id"])
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], support_session_id=access_id, action="support_access.exit", entity_type="support_access_session", entity_id=access_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    _set_session_cookies(response, rotation.session_token, rotation.csrf_token, clinic_id=None)
+    return {"data": {"support_access_id": access_id, "exited": True}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/plans")
@@ -94,6 +133,77 @@ def plan_limit_update(plan_id: UUID, feature_code: str, payload: PlanLimitUpdate
     if row is None:
         raise _error("NOT_FOUND", "Plan not found.", status.HTTP_404_NOT_FOUND)
     record_event(db, clinic_id=None, actor_user_id=session["user_id"], action="admin.plan_limit.update", entity_type="plan", entity_id=plan_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"feature_code": feature_code})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/retention-policies")
+def retention_policy_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _platform(db, session_token)
+    cursor_values = decode_cursor(cursor, "admin-retention-policies") if cursor else None
+    if cursor and cursor_values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    try:
+        after_created_at = datetime.fromisoformat(cursor_values["created_at"]) if cursor_values else None
+        after_id = UUID(cursor_values["id"]) if cursor_values else None
+    except (KeyError, TypeError, ValueError) as exc:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
+    rows = db.execute(text("""
+        SELECT id, name, jurisdiction, rules, approved_by, approved_at, active, created_at
+        FROM retention_policies
+        WHERE (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
+        ORDER BY created_at DESC, id DESC
+        LIMIT :page_size
+    """), {"after_created_at": after_created_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("admin-retention-policies", {"created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
+
+
+@router.post("/retention-policies", status_code=status.HTTP_201_CREATED)
+def retention_policy_create(payload: RetentionPolicyCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    row = db.execute(text("""
+        INSERT INTO retention_policies (name, jurisdiction, rules, active)
+        VALUES (:name, :jurisdiction, CAST(:rules AS jsonb), false)
+        RETURNING id, name, jurisdiction, rules, approved_by, approved_at, active, created_at
+    """), {"name": payload.name.strip(), "jurisdiction": payload.jurisdiction.strip(), "rules": json.dumps(payload.rules, separators=(",", ":"), sort_keys=True)}).mappings().one()
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], action="admin.retention_policy.create", entity_type="retention_policy", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"jurisdiction": row["jurisdiction"], "active": False})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/retention-policies/{policy_id}/approve")
+def retention_policy_approve(policy_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    row = db.execute(text("""
+        UPDATE retention_policies
+        SET active = true, approved_by = :approved_by, approved_at = now()
+        WHERE id = :id AND active = false
+        RETURNING id, name, jurisdiction, rules, approved_by, approved_at, active, created_at
+    """), {"id": policy_id, "approved_by": str(session["user_id"])}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Retention policy not found or already active.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], action="admin.retention_policy.approve", entity_type="retention_policy", entity_id=policy_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"jurisdiction": row["jurisdiction"]})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.put("/clinics/{clinic_id}/retention-policy")
+def clinic_retention_policy_assign(clinic_id: UUID, payload: RetentionPolicyAssign, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    row = db.execute(text("""
+        UPDATE clinics AS c
+        SET retention_policy_id = p.id, updated_at = now(), version = c.version + 1
+        FROM retention_policies AS p
+        WHERE c.id = :clinic_id AND p.id = :policy_id AND p.active = true
+        RETURNING c.id AS clinic_id, p.id AS retention_policy_id, p.jurisdiction, p.approved_at, c.version
+    """), {"clinic_id": clinic_id, "policy_id": payload.policy_id}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Clinic or active retention policy not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], action="admin.retention_policy.assign", entity_type="clinic", entity_id=clinic_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"retention_policy_id": str(row["retention_policy_id"]), "jurisdiction": row["jurisdiction"]})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -170,6 +280,13 @@ def metrics(request: Request, db: Session = Depends(get_db), session_token: str 
     pool_size = getattr(pool, "size", lambda: 0)()
     checked_out = getattr(pool, "checkedout", lambda: 0)()
     job_metrics = {"queued": 0, "running": 0, "failed": 0, "oldest_queued_at": None}
+    telemetry = {
+        "appointments": {"total": 0, "requested": 0, "confirmed": 0, "completed": 0, "cancelled": 0},
+        "booking": {"attempts": 0, "conflicts": 0, "approval_delay_seconds": None, "no_show": 0, "no_show_rate": None},
+        "scan_backlog": 0,
+        "storage_failures": 0,
+        "publish_failures": 0,
+    }
     clinic_ids = db.execute(text("SELECT id FROM clinics WHERE archived_at IS NULL")).scalars().all()
     for clinic_id in clinic_ids:
         set_tenant_context(db, clinic_id)
@@ -185,5 +302,50 @@ def metrics(request: Request, db: Session = Depends(get_db), session_token: str 
         job_metrics["failed"] += counts["failed"]
         if counts["oldest_queued_at"] is not None and (job_metrics["oldest_queued_at"] is None or counts["oldest_queued_at"] < job_metrics["oldest_queued_at"]):
             job_metrics["oldest_queued_at"] = counts["oldest_queued_at"]
+        appointment_counts = db.execute(text("""
+            SELECT COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE status = 'requested') AS requested,
+                   COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed,
+                   COUNT(*) FILTER (WHERE status = 'completed') AS completed,
+                   COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled
+            FROM appointments WHERE clinic_id = :clinic_id AND archived_at IS NULL
+        """), {"clinic_id": clinic_id}).mappings().one()
+        for key in telemetry["appointments"]:
+            telemetry["appointments"][key] += appointment_counts[key]
+        booking_events = db.execute(text("""
+            SELECT COUNT(*) FILTER (WHERE action IN ('public_appointment.create', 'public_appointment.conflict')) AS attempts,
+                   COUNT(*) FILTER (WHERE action = 'public_appointment.conflict') AS conflicts
+            FROM audit_events
+            WHERE clinic_id = :clinic_id
+        """), {"clinic_id": clinic_id}).mappings().one()
+        booking_quality = db.execute(text("""
+            SELECT AVG(EXTRACT(EPOCH FROM (status_changed_at - created_at))) FILTER (WHERE status IN ('confirmed', 'completed') AND status_changed_at IS NOT NULL) AS approval_delay_seconds,
+                   COUNT(*) FILTER (WHERE status = 'no_show') AS no_show,
+                   COUNT(*) FILTER (WHERE status IN ('completed', 'no_show')) AS terminal_count
+            FROM appointments WHERE clinic_id = :clinic_id AND archived_at IS NULL
+        """), {"clinic_id": clinic_id}).mappings().one()
+        telemetry["booking"]["attempts"] += booking_events["attempts"] or 0
+        telemetry["booking"]["conflicts"] += booking_events["conflicts"] or 0
+        telemetry["booking"]["no_show"] += booking_quality["no_show"] or 0
+        if booking_quality["approval_delay_seconds"] is not None:
+            current_delay = telemetry["booking"]["approval_delay_seconds"]
+            telemetry["booking"]["approval_delay_seconds"] = float(booking_quality["approval_delay_seconds"]) if current_delay is None else (float(current_delay) + float(booking_quality["approval_delay_seconds"])) / 2
+        if booking_quality["terminal_count"]:
+            rate = (booking_quality["no_show"] or 0) / booking_quality["terminal_count"]
+            current_rate = telemetry["booking"]["no_show_rate"]
+            telemetry["booking"]["no_show_rate"] = float(rate) if current_rate is None else (float(current_rate) + float(rate)) / 2
+        telemetry["scan_backlog"] += db.execute(text("""
+            SELECT
+                (SELECT COUNT(*) FROM patient_documents WHERE clinic_id = :clinic_id AND archived_at IS NULL AND scan_status = 'pending_scan')
+                + (SELECT COUNT(*) FROM website_media WHERE clinic_id = :clinic_id AND is_public = false AND scan_status = 'pending_scan')
+        """), {"clinic_id": clinic_id}).scalar_one()
+        failure_counts = db.execute(text("""
+            SELECT
+                COUNT(*) FILTER (WHERE status = 'failed' AND job_type IN ('document_scan', 'website_media_scan')) AS storage_failures,
+                COUNT(*) FILTER (WHERE status = 'failed' AND job_type = 'website_publish') AS publish_failures
+            FROM background_jobs WHERE clinic_id = :clinic_id
+        """), {"clinic_id": clinic_id}).mappings().one()
+        telemetry["storage_failures"] += failure_counts["storage_failures"]
+        telemetry["publish_failures"] += failure_counts["publish_failures"]
     db.commit()
-    return {"data": {"http": request_metrics.snapshot(), "database_pool": {"size": pool_size, "checked_out": checked_out, "overflow": getattr(pool, "overflow", lambda: 0)()}, "background_jobs": job_metrics}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"http": request_metrics.snapshot(), "database_pool": {"size": pool_size, "checked_out": checked_out, "overflow": getattr(pool, "overflow", lambda: 0)()}, "background_jobs": job_metrics, "telemetry": telemetry}, "meta": {"request_id": request.state.request_id}}

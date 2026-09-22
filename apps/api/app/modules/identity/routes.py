@@ -78,7 +78,7 @@ def login(payload: LoginRequest, response: Response, request: Request, db: Sessi
             record_event(db, clinic_id=result.clinic_id, actor_user_id=result.user_id, action="auth.login", entity_type="session", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
         _set_session_cookies(response, result.session_token, result.csrf_token, result.clinic_id)
         db.commit()
-        return {"data": {"mfa_required": result.mfa_required, "user_id": result.user_id, "display_name": result.display_name}, "meta": {"request_id": request.state.request_id}}
+        return {"data": {"mfa_required": result.mfa_required, "mfa_enrollment_required": result.mfa_enrollment_required, "user_id": result.user_id, "display_name": result.display_name}, "meta": {"request_id": request.state.request_id}}
     except AuthenticationError as exc:
         db.rollback()
         raise _error(exc.code, "The email or password is not correct.", status.HTTP_401_UNAUTHORIZED) from exc

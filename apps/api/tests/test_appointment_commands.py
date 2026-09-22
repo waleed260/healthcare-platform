@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.modules.appointments.schemas import AppointmentRescheduleRequest, AppointmentTransitionRequest
+from app.modules.appointments.schemas import AppointmentRescheduleRequest, AppointmentTransitionRequest, PublicBookingRequest
 from app.modules.appointments import routes as appointment_routes
 
 
@@ -55,3 +55,45 @@ def test_idempotent_booking_replay_returns_committed_result(monkeypatch) -> None
 
     assert replay["data"] == {"reference": "BK-SYNTHETIC", "status": "requested"}
     db.commit.assert_called_once()
+
+
+def test_public_idempotency_body_hash_query_is_tenant_scoped(monkeypatch) -> None:
+    clinic_id = uuid4()
+    appointment_id = uuid4()
+    branch_id = uuid4()
+    service_id = uuid4()
+    payload = PublicBookingRequest(
+        branch_id=branch_id,
+        service_id=service_id,
+        starts_at=datetime(2030, 1, 1, 9, tzinfo=timezone.utc),
+        full_name="Synthetic Patient",
+    )
+    import hashlib
+    import json
+
+    body_hash = hashlib.sha256(json.dumps(payload.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
+    clinic_result = Mock()
+    clinic_result.scalar_one_or_none.return_value = clinic_id
+    existing_result = Mock()
+    existing_result.mappings.return_value.one_or_none.return_value = {
+        "id": appointment_id,
+        "reference": "BK-SYNTHETIC",
+        "status": "requested",
+    }
+    hash_result = Mock()
+    hash_result.scalar_one.return_value = body_hash
+    db = Mock()
+    db.execute.side_effect = [clinic_result, existing_result, hash_result]
+    monkeypatch.setattr(appointment_routes, "set_tenant_context", lambda *_args: None)
+    request = SimpleNamespace(state=SimpleNamespace(request_id=str(uuid4())))
+
+    replay = appointment_routes.create_public_booking(
+        payload,
+        request,
+        db,
+        idempotency_key="same-key",
+        clinic_slug="synthetic-care",
+    )
+
+    assert replay["data"] == {"reference": "BK-SYNTHETIC", "status": "requested"}
+    assert db.execute.call_args_list[2].args[1]["clinic_id"] == clinic_id

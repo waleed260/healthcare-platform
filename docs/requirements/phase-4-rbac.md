@@ -6,10 +6,11 @@
 | Permission catalog | `app/modules/authorization/permissions.py`, migration seed data |
 | Tenant-bound role assignments | `user_roles` composite tenant foreign key and forced RLS |
 | Branch scopes | `branches`, `user_branch_scopes`, composite tenant foreign keys and scope-aware authorization query |
-| Staff role/permission discovery | `GET /api/v1/staff/roles`, `GET /api/v1/staff/permissions`, restricted by `staff.read` |
+| Staff role/permission discovery | Signed-cursor `GET /api/v1/staff/roles` and `/users`, plus `GET /api/v1/staff/permissions`, restricted by `staff.read`; role permissions join the canonical `permission_code` catalog |
 | Security headers | `app/main.py` request middleware |
 | Production fail-closed configuration | `app/core/config.py` production validator |
 | Isolation tests | `tests/test_rbac_isolation.py` and CI PostgreSQL service |
+| Owner lifecycle integrity | `0043_owner_lifecycle_integrity.py` and staff commands reject removing or deactivating the final active clinic owner with `LAST_OWNER_REQUIRED` |
 
 The role catalog is intentionally small in this stage. Clinical permissions are added with their owning domain modules so every command can carry its object scope and audit behavior.
 

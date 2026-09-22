@@ -18,12 +18,15 @@ from app.modules.files.routes import router as files_router
 from app.modules.governance.routes import router as governance_router
 from app.modules.governance.admin_routes import router as platform_admin_router
 from app.modules.scheduling.routes import router as scheduling_router
+from app.modules.files.storage import check_storage_readiness
 from app.db.session import engine
 from sqlalchemy import text
 from time import monotonic
-from app.core.observability import request_metrics
+from app.core.observability import configure_logging, initialize_sentry, request_metrics
 
 settings = get_settings()
+configure_logging()
+initialize_sentry(settings)
 app = FastAPI(
     title=settings.app_name,
     version=settings.api_version,
@@ -55,7 +58,7 @@ app.add_middleware(
     allow_origins=list(settings.cors_allowed_origins),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Clinic-Slug", "X-Management-Token", "X-Export-Access-Token"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Clinic-Slug", "X-Management-Token", "X-Export-Access-Token", "X-Document-Access-Token", "X-Document-Expires", "X-Original-Filename", "X-Alt-Text", "X-Preview-Token"],
 )
 
 
@@ -73,7 +76,19 @@ async def security_middleware(request: Request, call_next):
     request.state.request_id = request_id
     response = await call_next(request)
     route = getattr(request.scope.get("route"), "path", "unmatched")
-    request_metrics.observe(request.method, route, response.status_code, (monotonic() - started) * 1000)
+    elapsed_ms = (monotonic() - started) * 1000
+    request_metrics.observe(request.method, route, response.status_code, elapsed_ms)
+    import logging
+    logging.getLogger("healthcare.request").info(
+        "request.complete",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "route": route,
+            "status_code": response.status_code,
+            "elapsed_ms": round(elapsed_ms, 2),
+        },
+    )
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
@@ -118,7 +133,12 @@ def health_ready() -> dict[str, str]:
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
+        storage_ready = check_storage_readiness()
     except Exception:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"status": "not_ready"})
+    if not storage_ready:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"status": "not_ready"})

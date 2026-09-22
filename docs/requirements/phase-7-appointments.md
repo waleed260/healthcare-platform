@@ -58,8 +58,9 @@ Public catalog, availability, booking, and booking-question queries exclude
 archived branches and services and inactive or archived doctors before exposing
 or accepting a booking option.
 
-The public booking surface now has a catalog endpoint at
-`GET /api/v1/public/catalog` and a responsive browser flow at
+The public booking surface now has cursor-bounded catalog and booking-question
+endpoints at `GET /api/v1/public/catalog` and
+`GET /api/v1/public/booking-questions`, plus a responsive browser flow at
 `/book/[clinicSlug]`. The flow keeps clinic-local timezone labels visible,
 uses the availability endpoint for selectable slots, submits the required
 `Idempotency-Key` and clinic slug, and renders loading, empty, error, retry via

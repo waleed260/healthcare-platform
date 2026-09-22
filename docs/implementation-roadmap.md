@@ -22,7 +22,7 @@ frontend states, tests, documentation, and exit gate are evidenced.
 | 11 | Database-backed jobs, due/overdue follow-ups, notifications; OPS/REL | Due/overdue and idempotent jobs pass timezone tests |
 | 12 | Plans/limits, support access, audit, privacy requests and retention; TEN/SEC/REL | Limits are transactional; support expires; audit is complete |
 | 13 | Hardening, load profile, accessibility, backups/restore, CI/CD and launch gates; SEC/REL/UX | Numeric targets, WCAG checks, restore, security, and release gates pass |
-| 14 | Controlled pilot, runbooks, defect closure, owner approval | Runbooks exercised and pilot acceptance recorded |
+| 14 | Controlled pilot, runbooks, defect closure, owner approval | `docs/requirements/phase-14-pilot.md`; runbooks exercised, critical defects closed, and pilot acceptance recorded |
 
 ## Working order
 

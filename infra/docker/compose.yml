@@ -23,7 +23,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      APP_ENV: development
+      APP_ENV: local
       DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@db:5432/healthcare
     volumes:
       - ../../apps/api:/app
@@ -36,7 +36,7 @@ services:
       context: ../../apps/api
       dockerfile: Dockerfile
     environment:
-      APP_ENV: development
+      APP_ENV: local
       DATABASE_URL: postgresql+psycopg://healthcare_migrator:healthcare_migrator_dev@db:5432/healthcare
     command: alembic upgrade head
     depends_on:

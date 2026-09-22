@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.db.tenant import set_tenant_context
 from app.core.security import (
     encrypt_field,
     generate_recovery_codes,
@@ -48,6 +49,7 @@ class LoginResult:
     clinic_id: UUID | None
     display_name: str
     mfa_required: bool
+    mfa_enrollment_required: bool
 
 
 @dataclass(frozen=True)
@@ -112,22 +114,29 @@ def authenticate(db: Session, email: str, password: str, ip_address: str, user_a
 
     _clear_failure(db, bucket_key)
     now = utc_now()
+    # Owner/MFA role discovery is tenant-scoped under forced RLS. Establish the
+    # context only after the password has been verified and the user/clinic
+    # relationship has been resolved above.
+    if user["clinic_id"] is not None:
+        set_tenant_context(db, user["clinic_id"], user["id"])
     session_token = new_opaque_token()
     csrf_token = new_csrf_token()
-    mfa_required = db.execute(
+    mfa_state = db.execute(
         text("""
             SELECT EXISTS (
                 SELECT 1 FROM mfa_methods
                 WHERE user_id = :user_id AND enrolled_at IS NOT NULL
-            ) OR :clinic_id IS NULL OR EXISTS (
+            ) AS mfa_enrolled, EXISTS (
                 SELECT 1
                 FROM user_roles ur
                 JOIN roles r ON r.id = ur.role_id
                 WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id AND r.name = 'owner'
-            )
+            ) OR (:clinic_id IS NULL) AS mfa_mandatory
         """),
         {"user_id": user["id"], "clinic_id": user["clinic_id"]},
-    ).scalar_one()
+    ).mappings().one()
+    mfa_enrollment_required = bool(mfa_state["mfa_mandatory"] and not mfa_state["mfa_enrolled"])
+    mfa_required = bool(mfa_state["mfa_mandatory"] or mfa_state["mfa_enrolled"])
     idle_duration = timedelta(minutes=30) if user["clinic_id"] is None else timedelta(hours=8)
     absolute_duration = timedelta(hours=24) if user["clinic_id"] is None else timedelta(days=7)
     db.execute(
@@ -150,7 +159,7 @@ def authenticate(db: Session, email: str, password: str, ip_address: str, user_a
         },
     )
     db.execute(text("UPDATE users SET failed_login_count = 0, last_login_at = :now WHERE id = :id"), {"id": user["id"], "now": now})
-    return LoginResult(session_token, csrf_token, user["id"], user["clinic_id"], user["display_name"], mfa_required)
+    return LoginResult(session_token, csrf_token, user["id"], user["clinic_id"], user["display_name"], mfa_required, mfa_enrollment_required)
 
 
 def revoke_session(db: Session, session_token: str) -> None:
@@ -161,20 +170,31 @@ def get_session(db: Session, session_token: str) -> dict:
     session = db.execute(
         text("""
             SELECT s.id, s.user_id, s.csrf_token_hash, s.mfa_verified, s.idle_expires_at,
-                   s.absolute_expires_at, s.ip_hash, s.user_agent, u.clinic_id, u.display_name, u.normalized_email
+                   s.absolute_expires_at, s.ip_hash, s.user_agent, s.support_access_id,
+                   u.is_platform_admin, COALESCE(u.clinic_id, support.clinic_id) AS clinic_id,
+                   u.display_name, u.normalized_email
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             LEFT JOIN clinics c ON c.id = u.clinic_id
+            LEFT JOIN support_access_sessions support ON support.id = s.support_access_id
             WHERE s.token_hash = :token_hash AND s.revoked_at IS NULL
               AND u.status = 'active'
               AND (u.clinic_id IS NULL OR (c.status = 'active' AND c.archived_at IS NULL))
+              AND (
+                  s.support_access_id IS NULL
+                  OR (u.is_platform_admin AND support.revoked_at IS NULL AND support.starts_at <= now() AND support.expires_at > now())
+              )
         """),
         {"token_hash": hash_token(session_token)},
     ).mappings().one_or_none()
     now = utc_now()
     if session is None or session["idle_expires_at"] <= now or session["absolute_expires_at"] <= now:
         raise SessionError()
-    idle_duration = timedelta(minutes=30) if session["clinic_id"] is None else timedelta(hours=8)
+    db.execute(text("""
+        SELECT set_config('app.support_access_id', :support_access_id, true),
+               set_config('app.clinic_id', :clinic_id, true)
+    """), {"support_access_id": str(session["support_access_id"] or ""), "clinic_id": str(session["clinic_id"] or "")})
+    idle_duration = timedelta(minutes=30) if session["is_platform_admin"] else timedelta(hours=8)
     db.execute(text("UPDATE sessions SET last_seen_at = :now, idle_expires_at = :idle_expires_at WHERE id = :id"), {"id": session["id"], "now": now, "idle_expires_at": min(now + idle_duration, session["absolute_expires_at"])})
     return dict(session)
 
@@ -184,19 +204,20 @@ def verify_csrf(session: dict, csrf_token: str) -> None:
         raise SessionError()
 
 
-def rotate_session(db: Session, session: dict, *, mfa_verified: bool | None = None) -> SessionRotation:
+def rotate_session(db: Session, session: dict, *, mfa_verified: bool | None = None, support_access_id: UUID | None = None, clear_support_context: bool = False) -> SessionRotation:
     """Rotate the opaque session and CSRF token without extending absolute lifetime."""
     now = utc_now()
     session_token = new_opaque_token()
     csrf_token = new_csrf_token()
     absolute_expires_at = session["absolute_expires_at"]
-    idle_duration = timedelta(minutes=30) if session["clinic_id"] is None else timedelta(hours=8)
+    active_support_access_id = None if clear_support_context else (support_access_id or session.get("support_access_id"))
+    idle_duration = timedelta(minutes=30) if session.get("is_platform_admin") else timedelta(hours=8)
     idle_expires_at = min(now + idle_duration, absolute_expires_at)
     db.execute(text("""
         INSERT INTO sessions
-          (user_id, token_hash, csrf_token_hash, mfa_verified, ip_hash, user_agent, idle_expires_at, absolute_expires_at)
-        VALUES (:user_id, :token_hash, :csrf_hash, :mfa_verified, :ip_hash, :user_agent, :idle_expires_at, :absolute_expires_at)
-    """), {"user_id": session["user_id"], "token_hash": hash_token(session_token), "csrf_hash": hash_token(csrf_token), "mfa_verified": session["mfa_verified"] if mfa_verified is None else mfa_verified, "ip_hash": session.get("ip_hash") or hash_ip("unknown"), "user_agent": session.get("user_agent"), "idle_expires_at": idle_expires_at, "absolute_expires_at": absolute_expires_at})
+          (user_id, support_access_id, token_hash, csrf_token_hash, mfa_verified, ip_hash, user_agent, idle_expires_at, absolute_expires_at)
+        VALUES (:user_id, :support_access_id, :token_hash, :csrf_hash, :mfa_verified, :ip_hash, :user_agent, :idle_expires_at, :absolute_expires_at)
+    """), {"user_id": session["user_id"], "support_access_id": active_support_access_id, "token_hash": hash_token(session_token), "csrf_hash": hash_token(csrf_token), "mfa_verified": session["mfa_verified"] if mfa_verified is None else mfa_verified, "ip_hash": session.get("ip_hash") or hash_ip("unknown"), "user_agent": session.get("user_agent"), "idle_expires_at": idle_expires_at, "absolute_expires_at": absolute_expires_at})
     db.execute(text("UPDATE sessions SET revoked_at = :now WHERE id = :id AND revoked_at IS NULL"), {"now": now, "id": session["id"]})
     return SessionRotation(session_token=session_token, csrf_token=csrf_token)
 
@@ -214,6 +235,20 @@ def consume_manual_reset(db: Session, token: str, new_password: str) -> UUID:
     db.execute(text("UPDATE password_reset_tokens SET consumed_at = :now WHERE id = :id"), {"now": now, "id": row["id"]})
     db.execute(text("UPDATE sessions SET revoked_at = :now WHERE user_id = :user_id AND revoked_at IS NULL"), {"now": now, "user_id": row["user_id"]})
     return row["user_id"]
+
+
+def create_manual_reset(db: Session, user_id: UUID) -> str:
+    """Create a single-use reset secret; only its hash is persisted."""
+    token = new_opaque_token()
+    # Serialize issuance per user so concurrent owner actions cannot leave two
+    # unconsumed reset links valid at the same time.
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:user_id AS text), 0))"), {"user_id": user_id})
+    db.execute(text("DELETE FROM password_reset_tokens WHERE user_id = :user_id AND consumed_at IS NULL"), {"user_id": user_id})
+    db.execute(text("""
+        INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+        VALUES (:user_id, :token_hash, :expires_at)
+    """), {"user_id": user_id, "token_hash": hash_token(token), "expires_at": utc_now() + timedelta(hours=1)})
+    return token
 
 
 def begin_mfa_enrollment(db: Session, user_id: UUID) -> tuple[str, list[str]]:

@@ -170,11 +170,24 @@ def _authoring_doctor(db: Session, session: dict, patient_id: UUID, *, require_c
 
 
 @tags_router.get("")
-def tag_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def tag_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.read")
-    rows = db.execute(text("SELECT id, name, created_at FROM tags WHERE clinic_id = :clinic_id ORDER BY normalized_name"), {"clinic_id": session["clinic_id"]}).mappings().all()
+    values = decode_cursor(cursor, "tags") if cursor else {}
+    if cursor and values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    values = values or {}
+    rows = db.execute(text("""
+        SELECT id, name, created_at, normalized_name
+        FROM tags
+        WHERE clinic_id = :clinic_id
+          AND (:after_name IS NULL OR normalized_name > :after_name OR (normalized_name = :after_name AND id > :after_id))
+        ORDER BY normalized_name, id LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "after_name": values.get("name"), "after_id": UUID(values["id"]) if values.get("id") else None, "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor("tags", {"name": rows[-1]["normalized_name"], "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [{key: value for key, value in dict(row).items() if key != "normalized_name"} for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @tags_router.post("", status_code=status.HTTP_201_CREATED)

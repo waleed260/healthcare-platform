@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.db.tenant import set_tenant_context
 
+JOB_BATCH_SIZE = 500
+
 
 def retry_delay_seconds(attempts: int, *, maximum: int = 3600) -> int:
     if attempts < 1:
@@ -85,7 +87,8 @@ def run_overdue_follow_up_job(db: Session, clinic_id: UUID, now: datetime | None
         FROM follow_up_tasks
         WHERE clinic_id = :clinic_id AND status IN ('due', 'contacted', 'booked') AND due_at < :now
         ORDER BY due_at, id
-    """), {"clinic_id": clinic_id, "now": current}).mappings().all()
+        LIMIT :batch_size
+    """), {"clinic_id": clinic_id, "now": current, "batch_size": JOB_BATCH_SIZE}).mappings().all()
     created = 0
     for task in tasks:
         job_key = overdue_job_key(task["id"], task["due_at"])

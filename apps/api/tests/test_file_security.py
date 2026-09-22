@@ -1,8 +1,13 @@
 import pytest
+from fastapi import HTTPException
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from app.core.config import get_settings
 from app.core.security import generate_field_key
 from app.modules.files.service import create_access_token, display_original_filename, encrypt_original_filename, generic_filename, new_storage_key, validate_magic_bytes, validate_upload, verify_access_token
+from app.modules.files.routes import document_download
 
 
 def test_patient_upload_policy_rejects_unsafe_types_and_extensions() -> None:
@@ -48,3 +53,29 @@ def test_private_document_filename_is_encrypted_and_has_a_generic_legacy_name(mo
         assert display_original_filename(None, "legacy-synthetic.pdf", "application/pdf") == "legacy-synthetic.pdf"
     finally:
         get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("scan_status", "access_expires"),
+    (("quarantined", 4102444800), ("clean", 1)),
+)
+def test_document_download_rejects_quarantined_or_expired_access(scan_status: str, access_expires: int) -> None:
+    document_id = uuid4()
+    db = Mock()
+    result = Mock()
+    result.mappings.return_value.one_or_none.return_value = {
+        "id": document_id,
+        "storage_key": "synthetic/private-document.pdf",
+        "original_filename": "document.pdf",
+        "original_filename_ciphertext": None,
+        "mime_type": "application/pdf",
+        "scan_status": scan_status,
+    }
+    db.execute.return_value = result
+    request = SimpleNamespace(state=SimpleNamespace(request_id=str(uuid4())))
+    session = {"clinic_id": uuid4(), "user_id": uuid4()}
+    with patch("app.modules.files.routes._authorized", return_value=session), patch("app.modules.files.routes._require_document"):
+        with pytest.raises(HTTPException) as error:
+            document_download(document_id, request, "synthetic-token", access_expires, db, "synthetic-session")
+    assert error.value.status_code == 404
+    assert error.value.detail["error"]["code"] == "DOCUMENT_UNAVAILABLE"

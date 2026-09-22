@@ -17,7 +17,12 @@ The patient-document collection endpoint is bounded by a signed cursor scoped to
 the patient, defaults to 50 records, caps pages at 100, and returns
 `meta.next_cursor` for continuation.
 
-Remaining Phase 10 work: bucket/policy provisioning evidence, external scanner
-binding, and full cross-tenant/expired/quarantined download tests. The application
+Route-level regression tests now prove quarantined and expired signed-download
+requests fail closed; the PostgreSQL integration matrix still must exercise
+cross-tenant document access and signed downloads, with a synthetic two-clinic
+case now present in `test_tenant_isolation.py` but skipped when PostgreSQL URLs
+are unavailable. Remaining Phase 10 work:
+bucket/policy provisioning evidence, external scanner binding, and the full
+cross-tenant integration run. The application
 proxy, quota checks, archive audit, public-media pipeline, scan event API, and worker
 scheduling are implemented; Supabase service credentials remain server-only.

@@ -9,5 +9,7 @@ PYTHONPATH=apps/api python apps/api/scripts/export_openapi.py
 ```
 
 CI regenerates the artifact and fails when the committed contract is stale.
-Generated client types should be derived from this file; frontend code must not
-redefine API status enums or permission codes independently.
+The finite literal types in `openapi-types.ts` are generated from this file with
+`python3 packages/contracts/generate_types.py`; CI fails if the checked-in output
+is stale. Frontend code must not redefine API status enums or permission codes
+independently.

@@ -16,6 +16,12 @@ class StaffStatusUpdate(BaseModel):
     status: str = Field(pattern="^(active|suspended|deactivated)$")
 
 
+class ManualResetCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class RoleAssignment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

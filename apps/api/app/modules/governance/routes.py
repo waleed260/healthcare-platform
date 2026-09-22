@@ -19,6 +19,7 @@ from app.modules.identity.routes import _error, _session_or_401, _validate_origi
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.files.storage import read_private_object
 from app.core.security import decode_cursor, encode_cursor, hash_token
+from app.modules.crm.routes import _patient_scope_sql
 
 router = APIRouter(prefix="/api/v1/governance", tags=["governance"])
 
@@ -53,15 +54,7 @@ def _patient_visible_to_user(db: Session, session: dict, patient_id: UUID) -> bo
             SELECT 1
             FROM patients p
             WHERE p.clinic_id = :clinic_id AND p.id = :patient_id AND p.archived_at IS NULL
-              AND (
-                NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-                OR EXISTS (
-                    SELECT 1
-                    FROM appointments a
-                    JOIN user_branch_scopes s ON s.clinic_id = a.clinic_id AND s.branch_id = a.branch_id
-                    WHERE a.clinic_id = :clinic_id AND a.patient_id = :patient_id AND a.archived_at IS NULL AND s.user_id = :user_id
-                )
-              )
+              {_patient_scope_sql('p')}
         )
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "patient_id": patient_id}).scalar_one())
 
@@ -116,7 +109,7 @@ def support_access_create(payload: SupportAccessCreate, request: Request, db: Se
         VALUES (:clinic_id, :requester, :approver, :reason, CAST(:permissions AS jsonb), now(), now() + (:minutes * interval '1 minute'))
         RETURNING id, starts_at, expires_at, permissions
     """), {"clinic_id": session["clinic_id"], "requester": session["user_id"], "approver": approved_by, "reason": payload.reason, "permissions": __import__("json").dumps(payload.permissions), "minutes": payload.expires_in_minutes}).mappings().one()
-    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="support_access.create", entity_type="support_access_session", entity_id=result["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"expires_in_minutes": payload.expires_in_minutes})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], support_session_id=result["id"], action="support_access.create", entity_type="support_access_session", entity_id=result["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"expires_in_minutes": payload.expires_in_minutes})
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 
@@ -127,7 +120,7 @@ def support_access_revoke(access_id: UUID, request: Request, db: Session = Depen
     result = db.execute(text("UPDATE support_access_sessions SET revoked_at = now() WHERE clinic_id = :clinic_id AND id = :id AND revoked_at IS NULL RETURNING id, revoked_at"), {"clinic_id": session["clinic_id"], "id": access_id}).mappings().one_or_none()
     if result is None:
         raise _error("NOT_FOUND", "Support access session not found or already revoked.", status.HTTP_404_NOT_FOUND)
-    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="support_access.revoke", entity_type="support_access_session", entity_id=access_id, outcome="success", request_id=UUID(request.state.request_id))
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], support_session_id=access_id, action="support_access.revoke", entity_type="support_access_session", entity_id=access_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 

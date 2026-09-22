@@ -15,10 +15,44 @@ from app.core.config import get_settings
 
 
 SUPABASE_TIMEOUT_SECONDS = 30
+STORAGE_READINESS_TIMEOUT_SECONDS = 2
 
 
 def _use_supabase() -> bool:
     return get_settings().storage_backend.casefold() == "supabase"
+
+
+def check_storage_readiness() -> bool:
+    """Check the configured storage dependency without exposing provider details."""
+    settings = get_settings()
+    try:
+        if _use_supabase():
+            if not settings.supabase_url or not settings.supabase_service_role_key:
+                return False
+            headers = {
+                "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                "apikey": settings.supabase_service_role_key,
+            }
+            for bucket in (settings.supabase_private_bucket, settings.supabase_public_bucket):
+                request = Request(
+                    f"{settings.supabase_url.rstrip('/')}/storage/v1/bucket/{quote(bucket, safe='')}",
+                    headers=headers,
+                    method="GET",
+                )
+                with urlopen(request, timeout=STORAGE_READINESS_TIMEOUT_SECONDS):
+                    pass
+            return True
+        for root_value, mode in (
+            (settings.private_storage_root, 0o700),
+            (settings.public_storage_root, 0o755),
+        ):
+            root = Path(root_value).expanduser()
+            root.mkdir(mode=mode, parents=True, exist_ok=True)
+            if not os.access(root, os.R_OK | os.W_OK | os.X_OK):
+                return False
+        return True
+    except (HTTPError, URLError, OSError, RuntimeError, ValueError):
+        return False
 
 
 def _supabase_object_url(bucket: str, storage_key: str, *, public: bool = False) -> str:

@@ -5,6 +5,7 @@ PERMISSIONS = {
     "branch.manage",
     "staff.read",
     "staff.manage",
+    "staff.password_reset",
     "doctor.read",
     "doctor.manage",
     "service.read",

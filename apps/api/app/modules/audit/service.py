@@ -12,6 +12,7 @@ def record_event(
     *,
     clinic_id: UUID | None,
     actor_user_id: UUID | None,
+    support_session_id: UUID | None = None,
     action: str,
     entity_type: str,
     entity_id: UUID | None,
@@ -24,8 +25,8 @@ def record_event(
     if metadata and len(str(dict(metadata))) > 16000:
         raise ValueError("audit metadata is too large")
     row = db.execute(text("""
-        INSERT INTO audit_events (clinic_id, actor_user_id, action, entity_type, entity_id, outcome, request_id, ip_hash, metadata)
-        VALUES (:clinic_id, :actor_user_id, :action, :entity_type, :entity_id, :outcome, :request_id, :ip_hash, CAST(:metadata AS jsonb))
+        INSERT INTO audit_events (clinic_id, actor_user_id, support_session_id, action, entity_type, entity_id, outcome, request_id, ip_hash, metadata)
+        VALUES (:clinic_id, :actor_user_id, COALESCE(:support_session_id, NULLIF(current_setting('app.support_access_id', true), '')::uuid), :action, :entity_type, :entity_id, :outcome, :request_id, :ip_hash, CAST(:metadata AS jsonb))
         RETURNING id
-    """), {"clinic_id": clinic_id, "actor_user_id": actor_user_id, "action": action, "entity_type": entity_type, "entity_id": entity_id, "outcome": outcome, "request_id": request_id, "ip_hash": ip_hash, "metadata": __import__("json").dumps(dict(metadata or {}), default=str)}).scalar_one()
+    """), {"clinic_id": clinic_id, "actor_user_id": actor_user_id, "support_session_id": support_session_id, "action": action, "entity_type": entity_type, "entity_id": entity_id, "outcome": outcome, "request_id": request_id, "ip_hash": ip_hash, "metadata": __import__("json").dumps(dict(metadata or {}), default=str)}).scalar_one()
     return row

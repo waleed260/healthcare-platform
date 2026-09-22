@@ -35,6 +35,19 @@ each clinic and job type. Set the database URL and storage configuration through
 the deployment secret manager; never put credentials in command arguments or
 logs.
 
+For a managed cron or Railway-style scheduled command, use the checked-in
+tenant-explicit wrapper from the repository root:
+
+```bash
+bash infra/scheduler/run-clinic-worker.sh \
+  00000000-0000-0000-0000-000000000001 retention_cleanup
+```
+
+The wrapper validates the UUID and allowlisted job type, launches exactly one
+tenant-scoped pass, and does not enumerate clinics. Configure one scheduled
+invocation per active clinic and job type in the deployment scheduler; keep the
+database URL and storage credentials in its secret store.
+
 The worker claims jobs with `FOR UPDATE SKIP LOCKED`, uses bounded retries and
 backoff, sets the same transaction-local tenant context as API requests, and
 logs only job type and outcome. Monitor queued age, failed count, and scan/export

@@ -27,6 +27,14 @@ The active queue collection is bounded by a signed continuation cursor, defaults
 to 50 entries, caps pages at 100, and preserves deterministic priority,
 check-in-time, and ID ordering while reapplying branch scope on every request.
 
+The authenticated `/operations` workspace now gives staff a focused follow-up
+and notification surface. It loads both bounded cursor collections, preserves
+the API's permission scope, exposes loading/empty/error/stale states, completes
+follow-ups with the returned optimistic version, and marks only the current
+user's notifications read through the CSRF-protected command. Desktop/mobile
+browser interaction and automated accessibility coverage are included; hosted
+tablet verification and provider-backed push delivery remain release gates.
+
 The follow-up collection uses the same bounded signed-cursor contract, ordered
 by due time, priority, creation time, and ID; branch scope is reapplied for each
 page and the computed overdue status remains server-derived.

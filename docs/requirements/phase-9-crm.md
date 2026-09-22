@@ -26,9 +26,26 @@ audited. `test_crm_care_team_integration.py` verifies that the relationship
 grants only its assigned doctor access and cannot be read or written across a
 tenant context.
 
-Remaining Phase 9 work: audited exports, privacy workflow integration, and
-execution of the full two-clinic CRM isolation suite against a local or hosted
-PostgreSQL instance.
+Remaining Phase 9 work is execution of the full two-clinic CRM isolation suite
+against a local or hosted PostgreSQL instance.
+
+Governance privacy requests and export target checks now reuse the CRM object
+scope predicate, including linked-doctor and active care-team visibility rather
+than branch scope alone. Export workers record a metadata-only `export.complete`
+audit event using the requesting actor after the private artifact is written.
+Hosted PostgreSQL execution is still required to prove the cross-tenant and
+linked-doctor privacy/export matrix.
+
+`test_privacy_requests_and_exports_are_isolated_and_foreign_targets_fail`
+extends the synthetic two-clinic matrix to privacy requests and export jobs;
+the local run is intentionally skipped without PostgreSQL, while CI/staging
+must execute it with the runtime role and forced RLS enabled.
+
+The protected `/privacy` workspace now integrates request creation, identity
+verification evidence, explicit approval, execution, export-job status, and
+short-lived one-time download access. It keeps patient IDs in server requests,
+requires CSRF for every mutation, and makes deletion execution an explicit
+operator action after the backend's identity and legal-hold gates.
 
 The staff browser CRM directory is now available at `/patients`. It uses the
 tenant-scoped patient list/search endpoint, exposes only basic directory fields,

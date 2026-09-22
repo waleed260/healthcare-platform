@@ -40,11 +40,18 @@ jobs:
             exit 1
           fi
       - name: Compile API
-        run: python -m compileall -q app tests ../../infra/performance
+        run: python -m compileall -q app tests ../../infra/performance ../../infra/release_gate.py ../../infra/check_rls_contract.py
+      - name: Validate release scripts
+        working-directory: .
+        run: bash -n infra/backup/backup.sh infra/backup/restore-verify.sh infra/scheduler/run-clinic-worker.sh
       - name: Verify committed OpenAPI contract
         run: |
           PYTHONPATH=. python scripts/export_openapi.py
           git -C ../.. diff --exit-code -- packages/contracts/openapi.json
+      - name: Verify generated TypeScript contract types
+        run: |
+          python ../../packages/contracts/generate_types.py
+          git -C ../.. diff --exit-code -- packages/contracts/openapi-types.ts
       - name: Create restricted runtime role
         env:
           PGPASSWORD: postgres
@@ -59,13 +66,14 @@ jobs:
         run: |
           alembic upgrade head --sql > /tmp/healthcare-offline.sql
           test -s /tmp/healthcare-offline.sql
+          python ../../infra/check_rls_contract.py /tmp/healthcare-offline.sql
           alembic downgrade -1
           alembic upgrade head
       - name: Run API and isolation tests
         env:
           TEST_ADMIN_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
           TEST_DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost:5432/healthcare
-        run: pytest
+        run: PYTHONPATH=.:../.. pytest
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -76,7 +84,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install
+      - run: npm ci
       - name: Dependency audit
         run: npm audit --omit=optional --audit-level=high
       - run: npm run lint
