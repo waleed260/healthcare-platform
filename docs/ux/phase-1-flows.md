@@ -1,4 +1,4 @@
-# Phase 1 UX flows
+# sPhase 1 UX flows
 
 ## Public entry
 
