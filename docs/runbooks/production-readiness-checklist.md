@@ -55,8 +55,9 @@ credentials, patient data, request bodies, tokens, or signed URLs in evidence.
 
 Attach the jurisdiction-specific retention approval, consent/privacy-request
 procedure owner, incident/runbook owner, scanner and storage-provider policy
-evidence, TLS/secrets configuration review, and the pilot clinic owner’s signed
-acceptance. The release evidence manifest may be marked true only after these
+evidence, TLS/secrets configuration review, optional browser-push VAPID
+credentials (see `docs/runbooks/browser-push.md`), and the pilot clinic owner’s
+signed acceptance. The release evidence manifest may be marked true only after these
 artifacts exist in the restricted evidence location.
 
 | Approval | Approver | Date / evidence link |

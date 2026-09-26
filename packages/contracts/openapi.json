@@ -10280,6 +10280,58 @@
         ]
       }
     },
+    "/api/v1/operations/notifications/push-config": {
+      "get": {
+        "description": "Expose only the public VAPID identity needed to create a subscription.",
+        "operationId": "push_config_api_v1_operations_notifications_push_config_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Push Config Api V1 Operations Notifications Push Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Config",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/notifications/push-subscriptions": {
       "get": {
         "operationId": "push_subscription_list_api_v1_operations_notifications_push_subscriptions_get",

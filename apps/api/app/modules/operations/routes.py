@@ -12,6 +12,8 @@ from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.operations.schemas import FollowUpAssign, FollowUpComplete, FollowUpCreate, FollowUpUpdate, NotificationRead, PushSubscriptionCreate, QueueCheckIn, QueueCommand, QueueReorder
+from app.modules.operations.push import vapid_public_key
+from app.core.config import get_settings
 from app.core.security import decode_cursor, encode_cursor, encrypt_field
 from app.modules.audit.service import record_event
 import json
@@ -521,6 +523,15 @@ def notification_mark_read(payload: NotificationRead, request: Request, db: Sess
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "notification_ids": [str(item) for item in payload.notification_ids]})
     db.commit()
     return {"data": {"marked_read": result.rowcount}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/notifications/push-config")
+def push_config(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    """Expose only the public VAPID identity needed to create a subscription."""
+    _authorized(db, session_token, "notification.read")
+    settings = get_settings()
+    db.commit()
+    return {"data": {"enabled": settings.push_enabled, "public_key": vapid_public_key(settings) if settings.push_enabled else None}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/notifications/push-subscriptions")

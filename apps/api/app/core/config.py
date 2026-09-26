@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     csrf_allowed_origins: str = "http://localhost:3000"
     cors_origins: str = ""
     sentry_dsn: str = ""
+    vapid_subject: str = ""
+    vapid_private_key: str = ""
+    vapid_public_key: str = ""
     session_cookie_name: str = "healthcare_session"
     public_app_url: str = "http://localhost:3000"
     public_website_domain: str = ""
@@ -40,6 +43,11 @@ class Settings(BaseSettings):
         return {origin.strip() for origin in value.split(",") if origin.strip()}
 
     @property
+    def push_enabled(self) -> bool:
+        """Browser push delivery is optional; it requires a VAPID identity."""
+        return bool(self.vapid_subject and self.vapid_private_key)
+
+    @property
     def field_encryption_keys(self) -> tuple[str, ...]:
         """Return the active encryption key followed by optional retired keys.
 
@@ -47,6 +55,17 @@ class Settings(BaseSettings):
         a staged key rotation. New ciphertext is always written with item zero.
         """
         return tuple(key.strip() for key in self.field_encryption_key.split(",") if key.strip())
+
+    @model_validator(mode="after")
+    def validate_push_configuration(self) -> "Settings":
+        # Push delivery stays opt-in, but a partially configured VAPID identity
+        # must fail closed rather than silently dropping browser notifications.
+        if self.vapid_subject or self.vapid_private_key or self.vapid_public_key:
+            if not (self.vapid_subject and self.vapid_private_key):
+                raise ValueError("VAPID_SUBJECT and VAPID_PRIVATE_KEY must be configured together")
+            if not (self.vapid_subject.startswith("mailto:") or self.vapid_subject.startswith("https://")):
+                raise ValueError("VAPID_SUBJECT must be a mailto: or https URL")
+        return self
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

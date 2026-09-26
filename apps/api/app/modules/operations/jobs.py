@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.tenant import set_tenant_context
+from app.modules.operations.push import deliver_notification_push
 
 JOB_BATCH_SIZE = 500
 
@@ -79,9 +80,15 @@ def overdue_job_key(task_id: UUID, due_at: datetime) -> str:
 
 
 def run_overdue_follow_up_job(db: Session, clinic_id: UUID, now: datetime | None = None) -> int:
-    """Create privacy-safe in-app notifications exactly once for overdue tasks."""
+    """Create privacy-safe in-app notifications exactly once for overdue tasks.
+
+    After the transaction commits, each new notification is also delivered to
+    the recipient's active browser-push subscriptions. Push delivery runs
+    outside the database transaction and never affects the stored result.
+    """
     current = now or datetime.now(timezone.utc)
     set_tenant_context(db, clinic_id)
+    created_notifications: list[dict] = []
     tasks = db.execute(text("""
         SELECT id, due_at, assignee_user_id
         FROM follow_up_tasks
@@ -107,12 +114,23 @@ def run_overdue_follow_up_job(db: Session, clinic_id: UUID, now: datetime | None
             WHERE ur.clinic_id = :clinic_id AND (:assignee IS NULL OR ur.user_id = :assignee)
         """), {"clinic_id": clinic_id, "assignee": task["assignee_user_id"]}).scalars().all()
         for user_id in recipients:
-            result = db.execute(text("""
+            notification_id = db.execute(text("""
                 INSERT INTO notifications (clinic_id, user_id, kind, title, body, source_job_key)
                 VALUES (:clinic_id, :user_id, 'follow_up_overdue', 'Follow-up needs attention', 'A follow-up task is overdue. Open the dashboard to review it.', :job_key)
                 ON CONFLICT (clinic_id, user_id, source_job_key) DO NOTHING
-            """), {"clinic_id": clinic_id, "user_id": user_id, "job_key": job_key})
-            created += result.rowcount
+                RETURNING id
+            """), {"clinic_id": clinic_id, "user_id": user_id, "job_key": job_key}).scalar_one_or_none()
+            if notification_id is None:
+                continue
+            created += 1
+            created_notifications.append({
+                "id": notification_id,
+                "user_id": user_id,
+                "kind": "follow_up_overdue",
+                "title": "Follow-up needs attention",
+                "body": "A follow-up task is overdue. Open the dashboard to review it.",
+            })
         db.execute(text("UPDATE background_jobs SET status = 'completed', updated_at = now() WHERE clinic_id = :clinic_id AND job_key = :job_key"), {"clinic_id": clinic_id, "job_key": job_key})
     db.commit()
+    deliver_notification_push(db, clinic_id, created_notifications)
     return created

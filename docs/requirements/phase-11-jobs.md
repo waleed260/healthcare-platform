@@ -25,6 +25,9 @@ PostgreSQL checks are skipped locally when integration URLs are not configured.
 
 The checked-in `infra/scheduler/run-clinic-worker.sh` wrapper provides a
 tenant-explicit, allowlisted one-pass command for managed cron/scheduler
-registration without clinic discovery. Remaining Phase 11 work is deployment
-registration for publish/backup schedules, browser-push delivery, provider
-alert wiring, and deployment-backed timezone execution evidence.
+registration without clinic discovery. Overdue-notification jobs also deliver browser push
+through `app/modules/operations/push.py` after the notification transaction
+commits; delivery failures are isolated, and subscriptions reported gone are
+revoked. Remaining Phase 11 work is deployment
+registration for publish/backup schedules, provider alert wiring, and
+deployment-backed timezone execution evidence.

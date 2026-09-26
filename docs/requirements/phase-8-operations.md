@@ -13,6 +13,7 @@ CSRF headers, conflict errors, refresh, empty, and loading states.
 | Dashboard source | `GET /api/v1/operations/dashboard-summary` derives counts from appointment/queue/follow-up tables |
 | Explicit operational reads | `GET /api/v1/operations/activity` exposes bounded, metadata-only operational audit activity; `GET /api/v1/operations/follow-ups/due-count` applies branch scope filters |
 | In-app notifications/follow-ups storage | Migration creates tenant-scoped tables with forced RLS |
+| Browser-push delivery | `app/modules/operations/push.py` encrypts (RFC 8291) and VAPID-signs (RFC 8292) notifications; gone subscriptions are revoked; `public/sw.js` renders them on the operations workspace |
 
 Follow-up create/update/assign/complete commands and notification read state are implemented in `app/modules/operations/routes.py` with tenant-scoped foreign-key validation and optimistic version checks. Appointment-linked follow-ups respect branch scopes. Queue lifecycle commands use `0021_queue_commands.py`, tenant-scoped branch authorization, dedicated appointment state transitions, and audit events. Browser push subscription registration/listing/revocation encrypts credentials at rest and returns no credential material. Notification reads are restricted to the authenticated user. Overdue remains a computed state from `due_at` and clinic time rather than a mutable status, while database-backed scheduled notification jobs are owned by Phase 11. Tablet browser verification remains part of the Phase 8 exit gate.
 Follow-up creation now rejects archived patients and mismatched patient/appointment pairs, and follow-up reads, counts, and command lookups exclude archived patients. Queue reads and commands likewise exclude archived appointments and archived patients.
@@ -33,7 +34,19 @@ the API's permission scope, exposes loading/empty/error/stale states, completes
 follow-ups with the returned optimistic version, and marks only the current
 user's notifications read through the CSRF-protected command. Desktop/mobile
 browser interaction and automated accessibility coverage are included; hosted
-tablet verification and provider-backed push delivery remain release gates.
+tablet verification remains a release gate.
+
+Browser-push delivery is implemented in `app/modules/operations/push.py`. The
+module encrypts each notification with RFC 8291 `aes128gcm` and authenticates
+the request with an ES256 VAPID JWT (RFC 8292), reusing the already pinned
+`cryptography` primitives rather than adding a delivery dependency. Only the
+stored privacy-safe title/body/kind are sent; subscriptions whose push service
+reports `404`/`410` are revoked. Delivery is opt-in through `VAPID_SUBJECT` and
+`VAPID_PRIVATE_KEY`, and a partially configured identity fails closed. The
+public VAPID key is exposed to the authenticated workspace through
+`GET /api/v1/operations/notifications/push-config`; the browser registers
+`public/sw.js`, subscribes, and stores the subscription through the existing
+encrypted registration endpoint.
 
 The follow-up collection uses the same bounded signed-cursor contract, ordered
 by due time, priority, creation time, and ID; branch scope is reapplied for each
