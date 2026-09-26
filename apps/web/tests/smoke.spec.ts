@@ -137,6 +137,36 @@ test.describe("core responsive browser flows", () => {
     expect(accessHeaders?.["x-document-expires"]).toBe("4102444800");
   });
 
+  test("reception queue completes the critical path on a tablet viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 834, height: 1112 });
+    const entry = { id: "queue-1", appointment_id: "appointment-1", status: "waiting" as const, checked_in_at: "2026-09-16T09:00:00Z", priority: 0, full_name: "Synthetic First", reference: "SYN-0001", starts_at: "2026-09-16T09:30:00Z", version: 1 };
+    let state: "waiting" | "in_consultation" | "completed" = "waiting";
+    const commands: Array<{ path: string; version: number | undefined; csrf: string }> = [];
+    await page.route("**/api/v1/operations/queue**", async (route) => {
+      const request = route.request();
+      if (request.method() === "GET") {
+        const visible = state === "completed" ? [] : [{ ...entry, status: state, version: state === "waiting" ? 1 : 2 }];
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: visible, meta: { next_cursor: null } }) });
+        return;
+      }
+      const path = new URL(request.url()).pathname;
+      commands.push({ path, version: (JSON.parse(request.postData() ?? "{}") as { expected_version?: number }).expected_version, csrf: request.headers()["x-csrf-token"] ?? "" });
+      state = path.endsWith("/start") ? "in_consultation" : "completed";
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...entry, status: state === "completed" ? "completed" : state, version: 2 } }) });
+    });
+    await page.context().addCookies([{ name: "csrf_token", value: "synthetic-csrf", url: "http://127.0.0.1:3000" }]);
+    await page.goto("/queue");
+    await expect(page.getByText("Synthetic First")).toBeVisible();
+    await expect(page.getByText("waiting")).toBeVisible();
+    await page.getByRole("button", { name: /start consultation/i }).click();
+    await expect(page.getByText("in consultation")).toBeVisible();
+    await page.getByRole("button", { name: "Complete" }).click();
+    await expect(page.getByText("The queue is clear")).toBeVisible();
+    expect(commands.map((command) => command.path)).toEqual(["/api/v1/operations/queue/queue-1/start", "/api/v1/operations/queue/queue-1/complete"]);
+    expect(commands.map((command) => command.version)).toEqual([1, 2]);
+    expect(commands.every((command) => command.csrf.length > 0)).toBe(true);
+  });
+
   test("queue appends the next cursor page", async ({ page }) => {
     let cursorRequests = 0;
     await page.route("**/api/v1/operations/queue*", async (route) => {
