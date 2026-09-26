@@ -174,6 +174,57 @@ test.describe("core responsive browser flows", () => {
     await expect.poll(() => markedRead).toBe(true);
   });
 
+  test("operations reports unavailable browser alerts when push is not configured", async ({ page }) => {
+    await page.route("**/api/v1/operations/notifications/push-config", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { enabled: false, public_key: null } }) });
+    });
+    await page.goto("/operations");
+    await expect(page.getByRole("heading", { name: "Push notifications" })).toBeVisible();
+    await expect(page.getByText("Browser alerts are not configured for this deployment.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /enable browser alerts/i })).toHaveCount(0);
+  });
+
+  test("operations enables browser alerts through the push subscription flow", async ({ page }) => {
+    const vapidKey = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(65)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    let subscribed = false;
+    await page.route("**/api/v1/operations/notifications/push-config", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { enabled: true, public_key: vapidKey } }) });
+    });
+    await page.route("**/api/v1/operations/notifications/push-subscriptions", async (route) => {
+      subscribed = true;
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ data: { endpoint: "https://push.example.test/synthetic" } }) });
+    });
+    await page.addInitScript(() => {
+      // Playwright's Chromium runs without a real push service, so stand in a
+      // minimal fake of the service-worker registration and push manager.
+      const fakeSubscription = {
+        endpoint: "https://push.example.test/synthetic",
+        toJSON: () => ({ endpoint: "https://push.example.test/synthetic", keys: { p256dh: "synthetic-p256dh", auth: "synthetic-auth" } }),
+      };
+      Object.defineProperty(navigator, "serviceWorker", {
+        value: {
+          register: async () => ({ pushManager: { getSubscription: async () => null, subscribe: async () => fakeSubscription } }),
+        },
+        configurable: true,
+      });
+      Object.defineProperty(window, "Notification", {
+        value: class extends EventTarget {
+          static permission = "default";
+          static requestPermission = async () => "granted";
+        },
+        configurable: true,
+      });
+    });
+    await page.goto("/operations");
+    await expect(page.getByRole("heading", { name: "Push notifications" })).toBeVisible();
+    const enable = page.getByRole("button", { name: /enable browser alerts/i });
+    await expect(enable).toBeVisible();
+    await enable.click();
+    await expect(page.getByText("Alerts are enabled on this device.")).toBeVisible();
+    await expect(page.getByText("enabled", { exact: true })).toBeVisible();
+    await expect.poll(() => subscribed).toBe(true);
+  });
+
   test("privacy workspace records and approves a synthetic access request", async ({ page }) => {
     let created = false;
     let approved = false;

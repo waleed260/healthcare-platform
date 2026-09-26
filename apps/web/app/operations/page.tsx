@@ -22,7 +22,7 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-type PushState = "unsupported" | "unavailable" | "off" | "on" | "denied" | "error";
+type PushState = "checking" | "unsupported" | "unavailable" | "off" | "on" | "denied" | "error";
 
 function decodeApplicationServerKey(value: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
@@ -42,7 +42,7 @@ export default function OperationsPage() {
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
-  const [pushState, setPushState] = useState<PushState>("off");
+  const [pushState, setPushState] = useState<PushState>("checking");
   const [pushKey, setPushKey] = useState<string | null>(null);
 
   const load = useCallback(async (append = false) => {
@@ -181,8 +181,9 @@ export default function OperationsPage() {
           <section className="detail-card operations-card" aria-labelledby="notification-heading"><div className="card-heading"><div><p className="eyebrow">INBOX</p><h2 id="notification-heading">Notifications</h2></div><span className="directory-count">{notifications.filter((item) => !item.read_at).length} unread</span></div>{loading && notifications.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading notifications</strong><span>Checking your private inbox…</span></div>}{!loading && !error && notifications.length === 0 && <div className="dashboard-empty"><strong>Your inbox is clear</strong><span>Operational alerts will appear here.</span></div>}{notifications.length > 0 && <div className="operations-list">{notifications.map((item) => <article className={item.read_at ? "operations-row notification-read" : "operations-row notification-unread"} key={item.id}><div><strong>{item.title}</strong><small>{item.body} · {formatDate(item.created_at)}</small></div>{!item.read_at && <button className="ghost-button" type="button" onClick={() => void markRead(item)} disabled={working === item.id}>Mark read <span>✓</span></button>}</article>)}</div>}{nextNotification && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more notifications <span>↓</span></button>}</section>
         </div>
         <section className="detail-card operations-card push-card" aria-labelledby="push-heading">
-          <div className="card-heading"><div><p className="eyebrow">BROWSER ALERTS</p><h2 id="push-heading">Push notifications</h2></div><span className="directory-count">{pushState === "on" ? "enabled" : "off"}</span></div>
+          <div className="card-heading"><div><p className="eyebrow">BROWSER ALERTS</p><h2 id="push-heading">Push notifications</h2></div><span className="directory-count">{pushState === "on" ? "enabled" : pushState === "checking" ? "checking…" : "off"}</span></div>
           <p className="privacy-caption">Receive a privacy-safe alert on this device when a follow-up becomes overdue. Only the stored alert title and message are sent; patient details stay in the protected workspace.</p>
+          {pushState === "checking" && <p className="privacy-caption" role="status">Checking browser alert support…</p>}
           {pushState === "unsupported" && <p className="privacy-caption" role="status">This browser does not support push notifications.</p>}
           {pushState === "unavailable" && <p className="privacy-caption" role="status">Browser alerts are not configured for this deployment.</p>}
           {pushState === "denied" && <p className="privacy-caption" role="status">Notifications are blocked in your browser settings.</p>}
