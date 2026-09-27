@@ -37,6 +37,38 @@ def test_appointment_authorization_passes_object_branch_scope(monkeypatch) -> No
     assert calls == [("appointment.cancel", "branch-1")]
 
 
+def test_appointment_list_applies_doctor_and_service_filters(monkeypatch) -> None:
+    clinic_id, user_id = uuid4(), uuid4()
+    branch_id, doctor_id, service_id = uuid4(), uuid4(), uuid4()
+    session = {"clinic_id": clinic_id, "user_id": user_id}
+    rows = Mock()
+    rows.mappings.return_value.all.return_value = []
+    db = Mock()
+    db.execute.return_value = rows
+    monkeypatch.setattr(appointment_routes, "_staff_authorized", lambda db, token, permission, branch_id=None: session)
+    request = SimpleNamespace(state=SimpleNamespace(request_id=str(uuid4())))
+
+    result = appointment_routes.appointment_list(
+        request,
+        branch_id=branch_id,
+        doctor_id=doctor_id,
+        service_id=service_id,
+        appointment_status="confirmed",
+        cursor=None,
+        limit=50,
+        db=db,
+        session_token="session",
+    )
+
+    sql = str(db.execute.call_args.args[0])
+    params = db.execute.call_args.args[1]
+    assert result["data"] == []
+    assert ":doctor_id IS NULL OR doctor_id = :doctor_id" in sql
+    assert ":service_id IS NULL OR service_id = :service_id" in sql
+    assert params["doctor_id"] == doctor_id
+    assert params["service_id"] == service_id
+
+
 def test_idempotent_booking_replay_returns_committed_result(monkeypatch) -> None:
     clinic_id = uuid4()
     db = Mock()

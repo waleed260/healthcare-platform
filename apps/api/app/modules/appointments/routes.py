@@ -219,10 +219,10 @@ def _audit(db: Session, request: Request, session: dict, action: str, appointmen
 
 
 @appointment_router.get("")
-def appointment_list(request: Request, branch_id: UUID | None = Query(default=None), appointment_status: str | None = Query(default=None, alias="status", max_length=40), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def appointment_list(request: Request, branch_id: UUID | None = Query(default=None), doctor_id: UUID | None = Query(default=None), service_id: UUID | None = Query(default=None), appointment_status: str | None = Query(default=None, alias="status", max_length=40), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _staff_authorized(db, session_token, "appointment.read", branch_id=branch_id)
     cursor_values = decode_cursor(cursor, "appointments") if cursor else None
-    if cursor and (cursor_values is None or cursor_values.get("branch_id") != str(branch_id) or cursor_values.get("status") != (appointment_status or "")):
+    if cursor and (cursor_values is None or cursor_values.get("branch_id") != str(branch_id) or cursor_values.get("doctor_id") != str(doctor_id) or cursor_values.get("service_id") != str(service_id) or cursor_values.get("status") != (appointment_status or "")):
         raise _error("INVALID_INPUT", "The page cursor is invalid or does not match these filters.", status.HTTP_400_BAD_REQUEST)
     try:
         after_starts_at = datetime.fromisoformat(cursor_values["starts_at"]) if cursor_values else None
@@ -234,6 +234,8 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
         FROM appointments
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (:branch_id IS NULL OR branch_id = :branch_id)
+          AND (:doctor_id IS NULL OR doctor_id = :doctor_id)
+          AND (:service_id IS NULL OR service_id = :service_id)
           AND (
             NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
             OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = appointments.branch_id)
@@ -241,12 +243,12 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
           AND (:appointment_status IS NULL OR status = :appointment_status)
           AND (:after_starts_at IS NULL OR starts_at > :after_starts_at OR (starts_at = :after_starts_at AND id > :after_id))
         ORDER BY starts_at, id LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id, "appointment_status": appointment_status, "after_starts_at": after_starts_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id, "doctor_id": doctor_id, "service_id": service_id, "appointment_status": appointment_status, "after_starts_at": after_starts_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = None
     if has_next and rows:
-        next_cursor = encode_cursor("appointments", {"branch_id": str(branch_id), "status": appointment_status or "", "starts_at": rows[-1]["starts_at"].isoformat(), "id": str(rows[-1]["id"])})
+        next_cursor = encode_cursor("appointments", {"branch_id": str(branch_id), "doctor_id": str(doctor_id), "service_id": str(service_id), "status": appointment_status or "", "starts_at": rows[-1]["starts_at"].isoformat(), "id": str(rows[-1]["id"])})
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 

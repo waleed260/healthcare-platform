@@ -4176,6 +4176,40 @@
           },
           {
             "in": "query",
+            "name": "doctor_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Doctor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "required": false,
             "schema": {
@@ -13511,6 +13545,51 @@
         ]
       }
     },
+    "/api/v1/public/sites/slug/{clinic_slug}": {
+      "get": {
+        "description": "Return the published snapshot for the app's patient-facing slug route.",
+        "operationId": "public_site_by_slug_api_v1_public_sites_slug__clinic_slug__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clinic_slug",
+            "required": true,
+            "schema": {
+              "title": "Clinic Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Public Site By Slug Api V1 Public Sites Slug  Clinic Slug  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Site By Slug",
+        "tags": [
+          "public-websites"
+        ]
+      }
+    },
     "/api/v1/public/sites/{hostname}": {
       "get": {
         "operationId": "public_site_api_v1_public_sites__hostname__get",
@@ -18092,6 +18171,68 @@
           }
         },
         "summary": "Rollback Website",
+        "tags": [
+          "websites"
+        ]
+      }
+    },
+    "/api/v1/websites/{website_id}/validation": {
+      "get": {
+        "description": "Run the same draft checks used by publish without mutating the website.",
+        "operationId": "website_validation_api_v1_websites__website_id__validation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "website_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Website Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Website Validation Api V1 Websites  Website Id  Validation Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Website Validation",
         "tags": [
           "websites"
         ]
