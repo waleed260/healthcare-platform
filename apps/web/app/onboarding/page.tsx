@@ -35,6 +35,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [branchForm, setBranchForm] = useState({ code: "main", name: "Main clinic", timezone: "UTC" });
   const [doctorName, setDoctorName] = useState("");
   const [serviceName, setServiceName] = useState("");
@@ -65,8 +66,8 @@ export default function OnboardingPage() {
   useEffect(() => { void loadSetup(); }, [loadSetup]);
 
   async function action(key: string, callback: () => Promise<void>) {
-    setBusy(key); setError(null);
-    try { await callback(); await loadSetup(); }
+    setBusy(key); setError(null); setNotice(null);
+    try { await callback(); setNotice(key === "complete" ? "Setup completed. Your workspace is ready." : "Saved. Your setup checklist has been refreshed."); await loadSetup(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "That setup action could not be completed."); }
     finally { setBusy(null); }
   }
@@ -85,7 +86,7 @@ export default function OnboardingPage() {
   return <main className="setup-page"><div className="setup-panel">
     <header className="setup-header"><Link className="wordmark" href="/">care<span>/</span>fully</Link><Link className="text-link" href="/dashboard">Workspace <span>→</span></Link></header>
     <div className="setup-intro"><p className="eyebrow">CLINIC SETUP</p><h1>Make it <em>yours.</em></h1><p>Build the essentials in a few calm passes. Leave at any time; your progress is saved as you go.</p></div>
-    {error && <div className="workspace-alert" role="alert"><span>{error}</span><button className="ghost-button" type="button" onClick={() => void loadSetup()}>Try again <span>↻</span></button></div>}
+    {error && <div className="workspace-alert" role="alert"><span>{error}</span><button className="ghost-button" type="button" onClick={() => void loadSetup()}>Try again <span>↻</span></button></div>}{notice && <div className="success-alert" role="status">{notice}</div>}
     {loading && <div className="dashboard-empty" role="status"><strong>Loading setup</strong><span>Checking your clinic workspace…</span></div>}
     {!loading && setup && <>
       <ol className="setup-steps" aria-label="Setup progress">{Object.entries(setup.steps).map(([key, complete]) => <li className={complete ? "setup-step complete" : "setup-step"} key={key}><span className="step-mark" aria-hidden="true">{complete ? "✓" : ""}</span><span>{labels[key] ?? key.replaceAll("_", " ")}</span><span className="step-state">{complete ? "Ready" : "To do"}</span></li>)}</ol>
