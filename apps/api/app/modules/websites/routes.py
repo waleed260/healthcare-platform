@@ -136,6 +136,36 @@ def version_list(website_id: UUID, request: Request, cursor: str | None = Query(
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
+@router.get("/{website_id}/validation")
+def website_validation(website_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    """Run the same draft checks used by publish without mutating the website."""
+    session = _authorized(db, session_token, "website.read")
+    draft = db.execute(text("""
+        SELECT v.snapshot
+        FROM websites w
+        JOIN website_versions v ON v.id = w.draft_version_id AND v.website_id = w.id AND v.clinic_id = w.clinic_id
+        WHERE w.clinic_id = :clinic_id AND w.id = :website_id AND w.archived_at IS NULL
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id}).mappings().one_or_none()
+    if draft is None:
+        raise _error("NOT_FOUND", "Draft version not found.", status.HTTP_404_NOT_FOUND)
+    pending_media = db.execute(text("""
+        SELECT COUNT(*)
+        FROM website_media
+        WHERE clinic_id = :clinic_id AND is_public = false AND scan_status <> 'clean'
+    """), {"clinic_id": session["clinic_id"]}).scalar_one()
+    if pending_media:
+        result = {"valid": False, "code": "PUBLISH_VALIDATION_FAILED", "message": "All website media must pass scanning before publishing."}
+    else:
+        try:
+            validate_publish_snapshot(draft["snapshot"])
+        except ValueError as exc:
+            result = {"valid": False, "code": "PUBLISH_VALIDATION_FAILED", "message": str(exc)}
+        else:
+            result = {"valid": True, "code": None, "message": None}
+    db.commit()
+    return {"data": result, "meta": {"request_id": request.state.request_id}}
+
+
 @router.get("/{website_id}/pages")
 def page_list(website_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "website.read")

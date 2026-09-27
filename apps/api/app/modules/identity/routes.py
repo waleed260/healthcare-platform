@@ -106,7 +106,27 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db), 
 @router.get("/me")
 def me(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _session_or_401(db, session_token)
-    return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "display_name": session["display_name"], "email": session["normalized_email"]}, "meta": {"request_id": request.state.request_id}}
+    permissions: list[str] = []
+    if session["clinic_id"] is not None:
+        permissions = list(db.execute(text("""
+            SELECT DISTINCT rp.permission_code
+            FROM user_roles ur
+            JOIN role_permissions rp ON rp.role_id = ur.role_id
+            WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id
+            ORDER BY rp.permission_code
+        """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"]}).scalars().all())
+        support_permissions = db.execute(text("""
+            SELECT DISTINCT jsonb_object_keys(s.permissions) AS permission_code
+            FROM support_access_sessions s
+            WHERE s.clinic_id = :clinic_id
+              AND s.revoked_at IS NULL
+              AND s.starts_at <= now()
+              AND s.expires_at > now()
+              AND s.permissions IS NOT NULL
+              AND s.id::text = NULLIF(current_setting('app.support_access_id', true), '')
+        """), {"clinic_id": session["clinic_id"]}).scalars().all()
+        permissions = sorted(set(permissions).union(support_permissions))
+    return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "display_name": session["display_name"], "email": session["normalized_email"], "permissions": permissions}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/sessions/revoke")
