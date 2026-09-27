@@ -627,6 +627,29 @@ def public_media(hostname: str, media_id: UUID, request: Request, db: Session = 
     return Response(content=content, media_type=row["mime_type"], headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
+@public_router.get("/slug/{clinic_slug}")
+def public_site_by_slug(clinic_slug: str, request: Request, db: Session = Depends(get_db)) -> dict:
+    """Return the published snapshot for the app's patient-facing slug route."""
+    normalized = clinic_slug.strip().casefold()
+    if len(normalized) > 120 or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", normalized):
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    clinic_id = db.execute(
+        text("SELECT id FROM clinics WHERE slug = :slug AND status = 'active' AND archived_at IS NULL"),
+        {"slug": normalized},
+    ).scalar_one_or_none()
+    if clinic_id is None:
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    set_tenant_context(db, clinic_id)
+    row = db.execute(text("""
+        SELECT w.id, v.snapshot
+        FROM websites w JOIN website_versions v ON v.clinic_id = w.clinic_id AND v.id = w.live_version_id
+        WHERE w.clinic_id = :clinic_id AND w.status = 'published' AND w.archived_at IS NULL
+    """), {"clinic_id": clinic_id}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    return {"data": {"website_id": row["id"], "snapshot": row["snapshot"]}, "meta": {"request_id": request.state.request_id, "cache_control": "public, max-age=60"}}
+
+
 @public_router.get("/{hostname}")
 def public_site(hostname: str, request: Request, db: Session = Depends(get_db)) -> dict:
     normalized = _hostname(hostname)
