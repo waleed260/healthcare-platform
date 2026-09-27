@@ -88,6 +88,7 @@ export default function OnboardingPage() {
     <div className="setup-intro"><p className="eyebrow">CLINIC SETUP</p><h1>Make it <em>yours.</em></h1><p>Build the essentials in a few calm passes. Leave at any time; your progress is saved as you go.</p></div>
     {error && <div className="workspace-alert" role="alert"><span>{error}</span><button className="ghost-button" type="button" onClick={() => void loadSetup()}>Try again <span>↻</span></button></div>}{notice && <div className="success-alert" role="status">{notice}</div>}
     {loading && <div className="dashboard-empty" role="status"><strong>Loading setup</strong><span>Checking your clinic workspace…</span></div>}
+    {!loading && !setup && !error && <div className="dashboard-empty"><strong>Setup is not available yet</strong><span>Refresh to check your clinic workspace again.</span><button className="button button-secondary" type="button" onClick={() => void loadSetup()}>Check again <span>↻</span></button></div>}
     {!loading && setup && <>
       <ol className="setup-steps" aria-label="Setup progress">{Object.entries(setup.steps).map(([key, complete]) => <li className={complete ? "setup-step complete" : "setup-step"} key={key}><span className="step-mark" aria-hidden="true">{complete ? "✓" : ""}</span><span>{labels[key] ?? key.replaceAll("_", " ")}</span><span className="step-state">{complete ? "Ready" : "To do"}</span></li>)}</ol>
       <section className="setup-actions-grid" aria-label="Setup actions">

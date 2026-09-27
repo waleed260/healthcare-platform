@@ -19,8 +19,11 @@ async function installSyntheticApi(page: Page): Promise<void> {
     if (path.endsWith("/clinic/onboarding")) {
       data = { completed: false, completed_at: null, steps: {}, ready_to_complete: false };
     }
+    if (path.endsWith("/auth/me")) {
+      data = { user_id: "synthetic-user", clinic_id: clinic.id, display_name: "Synthetic Staff", permissions: ["queue.read", "queue.manage", "appointment.read", "appointment.approve", "appointment.check_in", "appointment.cancel", "appointment.reschedule", "appointment.manage", "patient.read", "patient.archive", "website.read", "website.edit", "website.publish"] };
+    }
     if (path.endsWith("/dashboard-summary")) {
-      data = { today_appointments: 0, pending_approvals: 0, followups_due: 0 };
+      data = { today_appointments: 0, pending_approvals: 0, followups_due: 0, waiting_patients: 0, no_shows: 0 };
     }
     if (path.endsWith("/public/catalog")) {
       data = {
@@ -356,6 +359,7 @@ test.describe("core responsive browser flows", () => {
       if (path.endsWith("/pages") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [pageRecord] }) });
       if (path.endsWith("/versions") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [{ id: "version-1", version_number: 1, published_at: null, created_at: "2026-01-01T00:00:00Z" }] }) });
       if (path.endsWith("/sections") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [section] }) });
+      if (path.endsWith("/validation") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { valid: true, code: null, message: null } }) });
       if (path.endsWith("/section-1") && route.request().method() === "PATCH") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...section, content: { ...section.content, heading: "Updated welcome" }, version: 2 } }) });
       if (path.endsWith("/publish") && route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...website, status: "published", version: 2, live_version_id: "version-2" } }) });
       return route.fallback();
