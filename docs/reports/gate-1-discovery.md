@@ -18,11 +18,12 @@ error/retry states are present in the current branch.
 
 - `npm run lint:web` — passed with five existing Next navigation warnings.
 - `npm run build:web` — passed.
-- API pytest — not runnable in the managed shell because Python test
-  dependencies are not installed; CI installs `apps/api/requirements.txt`.
+- `apps/api/.venv/bin/python -m pytest -q` — 130 passed, 13 skipped.
+- `APP_ENV=production PYTHONPATH=. apps/api/.venv/bin/python apps/api/scripts/seed_demo.py` — refused as required; `APP_ENV=local` seed script compiles successfully.
 
 ## Risks / deviations
 
-The dev seed script and MCP screenshot remain open prerequisites for the full
-Gate 1 exit. Optional charts remain intentionally omitted because the map has
-no confirmed aggregate endpoint.
+The seed script still requires a local migrated PostgreSQL instance for a full
+runtime insert/read verification. The MCP screenshot remains an external
+desktop prerequisite. Optional charts remain intentionally omitted because the
+map has no confirmed aggregate endpoint.
