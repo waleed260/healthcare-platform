@@ -16,7 +16,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: `npm run build && HOSTNAME=127.0.0.1 PORT=${port} node .next/standalone/apps/web/server.js`,
+    command: `npm run build && npm run start -- -H 127.0.0.1 -p ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
