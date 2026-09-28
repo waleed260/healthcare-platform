@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import type { PrivacyRequestCreateRequestTypeValue } from "../../../../packages/contracts/openapi-types";
+import type { PrivacyRequestCreateRequestTypeValue } from "../../../../../packages/contracts/openapi-types";
 
 type RequestRow = { id: string; patient_id: string; request_type: string; status: string; reason: string; requested_at: string; identity_verified_at: string | null };
 type ExportRow = { id: string; export_type: string; status: string; patient_id: string | null; created_at: string; expires_at: string | null };
