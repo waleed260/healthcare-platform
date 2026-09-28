@@ -60,7 +60,6 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
   expect(bookingCreated).toBe(true);
 
   await page.goto("/schedule");
-  await page.getByRole("button", { name: "Next period" }).click();
   await expect(page.getByText("SYN-BOOK-001")).toBeVisible();
   await page.locator(".calendar-appointment").first().click({ force: true });
   await page.getByRole("button", { name: "Approve" }).click({ force: true });
@@ -71,7 +70,7 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
   await page.goto("/queue");
   await expect(page.getByText("SYN-BOOK-001")).toBeVisible();
   await page.getByRole("button", { name: /start consultation/i }).click();
-  await expect(page.getByText("in consultation")).toBeVisible();
+  await expect(page.getByText("in consultation", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Complete" }).click();
   await expect(page.getByText("The queue is clear")).toBeVisible();
   expect(appointmentStatus).toBe("completed");
