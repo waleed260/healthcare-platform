@@ -12,6 +12,9 @@ enabled.
 
 - Desktop screenshot captured at 1440×900.
 - Mobile screenshot captured at 375×800.
+- Playwright MCP screenshots are committed at
+  [`1440`](screenshots/gate-3-landing-1440-mcp.png) and
+  [`375`](screenshots/gate-3-landing-375-mcp.png).
 - `npm run build:web` — passed.
 
 ## Risks / deviations

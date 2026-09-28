@@ -15,9 +15,11 @@ The local Playwright MCP setup is documented in
 
 - `npm run dev:web` — local Next.js server ready on port 3000.
 - `npm run build:web` — passed.
-- Visible MCP screenshot — requires the human desktop bridge prerequisite.
+- Playwright MCP opened `http://127.0.0.1:3001/` and returned a screenshot:
+  [`gate-0-landing-mcp.png`](screenshots/gate-0-landing-mcp.png).
 
 ## Risks / deviations
 
-The browser bridge is external to this repository and was not available in the
-managed shell, so no MCP screenshot is claimed here.
+The MCP browser used the local dev server on port 3001. The API was not running
+in this shell, so protected-page screenshots intentionally show the product's
+plain-language unavailable-workspace state rather than seeded data.

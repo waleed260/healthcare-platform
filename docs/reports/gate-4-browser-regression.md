@@ -11,6 +11,10 @@ retry and failure screenshots/video enabled.
 - Coverage includes booking conflict handling, onboarding → website publish → public booking → approval/check-in → queue consultation completion, tenant isolation, and five-role RBAC visibility/control checks.
 - The Playwright web server now builds and starts the production app so the
   suite does not depend on Turbopack/HMR state.
+- The post-fix core workflow and all five RBAC role cases passed in a fresh
+  production-port rerun: 12/12 across Chromium and mobile. The full 16/16 gate
+  run remains recorded above; booking and tenant specs were unaffected by the
+  response-parser change.
 
 ## Risks / deviations
 

@@ -23,10 +23,16 @@ keyboard-visible focus styling.
 - `npm run build:web` — passed.
 - Desktop dashboard screenshot — captured locally at 1440px; dark sidebar and
   shared top bar visible.
+- Playwright MCP screenshots captured at 1920px, 1024px, and 768px:
+  [`1920`](screenshots/gate-2-dashboard-1920-mcp.png),
+  [`1024`](screenshots/gate-2-dashboard-1024-mcp.png), and
+  [`768`](screenshots/gate-2-dashboard-768-mcp.png).
+- Unavailable-backend state captured at 1920px:
+  [`error state`](screenshots/gate-2-dashboard-error-state-mcp.png).
 
 ## Risks / deviations
 
-The live authenticated dashboard could not be data-verified without a running
-API session/database. The existing page bodies still contain legacy hidden
-chrome markup beneath the route-group shell; it is visually suppressed and is
-the next cleanup target.
+The live authenticated dashboard still needs a migrated local database and
+runtime login to verify seeded numbers. The existing page bodies still contain
+legacy hidden chrome markup beneath the route-group shell; it is visually
+suppressed and remains a cleanup target.

@@ -21,6 +21,10 @@ function formatTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
+async function jsonOrNull(response: Response): Promise<unknown> {
+  return response.json().catch(() => null);
+}
+
 export default function DashboardPage() {
   const [state, setState] = useState<ApiState>(initialState);
   const loadWorkspace = useCallback(async () => {
@@ -30,11 +34,11 @@ export default function DashboardPage() {
         fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" }),
         fetch("/api/v1/appointments", { credentials: "include", cache: "no-store" }),
       ]);
-      const summaryPayload = await summaryResponse.json();
-      const appointmentsPayload = await appointmentsResponse.json();
+      const summaryPayload = await jsonOrNull(summaryResponse) as { data?: Summary } | null;
+      const appointmentsPayload = await jsonOrNull(appointmentsResponse) as { data?: Appointment[] } | null;
       if (!summaryResponse.ok) throw new Error(responseMessage(summaryResponse, summaryPayload));
       if (!appointmentsResponse.ok) throw new Error(responseMessage(appointmentsResponse, appointmentsPayload));
-      setState({ summary: summaryPayload.data as Summary, appointments: (appointmentsPayload.data ?? []) as Appointment[], loading: false, error: null, refreshedAt: new Date() });
+      setState({ summary: summaryPayload?.data as Summary, appointments: (appointmentsPayload?.data ?? []) as Appointment[], loading: false, error: null, refreshedAt: new Date() });
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error: error instanceof Error ? error.message : "The workspace could not be loaded." }));
     }
