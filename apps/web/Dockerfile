@@ -11,7 +11,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_URL=http://api:8000
-COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/standalone/apps/web ./
 COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 3000
 USER node
