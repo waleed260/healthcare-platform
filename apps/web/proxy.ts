@@ -14,7 +14,7 @@ export function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${development ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${requestNonce}' 'unsafe-inline'${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "connect-src 'self'",
