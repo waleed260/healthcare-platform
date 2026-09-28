@@ -7,11 +7,12 @@ retry and failure screenshots/video enabled.
 
 ## Commands and results
 
-- `npx playwright test booking-concurrency.spec.ts tenant-isolation.spec.ts rbac-flows.spec.ts core-workflow.spec.ts` — currently fails 16/16 in the managed dev harness.
-- Failure evidence shows the booking/onboarding pages remain in their initial
-  client loading state; the route fixtures receive no API request.
-- Browser diagnostics identified and published a development CSP compatibility
-  fix in `b400904`; a clean rerun is still required.
+- `npx playwright test booking-concurrency.spec.ts tenant-isolation.spec.ts rbac-flows.spec.ts core-workflow.spec.ts` against the built production server — 2/16 passed (booking concurrency on Chromium and mobile); 14 failed in onboarding, queue, patients, and the core workflow.
+- Production-server isolation confirms the booking fixture and its conflict
+  assertion are healthy. Remaining failures are loading-state failures where
+  the fixture-backed client collections do not reach their ready state.
+- The Playwright web server now builds and starts the production app so the
+  suite does not depend on Turbopack/HMR state.
 
 ## Risks / deviations
 
