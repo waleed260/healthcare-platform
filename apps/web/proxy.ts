@@ -8,13 +8,14 @@ function nonce(): string {
 
 export function proxy(request: NextRequest) {
   const requestNonce = nonce();
+  const development = process.env.NODE_ENV === "development";
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", requestNonce);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${requestNonce}' 'strict-dynamic'`,
-    `style-src 'self' 'nonce-${requestNonce}'`,
+    development ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : `script-src 'self' 'nonce-${requestNonce}' 'strict-dynamic'`,
+    development ? "style-src 'self' 'unsafe-inline'" : `style-src 'self' 'nonce-${requestNonce}'`,
     "img-src 'self' data:",
     "connect-src 'self'",
     "font-src 'self'",
