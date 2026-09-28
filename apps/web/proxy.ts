@@ -14,7 +14,7 @@ export function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${requestNonce}' 'unsafe-inline'${development ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'nonce-${requestNonce}'${development ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "connect-src 'self'",
@@ -24,6 +24,7 @@ export function proxy(request: NextRequest) {
     "base-uri 'self'",
     "form-action 'self'",
   ].join("; ");
+  requestHeaders.set("Content-Security-Policy", csp);
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
