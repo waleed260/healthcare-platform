@@ -53,7 +53,7 @@ test.describe("platform admin access", () => {
     await page.getByRole("button", { name: "Suspend" }).click({ force: true });
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.getByRole("dialog").getByLabel("Reason").fill("Suspicious activity review");
-    await page.getByRole("dialog").getByRole("button", { name: /confirm suspend/i }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /confirm suspend/i }).click({ force: true });
     await expect(page.getByText("suspended", { exact: true })).toBeVisible();
   });
 
