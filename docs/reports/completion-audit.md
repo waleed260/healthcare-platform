@@ -10,7 +10,7 @@ is pending.
 
 | Requirement | Current evidence | Status |
 | --- | --- | --- |
-| CI API/container/web jobs green on `main` | No current GitHub run is reachable from this environment; the prior web failure predates the current fixes. | Pending hosted verification |
+| CI API/container/web jobs green on `main` | GitHub Actions Run 58 for commit `c5733c4` completed successfully; API, web, and container jobs are green. | Verified hosted CI |
 | PostgreSQL seed, reseed, counts, and runtime RLS visibility | `infra/verify_seed.py`, CI wiring, and native setup helper `scripts/dev/setup-local-postgres.sh` exist; no PostgreSQL service is available in this environment. | Host verification pending |
 | Zero unexplained API skips | Local unit run: 143 passed, 13 integration skips without configured PostgreSQL URLs. | PostgreSQL run required |
 | Web lint and TypeScript | `npm run lint:web` and `npx tsc --noEmit -p apps/web/tsconfig.json` pass. | Verified |
