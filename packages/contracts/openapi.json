@@ -573,6 +573,34 @@
         "title": "CatalogStatusUpdate",
         "type": "object"
       },
+      "ClinicLifecycleUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "pattern": "^(approve|suspend|reactivate)$",
+            "title": "Action",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "reason",
+          "expected_version"
+        ],
+        "title": "ClinicLifecycleUpdate",
+        "type": "object"
+      },
       "ClinicStatusUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -1693,6 +1721,57 @@
         "title": "PlanLimitUpdate",
         "type": "object"
       },
+      "PlatformSupportAccessCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_by_user_id": {
+            "format": "uuid",
+            "title": "Approved By User Id",
+            "type": "string"
+          },
+          "clinic_id": {
+            "format": "uuid",
+            "title": "Clinic Id",
+            "type": "string"
+          },
+          "expires_in_minutes": {
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Expires In Minutes",
+            "type": "integer"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Permissions",
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "requested_by_user_id": {
+            "format": "uuid",
+            "title": "Requested By User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clinic_id",
+          "requested_by_user_id",
+          "approved_by_user_id",
+          "reason",
+          "permissions",
+          "expires_in_minutes"
+        ],
+        "title": "PlatformSupportAccessCreate",
+        "type": "object"
+      },
       "PrivacyIdentityVerify": {
         "additionalProperties": false,
         "properties": {
@@ -2673,6 +2752,27 @@
         "title": "TagCreate",
         "type": "object"
       },
+      "TenantIsolationCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "clinic_a_id": {
+            "format": "uuid",
+            "title": "Clinic A Id",
+            "type": "string"
+          },
+          "clinic_b_id": {
+            "format": "uuid",
+            "title": "Clinic B Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clinic_a_id",
+          "clinic_b_id"
+        ],
+        "title": "TenantIsolationCheck",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -3298,6 +3398,86 @@
         ]
       }
     },
+    "/api/v1/admin/audit": {
+      "get": {
+        "operationId": "platform_audit_search_api_v1_admin_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Platform Audit Search Api V1 Admin Audit Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Platform Audit Search",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
     "/api/v1/admin/clinics": {
       "get": {
         "operationId": "clinics_list_api_v1_admin_clinics_get",
@@ -3373,6 +3553,93 @@
           }
         },
         "summary": "Clinics List",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
+    "/api/v1/admin/clinics/{clinic_id}/lifecycle": {
+      "post": {
+        "operationId": "clinic_lifecycle_api_v1_admin_clinics__clinic_id__lifecycle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clinic_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Clinic Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClinicLifecycleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clinic Lifecycle Api V1 Admin Clinics  Clinic Id  Lifecycle Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clinic Lifecycle",
         "tags": [
           "platform-admin"
         ]
@@ -3460,6 +3727,69 @@
           }
         },
         "summary": "Clinic Retention Policy Assign",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
+    "/api/v1/admin/exports": {
+      "get": {
+        "operationId": "platform_export_list_api_v1_admin_exports_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Platform Export List Api V1 Admin Exports Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Platform Export List",
         "tags": [
           "platform-admin"
         ]
@@ -3767,6 +4097,69 @@
         ]
       }
     },
+    "/api/v1/admin/privacy-requests": {
+      "get": {
+        "operationId": "platform_privacy_request_list_api_v1_admin_privacy_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Platform Privacy Request List Api V1 Admin Privacy Requests Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Platform Privacy Request List",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
     "/api/v1/admin/retention-policies": {
       "get": {
         "operationId": "retention_policy_list_api_v1_admin_retention_policies_get",
@@ -3999,6 +4392,132 @@
         ]
       }
     },
+    "/api/v1/admin/support-access": {
+      "get": {
+        "operationId": "support_access_list_api_v1_admin_support_access_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Support Access List Api V1 Admin Support Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Access List",
+        "tags": [
+          "platform-admin"
+        ]
+      },
+      "post": {
+        "operationId": "support_access_platform_create_api_v1_admin_support_access_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformSupportAccessCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Support Access Platform Create Api V1 Admin Support Access Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Access Platform Create",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
     "/api/v1/admin/support-access/{access_id}/activate": {
       "post": {
         "operationId": "support_access_activate_api_v1_admin_support_access__access_id__activate_post",
@@ -4148,6 +4667,195 @@
           }
         },
         "summary": "Support Access Exit",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
+    "/api/v1/admin/support-access/{access_id}/revoke": {
+      "post": {
+        "operationId": "support_access_platform_revoke_api_v1_admin_support_access__access_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "access_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Access Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Support Access Platform Revoke Api V1 Admin Support Access  Access Id  Revoke Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Support Access Platform Revoke",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenant-isolation": {
+      "get": {
+        "operationId": "tenant_isolation_status_api_v1_admin_tenant_isolation_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tenant Isolation Status Api V1 Admin Tenant Isolation Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tenant Isolation Status",
+        "tags": [
+          "platform-admin"
+        ]
+      }
+    },
+    "/api/v1/admin/tenant-isolation/check": {
+      "post": {
+        "operationId": "tenant_isolation_check_api_v1_admin_tenant_isolation_check_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantIsolationCheck"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tenant Isolation Check Api V1 Admin Tenant Isolation Check Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tenant Isolation Check",
         "tags": [
           "platform-admin"
         ]

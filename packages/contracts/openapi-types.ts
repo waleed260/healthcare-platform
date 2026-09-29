@@ -3,6 +3,7 @@
 export type AnnouncementCreateSeverityValue = "info" | "warning" | "critical";
 export type AppointmentTransitionRequestToStatusValue = "confirmed" | "cancelled" | "arrived" | "waiting" | "in_consultation" | "completed" | "no_show";
 export type CatalogStatusUpdateStatusValue = "active" | "archived";
+export type ClinicLifecycleUpdateActionValue = "approve" | "suspend" | "reactivate";
 export type ClinicStatusUpdateStatusValue = "active" | "suspended" | "archived";
 export type ConsentCreateStatusValue = "granted" | "withdrawn" | "declined";
 export type ExportJobCreateExportTypeValue = "patient_access" | "audit";
