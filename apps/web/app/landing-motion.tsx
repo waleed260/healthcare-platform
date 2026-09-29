@@ -8,7 +8,7 @@ export default function LandingMotion() {
     let observer: IntersectionObserver | null = null;
     let update: (() => void) | null = null;
     frame = window.requestAnimationFrame(() => {
-      const revealNodes = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
+      const revealNodes = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal], .landing-page .product-story, .landing-page .feature-bento, .landing-page .how-section, .landing-page .security-section, .landing-page .template-section, .landing-page .faq-section, .landing-page .final-cta"));
       observer = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
           if (!entry.isIntersecting) return;

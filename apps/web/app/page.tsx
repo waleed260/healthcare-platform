@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LandingMotion from "./landing-motion";
 
 const features = [
   ["01", "Website builder", "Publish a calm, credible clinic front door without handing your team a second system."],
@@ -29,6 +30,8 @@ function PublishedSite() {
 
 export default function HomePage() {
   return <main className="landing-page">
+    <LandingMotion />
+    <div className="scroll-progress" aria-hidden="true" />
     <nav className="nav shell" aria-label="Primary navigation"><Link className="wordmark" href="/">care<span>/</span>fully</Link><div className="nav-links"><a href="#product">Product</a><a href="#how-it-works">How it works</a><a href="#security">Security</a><Link className="nav-cta" href="/login">Sign in <span>↗</span></Link></div></nav>
     <section className="landing-hero shell" aria-labelledby="hero-title"><div className="landing-hero-copy"><p className="eyebrow"><span className="eyebrow-dot"/> CLINIC OPERATIONS, WITH ROOM TO BREATHE</p><h1 id="hero-title">Make care feel <em>well run.</em></h1><p className="hero-lede">A thoughtful digital home for independent doctors and small clinics — from first impression to finished follow-up.</p><div className="hero-actions"><Link className="button button-primary" href="/login">Enter the workspace <span>→</span></Link><a className="text-link" href="#product">See the product <span>↓</span></a></div><div className="hero-proof"><span><b>●</b> Built around real clinic work</span><span><b>↗</b> Tenant-aware by design</span></div></div><div className="hero-composition"><MiniDashboard/><PhoneBooking/><PublishedSite/><span className="composition-note">the calmer day is in the details <i>✳</i></span></div></section>
     <section className="product-story shell" id="product" aria-labelledby="product-title"><div className="section-intro"><p className="eyebrow">ONE CONNECTED WORKSPACE</p><h2 id="product-title">The front door,<br /><em>the day itself.</em></h2></div><div className="story-copy"><p>carefully keeps the public experience and the private work in the same rhythm. Patients get a clear path in. Teams get a clear view of what comes next.</p><Link className="text-link" href="/login">Explore the workspace <span>→</span></Link></div></section>
