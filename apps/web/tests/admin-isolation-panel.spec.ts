@@ -30,6 +30,7 @@ test.describe("tenant isolation verification panel", () => {
     await install(page);
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Tenant isolation verification" })).toBeVisible();
+    await expect(page.getByLabel("Clinic A").locator('option[value="clinic-a"]')).toHaveCount(1);
     await page.getByLabel("Clinic A").selectOption("clinic-a");
     await page.getByLabel("Clinic B").selectOption("clinic-b");
     await page.getByRole("button", { name: /run isolation check/i }).click();

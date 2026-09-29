@@ -38,7 +38,7 @@ test.describe("platform admin access", () => {
     await expect(page.getByRole("heading", { name: "Clinics" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Announcements" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Governance surfaces" })).toBeVisible();
-    await expect(page.getByText("Synthetic Care", { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("row", { name: /Synthetic Care synthetic-care/ }).getByRole("strong")).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("Synthetic Patient")).not.toBeVisible();
     expect(clinicalRequests).toEqual([]);
     for (const width of [375, 768, 1440]) {
@@ -78,6 +78,6 @@ test.describe("platform admin access", () => {
     await expect(page.locator(".workspace-alert")).toContainText("Synthetic clinic directory outage.");
     await page.getByRole("button", { name: /try again/i }).click();
     await expect(page.getByRole("heading", { name: "Clinics" })).toBeVisible();
-    await expect(page.getByText("Synthetic Care", { exact: true })).toBeVisible();
+    await expect(page.getByRole("row", { name: /Synthetic Care synthetic-care/ }).getByRole("strong")).toBeVisible();
   });
 });

@@ -39,8 +39,6 @@ export default function PlatformAdminPage() {
       const names = ["clinics", "plans", "metrics", "announcements", "support-access", "audit", "privacy-requests", "exports", "tenant-isolation"];
       const values = await Promise.all(names.map((name) => fetch(`/api/v1/admin/${name}`, { credentials: "include", cache: "no-store" }).then((response) => read<unknown>(response))));
       setClinics((values[0] as Clinic[]) ?? []); setPlans((values[1] as Plan[]) ?? []); setMetrics((values[2] as Metrics) ?? null); setAnnouncements((values[3] as Announcement[]) ?? []); setSupport((values[4] as SupportSession[]) ?? []); setAudit((values[5] as AuditEvent[]) ?? []); setPrivacy((values[6] as PrivacyRequest[]) ?? []); setExports((values[7] as ExportJob[]) ?? []); setIsolation(values[8] as IsolationStatus);
-      if (!isolationA && (values[0] as Clinic[] | undefined)?.[0]) setIsolationA((values[0] as Clinic[])[0].id);
-      if (!isolationB && (values[0] as Clinic[] | undefined)?.[1]) setIsolationB((values[0] as Clinic[])[1].id);
     } catch (reasonValue) { setError(reasonValue instanceof Error ? reasonValue.message : "Platform administration is unavailable."); }
     finally { setLoading(false); }
   }, []);
