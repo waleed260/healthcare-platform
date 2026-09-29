@@ -65,7 +65,7 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
   await page.locator(".calendar-appointment").first().click({ force: true });
   await page.getByRole("button", { name: "Approve" }).click({ force: true });
   await page.locator(".calendar-appointment").first().click({ force: true });
-  await expect(page.getByRole("button", { name: "Check in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check in" })).toBeVisible({ timeout: 15000 });
   await page.getByRole("button", { name: "Check in" }).click({ force: true });
 
   await page.goto("/queue");

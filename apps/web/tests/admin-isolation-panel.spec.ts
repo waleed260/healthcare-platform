@@ -31,9 +31,9 @@ test.describe("tenant isolation verification panel", () => {
     await install(page);
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Tenant isolation verification" })).toBeVisible();
-    expect(await page.getByLabel("Clinic A").locator('option[value="clinic-a"]').count()).toBeGreaterThan(0);
-    await page.getByLabel("Clinic A").selectOption("clinic-a");
-    await page.getByLabel("Clinic B").selectOption("clinic-b");
+    expect(await page.getByLabel("Clinic A", { exact: true }).locator('option[value="clinic-a"]').count()).toBeGreaterThan(0);
+    await page.getByLabel("Clinic A", { exact: true }).selectOption("clinic-a");
+    await page.getByLabel("Clinic B", { exact: true }).selectOption("clinic-b");
     await page.getByRole("button", { name: /run isolation check/i }).click();
     await expect(page.getByText("Isolated", { exact: true })).toBeVisible();
     await expect(page.getByText("Clinic A cannot see Clinic B", { exact: true })).toBeVisible();
@@ -44,8 +44,8 @@ test.describe("tenant isolation verification panel", () => {
     test.skip(process.env.BREAK_TENANT_ISOLATION !== "1", "Negative control is run with BREAK_TENANT_ISOLATION=1.");
     await install(page);
     await page.goto("/admin");
-    await page.getByLabel("Clinic A").selectOption("clinic-a");
-    await page.getByLabel("Clinic B").selectOption("clinic-b");
+    await page.getByLabel("Clinic A", { exact: true }).selectOption("clinic-a");
+    await page.getByLabel("Clinic B", { exact: true }).selectOption("clinic-b");
     await page.getByRole("button", { name: /run isolation check/i }).click();
     await expect(page.getByText("Violation detected", { exact: true })).toBeVisible();
     await expect(page.getByText("Cross-tenant rows were visible", { exact: true })).toBeVisible();

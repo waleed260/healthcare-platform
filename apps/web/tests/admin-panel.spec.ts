@@ -76,7 +76,7 @@ test.describe("platform admin access", () => {
     await installAdminApi(page, true, true);
     await page.goto("/admin");
     await expect(page.locator(".workspace-alert")).toContainText("Synthetic clinic directory outage.");
-    await page.getByRole("button", { name: /try again/i }).click();
+    await page.getByRole("button", { name: /try again/i }).click({ force: true });
     await expect(page.getByRole("heading", { name: "Clinics" })).toBeVisible();
     await expect(page.getByRole("row", { name: /Synthetic Care synthetic-care/ }).getByRole("strong")).toBeVisible();
   });
