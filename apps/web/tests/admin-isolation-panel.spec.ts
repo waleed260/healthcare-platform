@@ -14,6 +14,7 @@ test.describe("tenant isolation verification panel", () => {
         { table_name: "patients", label: "Patients", rls_enabled: true, rls_forced: true, has_policy: true },
         { table_name: "appointments", label: "Appointments", rls_enabled: true, rls_forced: true, has_policy: true },
       ], recent_attempts: [] };
+      if (path.endsWith("/admin/metrics")) data = { background_jobs: { queued: 0, running: 0, failed: 0 }, telemetry: { appointments: { total: 0, completed: 0, cancelled: 0 }, scan_backlog: 0, publish_failures: 0 } };
       if (path.endsWith("/admin/tenant-isolation/check")) {
         const broken = process.env.BREAK_TENANT_ISOLATION === "1";
         data = { overall: broken ? "violation" : "isolated", tables: [
