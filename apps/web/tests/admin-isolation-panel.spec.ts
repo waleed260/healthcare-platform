@@ -36,7 +36,7 @@ test.describe("tenant isolation verification panel", () => {
     await page.getByLabel("Clinic B", { exact: true }).selectOption("clinic-b");
     await page.getByRole("button", { name: /run isolation check/i }).click();
     await expect(page.getByText("Isolated", { exact: true })).toBeVisible();
-    await expect(page.getByText("Clinic A cannot see Clinic B", { exact: true })).toBeVisible();
+    await expect(page.getByText("Clinic A cannot see Clinic B", { exact: true })).toHaveCount(2);
     await expect(page.getByText("Synthetic Patient")).not.toBeVisible();
   });
 
