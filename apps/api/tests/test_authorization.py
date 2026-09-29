@@ -24,6 +24,20 @@ def test_production_configuration_fails_closed_without_secrets() -> None:
         Settings(app_env="production")
 
 
+@pytest.mark.parametrize("app_env", ["local", "staging", "production"])
+def test_tenant_fault_injection_is_rejected_outside_test(monkeypatch, app_env: str) -> None:
+    monkeypatch.setenv("BREAK_TENANT_ISOLATION", "1")
+
+    with pytest.raises(ValueError, match="BREAK_TENANT_ISOLATION"):
+        Settings(app_env=app_env)
+
+
+def test_tenant_fault_injection_is_allowed_only_for_test_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("BREAK_TENANT_ISOLATION", "1")
+
+    assert Settings(app_env="test").app_env == "test"
+
+
 def test_production_configuration_requires_sentry_monitoring() -> None:
     with pytest.raises(ValueError, match="SENTRY_DSN"):
         Settings(

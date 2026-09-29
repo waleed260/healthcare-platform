@@ -1,0 +1,93 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - complementary "Authenticated workspace navigation" [ref=f3e3]:
+      - link "care/fully" [ref=f3e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=f3e5]:
+        - link "Overview" [ref=f3e6] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [aria-hidden] [ref=f3e7]: ◈
+          - text: Overview
+        - link "Schedule" [ref=f3e8] [cursor=pointer]:
+          - /url: /schedule
+          - generic [aria-hidden] [ref=f3e9]: ◷
+          - text: Schedule
+        - link "Patients" [ref=f3e10] [cursor=pointer]:
+          - /url: /patients
+          - generic [aria-hidden] [ref=f3e11]: ○
+          - text: Patients
+        - link "Queue" [ref=f3e12] [cursor=pointer]:
+          - /url: /queue
+          - generic [aria-hidden] [ref=f3e13]: ▣
+          - text: Queue
+        - link "Follow-ups" [ref=f3e14] [cursor=pointer]:
+          - /url: /operations
+          - generic [aria-hidden] [ref=f3e15]: ↗
+          - text: Follow-ups
+        - link "Website" [ref=f3e16] [cursor=pointer]:
+          - /url: /website
+          - generic [aria-hidden] [ref=f3e17]: ✦
+          - text: Website
+        - link "Privacy" [ref=f3e18] [cursor=pointer]:
+          - /url: /privacy
+          - generic [aria-hidden] [ref=f3e19]: ◇
+          - text: Privacy
+    - generic [ref=f3e20]:
+      - banner [ref=f3e21]:
+        - generic [ref=f3e22]:
+          - paragraph [ref=f3e23]: CHECKING WORKSPACE ACCESS
+          - generic [ref=f3e24]:
+            - text: Good morning,
+            - emphasis [ref=f3e25]: team.
+        - generic [ref=f3e26]:
+          - link "0 unread notifications" [ref=f3e27] [cursor=pointer]:
+            - /url: /operations
+            - generic [aria-hidden] [ref=f3e28]: ◌
+          - button "Open account menu" [ref=f3e29] [cursor=pointer]: CT
+      - main [ref=f3e31]:
+        - generic [ref=f3e33]:
+          - generic [ref=f3e34]:
+            - generic [ref=f3e35]:
+              - paragraph [ref=f3e36]: TODAY · CLINIC TIMEZONE
+              - heading [level=1] [ref=f3e37]:
+                - text: Good morning,
+                - emphasis [ref=f3e38]: team.
+            - button "Refresh ↻" [ref=f3e39] [cursor=pointer]:
+              - text: Refresh
+              - generic [ref=f3e40]: ↻
+          - generic [ref=f3e41]:
+            - link "Today … appointments" [ref=f3e42] [cursor=pointer]:
+              - /url: /schedule
+              - generic [ref=f3e43]: Today
+              - strong [ref=f3e44]: …
+              - generic [ref=f3e45]: appointments
+            - link "Needs attention … pending approvals" [ref=f3e46] [cursor=pointer]:
+              - /url: /schedule?status=requested
+              - generic [ref=f3e47]: Needs attention
+              - strong [ref=f3e48]: …
+              - generic [ref=f3e49]: pending approvals
+            - link "Follow-ups … due now" [ref=f3e50] [cursor=pointer]:
+              - /url: /operations
+              - generic [ref=f3e51]: Follow-ups
+              - strong [ref=f3e52]: …
+              - generic [ref=f3e53]: due now
+            - link "Waiting room … patients waiting" [ref=f3e54] [cursor=pointer]:
+              - /url: /queue
+              - generic [ref=f3e55]: Waiting room
+              - strong [ref=f3e56]: …
+              - generic [ref=f3e57]: patients waiting
+            - link "Watch … no-shows" [ref=f3e58] [cursor=pointer]:
+              - /url: /schedule?status=no_show
+              - generic [ref=f3e59]: Watch
+              - strong [ref=f3e60]: …
+              - generic [ref=f3e61]: no-shows
+          - generic [ref=f3e62]:
+            - generic [ref=f3e63]:
+              - generic [ref=f3e64]:
+                - paragraph [ref=f3e65]: YOUR DAY
+                - heading "Today's schedule" [level=2] [ref=f3e66]
+              - button "Refresh list ↻" [ref=f3e67] [cursor=pointer]
+            - status [ref=f3e68]:
+              - strong [ref=f3e69]: Loading today's schedule
+              - generic [ref=f3e70]: Checking the clinic workspace…
+  - button "Open Next.js Dev Tools" [ref=f3e76] [cursor=pointer]

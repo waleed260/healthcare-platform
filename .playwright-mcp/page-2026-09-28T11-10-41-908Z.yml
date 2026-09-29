@@ -1,0 +1,257 @@
+- generic [active] [ref=f2e1]:
+  - main [ref=f2e2]:
+    - navigation "Primary navigation" [ref=f2e3]:
+      - link "care/fully" [ref=f2e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f2e5]:
+        - link "Product" [ref=f2e6] [cursor=pointer]:
+          - /url: "#product"
+        - link "How it works" [ref=f2e7] [cursor=pointer]:
+          - /url: "#how-it-works"
+        - link "Security" [ref=f2e8] [cursor=pointer]:
+          - /url: "#security"
+        - link "Sign in ↗" [ref=f2e9] [cursor=pointer]:
+          - /url: /login
+    - region [ref=f2e10]:
+      - generic [ref=f2e11]:
+        - paragraph [ref=f2e12]: CLINIC OPERATIONS, WITH ROOM TO BREATHE
+        - heading [level=1] [ref=f2e14]:
+          - text: Make care feel
+          - emphasis [ref=f2e15]: well run.
+        - paragraph [ref=f2e16]: A thoughtful digital home for independent doctors and small clinics — from first impression to finished follow-up.
+        - generic [ref=f2e17]:
+          - link "Enter the workspace →" [ref=f2e18] [cursor=pointer]:
+            - /url: /login
+            - text: Enter the workspace
+            - generic [ref=f2e19]: →
+          - link "See the product ↓" [ref=f2e20] [cursor=pointer]:
+            - /url: "#product"
+        - generic [ref=f2e21]:
+          - generic [ref=f2e22]: ● Built around real clinic work
+          - generic [ref=f2e23]: ↗ Tenant-aware by design
+      - generic [ref=f2e24]:
+        - generic "Synthetic clinic dashboard preview" [ref=f2e25]:
+          - generic [ref=f2e26]:
+            - generic [ref=f2e27]: c/
+            - generic [ref=f2e28]: Overview
+            - generic [ref=f2e29]: Schedule
+            - generic [ref=f2e30]: Patients
+            - generic [ref=f2e31]: Queue
+            - generic [ref=f2e32]: Follow-ups
+          - generic [ref=f2e33]:
+            - generic [ref=f2e34]:
+              - generic [ref=f2e35]: MONDAY · CLINIC TIME
+              - generic [ref=f2e36]: VC
+            - heading "Good morning, team." [level=3] [ref=f2e37]
+            - generic [ref=f2e38]:
+              - generic [ref=f2e39]:
+                - generic [ref=f2e40]: Today
+                - strong [ref=f2e41]: "12"
+                - emphasis [ref=f2e42]: appointments
+              - generic [ref=f2e43]:
+                - generic [ref=f2e44]: Waiting
+                - strong [ref=f2e45]: "03"
+                - emphasis [ref=f2e46]: in queue
+              - generic [ref=f2e47]:
+                - generic [ref=f2e48]: Follow-ups
+                - strong [ref=f2e49]: "07"
+                - emphasis [ref=f2e50]: due now
+            - generic [ref=f2e51]:
+              - generic [ref=f2e52]:
+                - generic [ref=f2e53]: YOUR DAY
+                - generic [ref=f2e54]: Today's schedule
+              - paragraph [ref=f2e55]:
+                - time [ref=f2e56]: 09:30
+                - strong [ref=f2e57]: New patient consultation
+                - emphasis [ref=f2e58]: confirmed
+              - paragraph [ref=f2e59]:
+                - time [ref=f2e60]: 10:15
+                - strong [ref=f2e61]: Review · Dr. Vale
+                - emphasis [ref=f2e62]: in 45 min
+              - paragraph [ref=f2e63]:
+                - time [ref=f2e64]: 11:00
+                - strong [ref=f2e65]: Follow-up appointment
+                - emphasis [ref=f2e66]: requested
+        - generic "Synthetic patient booking preview" [ref=f2e67]:
+          - generic [ref=f2e69]:
+            - generic [ref=f2e70]: care/fully
+            - text: BOOK A VISIT
+            - heading "Choose a time that works." [level=3] [ref=f2e71]: Choose a timethat works.
+            - generic [ref=f2e73]:
+              - generic [ref=f2e74]: DV
+              - paragraph [ref=f2e75]:
+                - generic [ref=f2e76]: Dr. Vale
+                - generic [ref=f2e77]: General medicine
+            - generic [ref=f2e78]:
+              - generic [ref=f2e79]: Today
+              - generic [ref=f2e80]: 09:30
+              - generic [ref=f2e81]: 10:15
+              - generic [ref=f2e82]: 11:00
+            - button "Continue →" [ref=f2e83]:
+              - text: Continue
+              - generic [ref=f2e84]: →
+        - generic "Synthetic published clinic website preview" [ref=f2e85]:
+          - emphasis [ref=f2e90]: vale-clinic.example
+          - generic [ref=f2e91]:
+            - text: VALE FAMILY CLINIC
+            - heading "Care that keeps pace." [level=3] [ref=f2e92]: Care thatkeeps pace.
+            - paragraph [ref=f2e94]: Thoughtful primary care for busy lives.
+            - button "Book a visit" [ref=f2e95]
+        - generic [ref=f2e97]:
+          - text: the calmer day is in the details
+          - generic [ref=f2e98]: ✳
+    - region [ref=f2e99]:
+      - generic [ref=f2e100]:
+        - paragraph [ref=f2e101]: ONE CONNECTED WORKSPACE
+        - heading [level=2] [ref=f2e102]:
+          - text: The front door,
+          - emphasis [ref=f2e103]: the day itself.
+      - generic [ref=f2e104]:
+        - paragraph [ref=f2e105]: carefully keeps the public experience and the private work in the same rhythm. Patients get a clear path in. Teams get a clear view of what comes next.
+        - link "Explore the workspace →" [ref=f2e106] [cursor=pointer]:
+          - /url: /login
+    - region "Product capabilities" [ref=f2e107]:
+      - article [ref=f2e108]:
+        - text: "01"
+        - heading "Website builder" [level=3] [ref=f2e109]
+        - paragraph [ref=f2e110]: Publish a calm, credible clinic front door without handing your team a second system.
+        - generic [ref=f2e111]:
+          - text: published / today
+          - generic [ref=f2e112]: ValeFamily Clinic
+      - article [ref=f2e114]:
+        - text: "02"
+        - heading "Booking that respects time" [level=3] [ref=f2e115]
+        - paragraph [ref=f2e116]: Offer real availability and keep conflicts out of the schedule.
+        - generic [ref=f2e117]:
+          - generic [ref=f2e118]:
+            - text: 09:30
+            - generic [ref=f2e119]: available
+          - generic [ref=f2e120]:
+            - text: 10:15
+            - generic [ref=f2e121]: held for you
+      - article [ref=f2e122]:
+        - text: "03"
+        - heading "A live queue" [level=3] [ref=f2e123]
+        - paragraph [ref=f2e124]: Give reception a shared view of who is waiting and what needs to happen next.
+        - generic [ref=f2e125]:
+          - generic [ref=f2e126]: "01"
+          - generic [ref=f2e127]: Amelia R.
+          - emphasis [ref=f2e128]: waiting
+          - generic [ref=f2e129]: "02"
+          - generic [ref=f2e130]: Jon M.
+          - emphasis [ref=f2e131]: ready
+      - article [ref=f2e132]:
+        - text: "04"
+        - heading "A useful CRM" [level=3] [ref=f2e133]
+        - paragraph [ref=f2e134]: Keep patient context, care teams, notes, and consent close to the work.
+        - generic [ref=f2e135]:
+          - text: last visit
+          - generic [ref=f2e136]: “Feeling better.”
+          - generic [ref=f2e137]: private care context
+      - article [ref=f2e138]:
+        - text: "05"
+        - heading "Follow-ups that land" [level=3] [ref=f2e139]
+        - paragraph [ref=f2e140]: Turn the small promises after a visit into visible, assignable work.
+        - generic [ref=f2e141]:
+          - text: FOLLOW-UP
+          - generic [ref=f2e142]: Check in with Amelia
+          - emphasis [ref=f2e143]: due today · assigned
+    - region [ref=f2e144]:
+      - generic [ref=f2e145]:
+        - generic [ref=f2e146]:
+          - paragraph [ref=f2e147]: A SIMPLE HANDOFF
+          - heading [level=2] [ref=f2e148]:
+            - text: From setup to
+            - emphasis [ref=f2e149]: steady days.
+        - generic [ref=f2e150]:
+          - article [ref=f2e151]:
+            - text: "01"
+            - heading "Onboard" [level=3] [ref=f2e152]
+            - paragraph [ref=f2e153]: Set up the clinic, services, team roles, and the shape of your day.
+          - article [ref=f2e154]:
+            - text: "02"
+            - heading "Publish" [level=3] [ref=f2e155]
+            - paragraph [ref=f2e156]: Choose the one public surface that is ready to represent your clinic well.
+          - article [ref=f2e157]:
+            - text: "03"
+            - heading "Run the day" [level=3] [ref=f2e158]
+            - paragraph [ref=f2e159]: Move from request to appointment to follow-up with less context switching.
+    - region [ref=f2e160]:
+      - generic [ref=f2e161]:
+        - paragraph [ref=f2e162]: QUIETLY SERIOUS ABOUT THE FOUNDATION
+        - heading [level=2] [ref=f2e163]:
+          - text: Trust is part of
+          - emphasis [ref=f2e164]: the interface.
+        - paragraph [ref=f2e165]: "These are product foundations, not marketing badges: tenant isolation, MFA-aware sessions, an audit trail for protected actions, and private file handling."
+      - generic [ref=f2e166]:
+        - generic [ref=f2e167]:
+          - generic [ref=f2e168]: "01"
+          - generic [ref=f2e169]: Tenant isolation
+          - paragraph [ref=f2e170]: Clinic context is enforced in the data layer and API.
+        - generic [ref=f2e171]:
+          - generic [ref=f2e172]: "02"
+          - generic [ref=f2e173]: MFA-aware access
+          - paragraph [ref=f2e174]: Protected workspace actions require an authenticated session.
+        - generic [ref=f2e175]:
+          - generic [ref=f2e176]: "03"
+          - generic [ref=f2e177]: Audit trail
+          - paragraph [ref=f2e178]: Meaningful staff actions are recorded with an outcome.
+        - generic [ref=f2e179]:
+          - generic [ref=f2e180]: "04"
+          - generic [ref=f2e181]: Private files
+          - paragraph [ref=f2e182]: Documents remain behind scoped access and scan status checks.
+    - region [ref=f2e183]:
+      - generic [ref=f2e184]:
+        - paragraph [ref=f2e185]: THE FIRST PUBLISHED TEMPLATE
+        - heading [level=2] [ref=f2e186]:
+          - text: One good preview
+          - emphasis [ref=f2e187]: beats five promises.
+        - paragraph [ref=f2e188]: See the clinic site surface that is fully renderable today. We will add more when they are ready to carry the same standard.
+        - link "View the published preview ↗" [ref=f2e189] [cursor=pointer]:
+          - /url: /vale-clinic
+      - generic "Synthetic published clinic website preview" [ref=f2e190]:
+        - emphasis [ref=f2e195]: vale-clinic.example
+        - generic [ref=f2e196]:
+          - text: VALE FAMILY CLINIC
+          - heading "Care that keeps pace." [level=3] [ref=f2e197]: Care thatkeeps pace.
+          - paragraph [ref=f2e199]: Thoughtful primary care for busy lives.
+          - button "Book a visit" [ref=f2e200]
+    - region [ref=f2e202]:
+      - generic [ref=f2e203]:
+        - paragraph [ref=f2e204]: GOOD QUESTIONS
+        - heading [level=2] [ref=f2e205]:
+          - text: A little more
+          - emphasis [ref=f2e206]: clarity.
+      - generic [ref=f2e207]:
+        - group [ref=f2e208]:
+          - generic "Who is carefully for? +" [ref=f2e209] [cursor=pointer]:
+            - text: Who is carefully for?
+            - generic [ref=f2e210]: +
+        - group [ref=f2e211]:
+          - generic "Does it replace our existing clinical record? +" [ref=f2e212] [cursor=pointer]:
+            - text: Does it replace our existing clinical record?
+            - generic [ref=f2e213]: +
+        - group [ref=f2e214]:
+          - generic "Can our team work with different permissions? +" [ref=f2e215] [cursor=pointer]:
+            - text: Can our team work with different permissions?
+            - generic [ref=f2e216]: +
+        - group [ref=f2e217]:
+          - generic "Is there a template gallery? +" [ref=f2e218] [cursor=pointer]:
+            - text: Is there a template gallery?
+            - generic [ref=f2e219]: +
+    - generic [ref=f2e221]:
+      - paragraph [ref=f2e222]: WHEN THE DAY FEELS FULL
+      - heading [level=2] [ref=f2e223]:
+        - text: Make room for
+        - emphasis [ref=f2e224]: the important part.
+      - link "Open carefully →" [ref=f2e225] [cursor=pointer]:
+        - /url: /login
+        - text: Open carefully
+        - generic [ref=f2e226]: →
+    - generic [ref=f2e227]:
+      - generic [ref=f2e228]: care/fully
+      - generic [ref=f2e229]:
+        - text: Clinic operations, with room to breathe ·
+        - link "Privacy" [ref=f2e230] [cursor=pointer]:
+          - /url: /privacy
+  - button "Open Next.js Dev Tools" [ref=f2e236] [cursor=pointer]

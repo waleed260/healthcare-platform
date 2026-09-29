@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -65,6 +66,12 @@ class Settings(BaseSettings):
                 raise ValueError("VAPID_SUBJECT and VAPID_PRIVATE_KEY must be configured together")
             if not (self.vapid_subject.startswith("mailto:") or self.vapid_subject.startswith("https://")):
                 raise ValueError("VAPID_SUBJECT must be a mailto: or https URL")
+        return self
+
+    @model_validator(mode="after")
+    def reject_tenant_fault_injection_outside_tests(self) -> "Settings":
+        if self.app_env != "test" and os.environ.get("BREAK_TENANT_ISOLATION") == "1":
+            raise ValueError("BREAK_TENANT_ISOLATION is test-only and cannot be enabled outside APP_ENV=test")
         return self
 
     @model_validator(mode="after")

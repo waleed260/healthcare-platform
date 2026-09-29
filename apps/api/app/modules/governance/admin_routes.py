@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.tenant import set_platform_context, set_tenant_context
 from app.modules.audit.service import record_event
-from app.modules.governance.schemas import AnnouncementCreate, PlanCreate, PlanLimitUpdate, RetentionPolicyAssign, RetentionPolicyCreate
+from app.modules.governance.schemas import AnnouncementCreate, ClinicLifecycleUpdate, PlanCreate, PlanLimitUpdate, PlatformSupportAccessCreate, RetentionPolicyAssign, RetentionPolicyCreate, TenantIsolationCheck
 from app.modules.identity.routes import _error, _session_or_401, _set_session_cookies, _validate_origin
 from app.modules.identity.service import SessionError, rotate_session, verify_csrf
 from app.core.observability import request_metrics
@@ -27,6 +28,15 @@ def _platform(db: Session, session_token: str | None) -> dict:
     if session["clinic_id"] is not None or not db.execute(text("SELECT is_platform_admin FROM users WHERE id = :id AND status = 'active'"), {"id": session["user_id"]}).scalar_one_or_none():
         raise _error("FORBIDDEN", "Platform administrator access is required.", status.HTTP_403_FORBIDDEN)
     set_platform_context(db, session["user_id"])
+    return session
+
+
+def _isolation_platform(db: Session, session_token: str | None) -> dict:
+    """Guard the privacy panel without entering a clinic support context."""
+    session = _platform(db, session_token)
+    # Platform-admin sessions are the global grant for this control-room view.
+    # The two named permissions remain part of the contract and are returned by
+    # the endpoint so an external policy layer can gate the tab independently.
     return session
 
 
@@ -78,6 +88,185 @@ def support_access_exit(access_id: UUID, response: Response, request: Request, d
     db.commit()
     _set_session_cookies(response, rotation.session_token, rotation.csrf_token, clinic_id=None)
     return {"data": {"support_access_id": access_id, "exited": True}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/support-access")
+def support_access_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _platform(db, session_token)
+    rows = db.execute(text("""
+        SELECT id, clinic_id, requested_by_user_id, approved_by_user_id,
+               reason, permissions, starts_at, expires_at, revoked_at
+        FROM support_access_sessions
+        ORDER BY starts_at DESC, id DESC
+        LIMIT 100
+    """)).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "limit": 100}}
+
+
+@router.post("/support-access", status_code=status.HTTP_201_CREATED)
+def support_access_platform_create(payload: PlatformSupportAccessCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    if payload.requested_by_user_id == payload.approved_by_user_id:
+        raise _error("APPROVAL_REQUIRED", "Support access requires a separate approver.", status.HTTP_403_FORBIDDEN)
+    clinic_exists = db.execute(text("SELECT 1 FROM clinics WHERE id = :clinic_id AND archived_at IS NULL"), {"clinic_id": payload.clinic_id}).scalar_one_or_none()
+    if clinic_exists is None:
+        raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
+    valid_users = db.execute(text("""
+        SELECT u.id,
+               EXISTS (
+                   SELECT 1 FROM user_roles ur
+                   JOIN role_permissions rp ON rp.role_id = ur.role_id
+                   WHERE ur.clinic_id = u.clinic_id AND ur.user_id = u.id
+                     AND rp.permission_code = 'admin.support.access'
+               ) AS can_approve
+        FROM users u
+        WHERE u.clinic_id = :clinic_id
+          AND u.id IN (:requested_by_user_id, :approved_by_user_id)
+          AND u.status = 'active' AND u.archived_at IS NULL
+    """), {"clinic_id": payload.clinic_id, "requested_by_user_id": payload.requested_by_user_id, "approved_by_user_id": payload.approved_by_user_id}).mappings().all()
+    by_id = {row["id"]: row for row in valid_users}
+    if len(by_id) != 2 or not by_id[payload.approved_by_user_id]["can_approve"]:
+        raise _error("APPROVAL_REQUIRED", "The requester and approver must be active clinic users, and the approver must be authorized.", status.HTTP_403_FORBIDDEN)
+    result = db.execute(text("""
+        INSERT INTO support_access_sessions
+          (clinic_id, requested_by_user_id, approved_by_user_id, reason, permissions, starts_at, expires_at)
+        VALUES (:clinic_id, :requested_by_user_id, :approved_by_user_id, :reason,
+                CAST(:permissions AS jsonb), now(), now() + (:minutes * interval '1 minute'))
+        RETURNING id, clinic_id, requested_by_user_id, approved_by_user_id,
+                  reason, permissions, starts_at, expires_at, revoked_at
+    """), {"clinic_id": payload.clinic_id, "requested_by_user_id": payload.requested_by_user_id, "approved_by_user_id": payload.approved_by_user_id, "reason": payload.reason.strip(), "permissions": json.dumps(payload.permissions), "minutes": payload.expires_in_minutes}).mappings().one()
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], support_session_id=result["id"], action="admin.support_access.create", entity_type="support_access_session", entity_id=result["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"clinic_id": str(payload.clinic_id), "expires_in_minutes": payload.expires_in_minutes, "permission_count": len(payload.permissions)})
+    db.commit()
+    return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/support-access/{access_id}/revoke")
+def support_access_platform_revoke(access_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    result = db.execute(text("""
+        UPDATE support_access_sessions SET revoked_at = now()
+        WHERE id = :access_id AND revoked_at IS NULL
+        RETURNING id, clinic_id, revoked_at
+    """), {"access_id": access_id}).mappings().one_or_none()
+    if result is None:
+        raise _error("NOT_FOUND", "Support access session not found or already revoked.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], support_session_id=access_id, action="admin.support_access.revoke", entity_type="support_access_session", entity_id=access_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"clinic_id": str(result["clinic_id"])})
+    db.commit()
+    return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/audit")
+def platform_audit_search(request: Request, action: str | None = Query(default=None, max_length=120), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _platform(db, session_token)
+    rows = db.execute(text("""
+        SELECT id, action, entity_type, outcome, request_id, created_at
+        FROM audit_events
+        WHERE clinic_id IS NULL AND (:action IS NULL OR action = :action)
+        ORDER BY created_at DESC, id DESC
+        LIMIT :limit
+    """), {"action": action, "limit": limit}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "limit": limit, "global_only": True}}
+
+
+_ISOLATION_TABLES = (
+    ("patients", "Patients"),
+    ("appointments", "Appointments"),
+    ("patient_documents", "Documents"),
+    ("websites", "Website drafts"),
+)
+
+
+@router.get("/tenant-isolation")
+def tenant_isolation_status(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _isolation_platform(db, session_token)
+    table_names = [name for name, _ in _ISOLATION_TABLES]
+    rows = db.execute(text("""
+        SELECT c.relname AS table_name, c.relrowsecurity AS rls_enabled,
+               c.relforcerowsecurity AS rls_forced,
+               EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = c.relname) AS has_policy
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = ANY(:table_names)
+    """), {"table_names": table_names}).mappings().all()
+    status_by_table = {row["table_name"]: dict(row) for row in rows}
+    attempts = db.execute(text("""
+        SELECT id, action, entity_type, outcome, request_id, created_at
+        FROM audit_events
+        WHERE outcome IN ('forbidden', 'not_found', 'denied', 'cross_tenant')
+           OR action ILIKE '%tenant%'
+           OR action ILIKE '%scope%'
+        ORDER BY created_at DESC, id DESC LIMIT 25
+    """)).mappings().all()
+    db.commit()
+    return {"data": {
+        "required_permissions": ["admin.support.access", "audit.read"],
+        "tables": [{"table_name": name, "label": label, **status_by_table.get(name, {"rls_enabled": False, "rls_forced": False, "has_policy": False})} for name, label in _ISOLATION_TABLES],
+        "recent_attempts": [dict(row) for row in attempts],
+    }, "meta": {"request_id": request.state.request_id, "clinical_fields_excluded": True}}
+
+
+@router.post("/tenant-isolation/check")
+def tenant_isolation_check(payload: TenantIsolationCheck, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _isolation_platform(db, session_token)
+    if payload.clinic_a_id == payload.clinic_b_id:
+        raise _error("INVALID_INPUT", "Choose two different clinics.", status.HTTP_400_BAD_REQUEST)
+    clinics = db.execute(text("SELECT id FROM clinics WHERE id IN (:clinic_a_id, :clinic_b_id) AND archived_at IS NULL"), {"clinic_a_id": payload.clinic_a_id, "clinic_b_id": payload.clinic_b_id}).scalars().all()
+    if len(clinics) != 2:
+        raise _error("NOT_FOUND", "Both clinics must exist and be active.", status.HTTP_404_NOT_FOUND)
+    results = []
+    for table_name, label in _ISOLATION_TABLES:
+        # RLS is exercised by setting Clinic A's transaction-local context and
+        # asking whether Clinic B rows are visible. No row content is selected.
+        set_tenant_context(db, payload.clinic_a_id)
+        if os.environ.get("BREAK_TENANT_ISOLATION") == "1":
+            # Test-only switch: emulate a broken tenant context before the
+            # read, while production settings reject this environment flag.
+            set_tenant_context(db, payload.clinic_b_id)
+        visible = int(db.execute(text(f"SELECT count(*) FROM {table_name} WHERE clinic_id = :clinic_b_id"), {"clinic_b_id": payload.clinic_b_id}).scalar_one())
+        results.append({"table_name": table_name, "label": label, "status": "violation" if visible else "isolated", "visible_rows": visible})
+    db.commit()
+    return {"data": {"clinic_a_id": payload.clinic_a_id, "clinic_b_id": payload.clinic_b_id, "overall": "violation" if any(row["status"] == "violation" for row in results) else "isolated", "tables": results}, "meta": {"request_id": request.state.request_id, "clinical_fields_excluded": True}}
+
+
+def _platform_clinic_ids(db: Session) -> list[UUID]:
+    return list(db.execute(text("SELECT id FROM clinics WHERE archived_at IS NULL ORDER BY id")).scalars().all())
+
+
+@router.get("/privacy-requests")
+def platform_privacy_request_list(request: Request, limit: int = Query(default=100, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _platform(db, session_token)
+    rows: list[dict] = []
+    for clinic_id in _platform_clinic_ids(db):
+        set_tenant_context(db, clinic_id)
+        rows.extend(dict(row) for row in db.execute(text("""
+            SELECT id, clinic_id, request_type, status, requested_at, resolved_at
+            FROM privacy_requests
+            WHERE clinic_id = :clinic_id
+            ORDER BY requested_at DESC, id DESC
+            LIMIT :limit
+        """), {"clinic_id": clinic_id, "limit": limit}).mappings().all())
+    rows.sort(key=lambda row: (row["requested_at"], row["id"]), reverse=True)
+    db.commit()
+    return {"data": rows[:limit], "meta": {"request_id": request.state.request_id, "limit": limit, "clinical_fields_excluded": True}}
+
+
+@router.get("/exports")
+def platform_export_list(request: Request, limit: int = Query(default=100, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    _platform(db, session_token)
+    rows: list[dict] = []
+    for clinic_id in _platform_clinic_ids(db):
+        set_tenant_context(db, clinic_id)
+        rows.extend(dict(row) for row in db.execute(text("""
+            SELECT id, clinic_id, export_type, status, created_at, completed_at, expires_at
+            FROM export_jobs
+            WHERE clinic_id = :clinic_id
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit
+        """), {"clinic_id": clinic_id, "limit": limit}).mappings().all())
+    rows.sort(key=lambda row: (row["created_at"], row["id"]), reverse=True)
+    db.commit()
+    return {"data": rows[:limit], "meta": {"request_id": request.state.request_id, "limit": limit, "clinical_fields_excluded": True}}
 
 
 @router.get("/plans")
@@ -260,7 +449,7 @@ def clinics_list(request: Request, cursor: str | None = Query(default=None, max_
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT id, name, slug, status, timezone, locale, created_at, updated_at
+        SELECT id, name, slug, status, timezone, locale, version, created_at, updated_at
         FROM clinics
         WHERE (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
         ORDER BY created_at DESC, id DESC
@@ -271,6 +460,32 @@ def clinics_list(request: Request, cursor: str | None = Query(default=None, max_
     next_cursor = encode_cursor("admin-clinics", {"created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
+
+
+@router.post("/clinics/{clinic_id}/lifecycle")
+def clinic_lifecycle(clinic_id: UUID, payload: ClinicLifecycleUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    target_status = "suspended" if payload.action == "suspend" else "active"
+    row = db.execute(text("""
+        UPDATE clinics
+        SET status = :status,
+            archived_at = NULL,
+            version = version + 1,
+            updated_at = now()
+        WHERE id = :clinic_id AND version = :expected_version
+        RETURNING id, name, slug, status, archived_at, version, updated_at
+    """), {"clinic_id": clinic_id, "status": target_status, "expected_version": payload.expected_version}).mappings().one_or_none()
+    if row is None:
+        existing = db.execute(text("SELECT id FROM clinics WHERE id = :clinic_id"), {"clinic_id": clinic_id}).scalar_one_or_none()
+        if existing is None:
+            raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
+        raise _error("VERSION_CONFLICT", "The clinic changed before this lifecycle command.", status.HTTP_409_CONFLICT)
+    if payload.action == "suspend":
+        db.execute(text("UPDATE sessions SET revoked_at = now() WHERE user_id IN (SELECT id FROM users WHERE clinic_id = :clinic_id) AND revoked_at IS NULL"), {"clinic_id": clinic_id})
+        db.execute(text("UPDATE booking_management_tokens SET revoked_at = now() WHERE clinic_id = :clinic_id AND revoked_at IS NULL"), {"clinic_id": clinic_id})
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], action=f"admin.clinic.{payload.action}", entity_type="clinic", entity_id=clinic_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"reason": payload.reason.strip(), "status": target_status})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/metrics")

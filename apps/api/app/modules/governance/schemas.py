@@ -72,6 +72,30 @@ class PlanLimitUpdate(BaseModel):
     enabled: bool = True
 
 
+class ClinicLifecycleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(pattern="^(approve|suspend|reactivate)$")
+    reason: str = Field(min_length=10, max_length=1000)
+    expected_version: int = Field(ge=1)
+
+
+class PlatformSupportAccessCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clinic_id: UUID
+    requested_by_user_id: UUID
+    approved_by_user_id: UUID
+    reason: str = Field(min_length=10, max_length=1000)
+    permissions: list[str] = Field(min_length=1, max_length=20)
+    expires_in_minutes: int = Field(ge=1, le=60)
+
+    @field_validator("permissions")
+    @classmethod
+    def validate_permissions(cls, values: list[str]) -> list[str]:
+        return [validate_permission_code(value) for value in values]
+
+
 class RetentionPolicyCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -100,3 +124,10 @@ class AnnouncementCreate(BaseModel):
     body: str = Field(min_length=1, max_length=5000)
     severity: str = Field(default="info", pattern="^(info|warning|critical)$")
     ends_at: str | None = Field(default=None, max_length=40)
+
+
+class TenantIsolationCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clinic_a_id: UUID
+    clinic_b_id: UUID

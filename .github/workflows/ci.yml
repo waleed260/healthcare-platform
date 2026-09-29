@@ -64,6 +64,18 @@ jobs:
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
         run: alembic upgrade head
+      - name: Seed deterministic fixtures twice
+        env:
+          APP_ENV: test
+          SEED_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
+        run: |
+          PYTHONPATH=. python scripts/seed_demo.py
+          PYTHONPATH=. python scripts/seed_demo.py
+      - name: Verify seeded fixtures through runtime RLS
+        env:
+          SEED_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
+          TEST_DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost:5432/healthcare
+        run: PYTHONPATH=../.. python ../../infra/verify_seed.py
       - name: Verify offline migration SQL and safe head downgrade
         env:
           DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
@@ -99,6 +111,23 @@ jobs:
         run: npm run test:e2e -- booking-concurrency.spec.ts tenant-isolation.spec.ts rbac-flows.spec.ts core-workflow.spec.ts
       - name: Full browser smoke suite
         run: npm run test:e2e
+      - name: Tenant isolation negative control must fail
+        run: |
+          set +e
+          BREAK_TENANT_ISOLATION=1 npm run test:e2e -- tenant-isolation.spec.ts --project=chromium
+          status=$?
+          set -e
+          test "$status" -ne 0
+      - name: Lighthouse mobile performance baseline
+        run: |
+          mkdir -p ../../artifacts
+          npm run start -- -H 127.0.0.1 -p 3000 > /tmp/healthcare-next.log 2>&1 &
+          for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:3000/ > /dev/null && break; sleep 1; done
+          npx --yes lighthouse http://127.0.0.1:3000/ --form-factor=mobile --only-categories=performance --output=json --output-path=../../artifacts/lighthouse-gate-0-mobile.json --chrome-flags="--headless --no-sandbox"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-gate-0-mobile
+          path: artifacts/lighthouse-gate-0-mobile.json
   container:
     runs-on: ubuntu-latest
     steps:

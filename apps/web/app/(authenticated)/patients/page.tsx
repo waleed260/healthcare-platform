@@ -1,4 +1,6 @@
 "use client";
+/* The dashboard hash links intentionally preserve the shared shell's anchor targets. */
+/* eslint-disable @next/next/no-html-link-for-pages */
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";

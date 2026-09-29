@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import type { Page } from "@playwright/test";
 
 const clinic = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -42,7 +43,7 @@ async function installSyntheticApi(page: Page): Promise<void> {
   });
 }
 
-const coreRoutes = ["/", "/login", "/onboarding", "/dashboard", "/schedule", "/patients", "/queue", "/operations", "/privacy", "/website", "/admin/governance", "/book/synthetic-care", "/reset-password"];
+const coreRoutes = ["/", "/login", "/onboarding", "/dashboard", "/schedule", "/patients", "/queue", "/operations", "/privacy", "/website", "/admin", "/admin/governance", "/book/synthetic-care", "/reset-password"];
 
 test.describe("core responsive browser flows", () => {
   test.beforeEach(async ({ page }) => {
@@ -162,7 +163,7 @@ test.describe("core responsive browser flows", () => {
     await expect(page.getByText("Synthetic First")).toBeVisible();
     await expect(page.getByText("waiting")).toBeVisible();
     await page.getByRole("button", { name: /start consultation/i }).click();
-    await expect(page.getByText("in consultation")).toBeVisible();
+    await expect(page.getByText("in consultation", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Complete" }).click();
     await expect(page.getByText("The queue is clear")).toBeVisible();
     expect(commands.map((command) => command.path)).toEqual(["/api/v1/operations/queue/queue-1/start", "/api/v1/operations/queue/queue-1/complete"]);

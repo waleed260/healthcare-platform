@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 const roles = [
   { name: "owner", permissions: ["queue.read", "queue.manage", "website.read", "website.edit", "website.publish"] },

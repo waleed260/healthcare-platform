@@ -1,4 +1,5 @@
-import { test, expect, type Page, type Route } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import type { Page, Route } from "@playwright/test";
 
 const day = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
 const catalog = { clinic: { name: "Synthetic Care Clinic", timezone: "UTC" }, branches: [{ id: "branch-a", name: "Synthetic Main", address: null, timezone: "UTC" }], services: [{ id: "service-a", name: "Synthetic consultation", short_description: null, duration_minutes: 30, branch_id: "branch-a" }], doctors: [{ id: "doctor-a", public_name: "Dr. Synthetic", specialty: "General care", branch_id: "branch-a", service_id: "service-a" }] };
