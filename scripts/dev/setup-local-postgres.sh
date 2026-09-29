@@ -5,6 +5,10 @@ set -euo pipefail
 # on the host with sudo available; it is intentionally not run automatically
 # by the application or test suite.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+ENV_FILE="${ROOT_DIR}/.env"
+
 DB_NAME="${DB_NAME:-healthcare}"
 DB_PORT="${DB_PORT:-5432}"
 MIGRATOR_ROLE="${MIGRATOR_ROLE:-healthcare_migrator}"
@@ -71,10 +75,34 @@ GRANT USAGE ON SCHEMA public TO "${RUNTIME_ROLE}";
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 SQL
 
+umask 077
+if [[ ! -f "${ENV_FILE}" ]]; then
+  if [[ -f "${ROOT_DIR}/.env.example" ]]; then
+    cp "${ROOT_DIR}/.env.example" "${ENV_FILE}"
+  else
+    : >"${ENV_FILE}"
+  fi
+fi
+
+ENV_TMP="$(mktemp "${ENV_FILE}.tmp.XXXXXX")"
+trap 'rm -f "${ENV_TMP:-}"' EXIT
+awk \
+  -v migration="DATABASE_MIGRATION_URL=postgresql+psycopg://${MIGRATOR_ROLE}:${MIGRATOR_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" \
+  -v runtime="DATABASE_URL=postgresql+psycopg://${RUNTIME_ROLE}:${RUNTIME_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" \
+  -v seed="SEED_DATABASE_URL=postgresql+psycopg://${MIGRATOR_ROLE}:${MIGRATOR_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" \
+  -v admin="TEST_ADMIN_DATABASE_URL=postgresql+psycopg://${MIGRATOR_ROLE}:${MIGRATOR_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" \
+  -v test="TEST_DATABASE_URL=postgresql+psycopg://${RUNTIME_ROLE}:${RUNTIME_PASSWORD}@localhost:${DB_PORT}/${DB_NAME}" '
+  BEGIN { lines["DATABASE_MIGRATION_URL"] = migration; lines["DATABASE_URL"] = runtime; lines["SEED_DATABASE_URL"] = seed; lines["TEST_ADMIN_DATABASE_URL"] = admin; lines["TEST_DATABASE_URL"] = test }
+  {
+    split($0, parts, "="); key = parts[1]
+    if (key in lines) { if (!seen[key]++) print lines[key]; next }
+    print
+  }
+  END { for (key in lines) if (!seen[key]) print lines[key] }
+' "${ENV_FILE}" >"${ENV_TMP}"
+chmod 600 "${ENV_TMP}"
+mv "${ENV_TMP}" "${ENV_FILE}"
+trap - EXIT
+
 echo "PostgreSQL ${PG_MAJOR} is ready: ${DB_NAME} on localhost:${DB_PORT}."
-echo "Set these locally (do not commit them):"
-echo "  DATABASE_MIGRATION_URL=postgresql+psycopg://${MIGRATOR_ROLE}:<password>@localhost:${DB_PORT}/${DB_NAME}"
-echo "  DATABASE_URL=postgresql+psycopg://${RUNTIME_ROLE}:<password>@localhost:${DB_PORT}/${DB_NAME}"
-echo "  SEED_DATABASE_URL=postgresql+psycopg://${MIGRATOR_ROLE}:<password>@localhost:${DB_PORT}/${DB_NAME}"
-echo "  TEST_ADMIN_DATABASE_URL=postgresql+psycopg://${MIGRATOR_ROLE}:<password>@localhost:${DB_PORT}/${DB_NAME}"
-echo "  TEST_DATABASE_URL=postgresql+psycopg://${RUNTIME_ROLE}:<password>@localhost:${DB_PORT}/${DB_NAME}"
+echo "Connection strings written to ${ENV_FILE} (passwords omitted from output)."

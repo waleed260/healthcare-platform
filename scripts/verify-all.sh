@@ -9,11 +9,16 @@ mkdir -p "${EVIDENCE_DIR}"
 exec > >(tee -a "${LOG_FILE}") 2>&1
 
 echo "verify-all started at ${STAMP}"
-: "${DATABASE_MIGRATION_URL:?DATABASE_MIGRATION_URL must point to the migrator PostgreSQL role}"
-: "${DATABASE_URL:?DATABASE_URL must point to the runtime PostgreSQL role}"
-export SEED_DATABASE_URL="${SEED_DATABASE_URL:-${DATABASE_MIGRATION_URL}}"
-export TEST_ADMIN_DATABASE_URL="${TEST_ADMIN_DATABASE_URL:-${DATABASE_MIGRATION_URL}}"
-export TEST_DATABASE_URL="${TEST_DATABASE_URL:-${DATABASE_URL}}"
+ENV_FILE="${ROOT_DIR}/.env"
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
+fi
+for required_var in DATABASE_MIGRATION_URL DATABASE_URL SEED_DATABASE_URL TEST_ADMIN_DATABASE_URL TEST_DATABASE_URL; do
+  if [[ -z "${!required_var:-}" ]]; then echo "Run setup-local-postgres.sh first or populate .env" >&2; exit 1; fi
+done
 export APP_ENV="${APP_ENV:-test}"
 
 if [[ "${APP_ENV}" != "test" && "${APP_ENV}" != "local" ]]; then
