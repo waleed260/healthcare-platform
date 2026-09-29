@@ -1,16 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = process.env.PLAYWRIGHT_PORT ?? "3000";
-const chromiumLaunchOptions = process.env.PW_NO_SANDBOX === "1" || process.env.PW_CHROMIUM_EXECUTABLE_PATH ? {
-  ...(process.env.PW_NO_SANDBOX === "1" ? { args: ["--no-sandbox"] } : {}),
-  ...(process.env.PW_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH } : {}),
-} : undefined;
-const webServer = process.env.PLAYWRIGHT_EXTERNAL_SERVER ? undefined : {
-  command: `npm run build && npm run start -- -H 127.0.0.1 -p ${port}`,
-  url: `http://127.0.0.1:${port}`,
-  reuseExistingServer: !process.env.CI,
-  timeout: 120_000,
-};
 
 export default defineConfig({
   testDir: "./tests",
@@ -25,9 +15,14 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
-  webServer,
+  webServer: {
+    command: `npm run build && npm run start -- -H 127.0.0.1 -p ${port}`,
+    url: `http://127.0.0.1:${port}`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+  },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"], launchOptions: chromiumLaunchOptions } },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile", use: { ...devices["Pixel 5"] } },
   ],
 });

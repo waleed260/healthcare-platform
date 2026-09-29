@@ -8,11 +8,6 @@ the bento capabilities, three-step workflow, factual security section, one
 featured template preview, FAQ, CTA, and footer. Reduced-motion CSS remains
 enabled.
 
-## Skills used
-
-- `frontend-design` — read before implementation and applied to the visual
-  direction, product composition, responsive layout, and motion restraint.
-
 ## Evidence
 
 - Desktop screenshot captured at 1440×900.

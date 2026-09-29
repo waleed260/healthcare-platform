@@ -18,17 +18,8 @@ The local Playwright MCP setup is documented in
 - Playwright MCP opened `http://127.0.0.1:3001/` and returned a screenshot:
   [`gate-0-landing-mcp.png`](screenshots/gate-0-landing-mcp.png).
 
-## Current verification continuation
-
-The API CI workflow now migrates PostgreSQL, runs the deterministic seed twice,
-and verifies expected per-clinic counts plus clinic-A-only visibility through
-the restricted runtime role using `infra/verify_seed.py`. The web CI workflow
-also emits and uploads a mobile Lighthouse performance JSON artifact.
-
 ## Risks / deviations
 
 The MCP browser used the local dev server on port 3001. The API was not running
 in this shell, so protected-page screenshots intentionally show the product's
-plain-language unavailable-workspace state rather than seeded data. The managed
-shell has no Docker daemon and could not produce a local PostgreSQL or
-Lighthouse result; CI is now wired to produce both artifacts.
+plain-language unavailable-workspace state rather than seeded data.

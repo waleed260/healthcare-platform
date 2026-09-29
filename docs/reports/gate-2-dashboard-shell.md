@@ -1,5 +1,3 @@
-code
-
 # Gate 2 report — UX-003, RBAC-002, OPS-005
 
 ## Outcome

@@ -11,6 +11,7 @@ export function proxy(request: NextRequest) {
   const development = process.env.NODE_ENV === "development";
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", requestNonce);
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${requestNonce}'${development ? " 'unsafe-eval'" : ""}`,
@@ -24,7 +25,6 @@ export function proxy(request: NextRequest) {
     "form-action 'self'",
   ].join("; ");
   requestHeaders.set("Content-Security-Policy", csp);
-  const response = NextResponse.next({ headers: requestHeaders, request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
