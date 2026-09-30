@@ -53,6 +53,8 @@ PERMISSIONS = {
     "lead.manage",
     "billing.read",
     "billing.manage",
+    "clinical.read",
+    "clinical.manage",
 }
 
 

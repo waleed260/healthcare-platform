@@ -19,6 +19,7 @@ from app.modules.governance.routes import router as governance_router
 from app.modules.governance.admin_routes import router as platform_admin_router
 from app.modules.scheduling.routes import router as scheduling_router
 from app.modules.blueprint_core.routes import billing_router, lead_router, specialty_router
+from app.modules.clinical.routes import router as clinical_router
 from app.modules.files.storage import check_storage_readiness
 from app.db.session import engine
 from sqlalchemy import text
@@ -57,6 +58,7 @@ app.include_router(scheduling_router)
 app.include_router(specialty_router)
 app.include_router(lead_router)
 app.include_router(billing_router)
+app.include_router(clinical_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_allowed_origins),
