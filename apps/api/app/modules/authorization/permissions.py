@@ -56,6 +56,9 @@ PERMISSIONS = {
     "clinical.read",
     "clinical.manage",
     "report.read",
+    "package.read",
+    "package.manage",
+    "package.override",
 }
 
 
