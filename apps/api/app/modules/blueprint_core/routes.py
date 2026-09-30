@@ -268,3 +268,30 @@ def payment_create(invoice_id: UUID, payload: PaymentCreate, request: Request, d
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="payment.record", entity_type="payment", entity_id=payment["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"invoice_id": str(invoice_id), "amount_minor": payload.amount_minor, "method": payload.method})
     db.commit()
     return {"data": {**dict(payment), "invoice_status": new_status, "remaining_minor": invoice["total_minor"] - new_paid}, "meta": {"request_id": request.state.request_id}}
+
+
+@billing_router.get("/{invoice_id}/receipt")
+def invoice_receipt(invoice_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "billing.read")
+    invoice = db.execute(text("""
+        SELECT i.id, i.invoice_number, i.currency, i.subtotal_minor, i.discount_minor, i.tax_minor,
+               i.total_minor, i.status, i.issued_at, i.notes, c.name AS clinic_name,
+               p.id AS patient_id, p.patient_number, p.full_name AS patient_name
+        FROM invoices i
+        JOIN clinics c ON c.id = i.clinic_id
+        JOIN patients p ON p.clinic_id = i.clinic_id AND p.id = i.patient_id
+        WHERE i.clinic_id = :clinic_id AND i.id = :invoice_id
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().one_or_none()
+    if invoice is None:
+        raise _error("NOT_FOUND", "Invoice not found.", status.HTTP_404_NOT_FOUND)
+    lines = db.execute(text("""
+        SELECT id, service_id, description, quantity, unit_price_minor, tax_minor, line_total_minor
+        FROM invoice_lines WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id ORDER BY id
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().all()
+    payments = db.execute(text("""
+        SELECT id, amount_minor, currency, method, reference, paid_at
+        FROM payments WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id ORDER BY paid_at, id
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().all()
+    paid_minor = sum(payment["amount_minor"] for payment in payments)
+    db.commit()
+    return {"data": {"clinic": {"name": invoice["clinic_name"]}, "patient": {"id": invoice["patient_id"], "patient_number": invoice["patient_number"], "name": invoice["patient_name"]}, "invoice": {**{key: invoice[key] for key in ("id", "invoice_number", "currency", "subtotal_minor", "discount_minor", "tax_minor", "total_minor", "status", "issued_at", "notes")}, "paid_minor": paid_minor, "balance_minor": invoice["total_minor"] - paid_minor}, "lines": [dict(line) for line in lines], "payments": [dict(payment) for payment in payments]}, "meta": {"request_id": request.state.request_id}}
