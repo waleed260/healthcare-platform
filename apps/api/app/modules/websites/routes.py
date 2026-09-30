@@ -20,10 +20,66 @@ from app.modules.audit.service import record_event
 from app.modules.websites.publishing import refresh_draft_snapshot, snapshot_checksum, validate_publish_snapshot
 from app.modules.websites.scanner import MAX_WEBSITE_IMAGE_BYTES, validate_image_magic
 from app.modules.files.storage import delete_private_object, put_private_object, put_public_object, read_private_object, read_public_object
-from app.modules.websites.schemas import DomainCreate, DomainVerify, WebsiteArchiveRequest, WebsiteCreate, WebsiteMediaCreate, WebsiteMediaUpdate, WebsitePageCreate, WebsitePageUpdate, WebsitePublishRequest, WebsiteRollbackRequest, WebsiteSectionEdit, WebsiteSectionUpdate, WebsiteUpdate, WebsiteVersionCommand
+from app.modules.websites.schemas import DomainCreate, DomainVerify, WebsiteArchiveRequest, WebsiteCreate, WebsiteLeadCreate, WebsiteMediaCreate, WebsiteMediaUpdate, WebsitePageCreate, WebsitePageUpdate, WebsitePublishRequest, WebsiteRollbackRequest, WebsiteSectionEdit, WebsiteSectionUpdate, WebsiteUpdate, WebsiteVersionCommand
+from app.modules.appointments.rate_limit import consume_public_management_limit
 
 router = APIRouter(prefix="/api/v1/websites", tags=["websites"])
 public_router = APIRouter(prefix="/api/v1/public/sites", tags=["public-websites"])
+
+
+def _public_slug_clinic_id(db: Session, clinic_slug: str) -> UUID | None:
+    clinic_id = db.execute(text("SELECT id FROM clinics WHERE slug = :slug AND status = 'active' AND archived_at IS NULL"), {"slug": clinic_slug.strip().casefold()}).scalar_one_or_none()
+    if clinic_id is not None:
+        set_tenant_context(db, clinic_id)
+    return clinic_id
+
+
+def _capture_public_lead(clinic_id: UUID | None, payload: WebsiteLeadCreate, request: Request, idempotency_key: str | None, db: Session) -> dict:
+    if clinic_id is None:
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    if not payload.consent:
+        raise _error("CONSENT_REQUIRED", "Consent is required before submitting this form.", status.HTTP_400_BAD_REQUEST)
+    if not idempotency_key or len(idempotency_key.strip()) > 128:
+        raise _error("INVALID_INPUT", "An Idempotency-Key header is required.", status.HTTP_400_BAD_REQUEST)
+    ip_address = request.client.host if request.client else "unknown"
+    if not consume_public_management_limit(db, clinic_id=clinic_id, reference="website-lead", ip_address=ip_address, maximum=10):
+        db.rollback()
+        raise _error("RATE_LIMITED", "Too many form submissions. Try again shortly.", status.HTTP_429_TOO_MANY_REQUESTS)
+    specialty_id = payload.specialty_id
+    if specialty_id is not None:
+        allowed = db.execute(text("SELECT 1 FROM clinic_specialties WHERE clinic_id = :clinic_id AND id = CAST(:specialty_id AS uuid) AND status = 'active' AND archived_at IS NULL"), {"clinic_id": clinic_id, "specialty_id": specialty_id}).scalar_one_or_none()
+        if allowed is None:
+            raise _error("NOT_FOUND", "The selected specialty is unavailable.", status.HTTP_404_NOT_FOUND)
+    if payload.requested_service_id is not None:
+        service = db.execute(text("SELECT 1 FROM services WHERE clinic_id = :clinic_id AND id = CAST(:service_id AS uuid) AND status = 'active' AND visibility = 'public' AND archived_at IS NULL"), {"clinic_id": clinic_id, "service_id": payload.requested_service_id}).scalar_one_or_none()
+        if service is None:
+            raise _error("NOT_FOUND", "The selected service is unavailable.", status.HTTP_404_NOT_FOUND)
+    normalized_email = payload.email.strip().casefold() if payload.email else None
+    normalized_phone = "".join(character for character in payload.phone if character.isdigit() or character == "+") if payload.phone else None
+    key = idempotency_key.strip()
+    row = db.execute(text("""
+        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, campaign, specialty_id, requested_service_id, notes, intake_key)
+        VALUES (:clinic_id, :full_name, :email, :phone, 'website', :campaign, :specialty_id, :service_id, :notes, :intake_key)
+        ON CONFLICT (clinic_id, intake_key) DO NOTHING
+        RETURNING id, full_name, status, created_at
+    """), {"clinic_id": clinic_id, "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "campaign": payload.campaign, "specialty_id": specialty_id, "service_id": payload.requested_service_id, "notes": payload.notes, "intake_key": key}).mappings().one_or_none()
+    if row is None:
+        row = db.execute(text("SELECT id, full_name, status, created_at FROM leads WHERE clinic_id = :clinic_id AND intake_key = :intake_key"), {"clinic_id": clinic_id, "intake_key": key}).mappings().one()
+        duplicate = True
+    else:
+        duplicate = False
+    db.commit()
+    return {"data": {**dict(row), "duplicate": duplicate}, "meta": {"request_id": request.state.request_id}}
+
+
+@public_router.post("/slug/{clinic_slug}/leads", status_code=status.HTTP_201_CREATED)
+def public_slug_lead(clinic_slug: str, payload: WebsiteLeadCreate, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), db: Session = Depends(get_db)) -> dict:
+    return _capture_public_lead(_public_slug_clinic_id(db, clinic_slug), payload, request, idempotency_key, db)
+
+
+@public_router.post("/{hostname}/leads", status_code=status.HTTP_201_CREATED)
+def public_hostname_lead(hostname: str, payload: WebsiteLeadCreate, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), db: Session = Depends(get_db)) -> dict:
+    return _capture_public_lead(_public_clinic_id(db, _hostname(hostname)), payload, request, idempotency_key, db)
 
 
 def _collection_cursor(cursor: str | None, namespace: str) -> dict[str, str]:

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 
 class SectionContent(BaseModel):
@@ -20,6 +20,19 @@ class WebsiteSectionUpdate(BaseModel):
     position: int = Field(ge=0, le=100)
     content: SectionContent
     is_visible: bool = True
+
+
+class WebsiteLeadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str = Field(min_length=1, max_length=160)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=40)
+    campaign: str | None = Field(default=None, max_length=160)
+    specialty_id: str | None = Field(default=None, max_length=80)
+    requested_service_id: str | None = Field(default=None, max_length=40)
+    notes: str | None = Field(default=None, max_length=5000)
+    consent: StrictBool
 
 
 class WebsiteCreate(BaseModel):
