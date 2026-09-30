@@ -1,5 +1,7 @@
 from typing import Literal
 
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 
@@ -29,8 +31,8 @@ class WebsiteLeadCreate(BaseModel):
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
     campaign: str | None = Field(default=None, max_length=160)
-    specialty_id: str | None = Field(default=None, max_length=80)
-    requested_service_id: str | None = Field(default=None, max_length=40)
+    specialty_id: UUID | None = None
+    requested_service_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=5000)
     consent: StrictBool
 

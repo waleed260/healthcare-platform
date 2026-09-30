@@ -39,7 +39,7 @@ def _capture_public_lead(clinic_id: UUID | None, payload: WebsiteLeadCreate, req
         raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
     if not payload.consent:
         raise _error("CONSENT_REQUIRED", "Consent is required before submitting this form.", status.HTTP_400_BAD_REQUEST)
-    if not idempotency_key or len(idempotency_key.strip()) > 128:
+    if not idempotency_key or not idempotency_key.strip() or len(idempotency_key.strip()) > 128:
         raise _error("INVALID_INPUT", "An Idempotency-Key header is required.", status.HTTP_400_BAD_REQUEST)
     ip_address = request.client.host if request.client else "unknown"
     if not consume_public_management_limit(db, clinic_id=clinic_id, reference="website-lead", ip_address=ip_address, maximum=10):

@@ -92,6 +92,10 @@ def package_purchase(package_id: UUID, payload: PackagePurchase, request: Reques
     package = db.execute(text("SELECT id, validity_days FROM package_definitions WHERE clinic_id = :clinic_id AND id = :id AND status = 'active' AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().one_or_none()
     if package is None:
         raise _error("NOT_FOUND", "Package not found.", status.HTTP_404_NOT_FOUND)
+    if payload.invoice_id is not None:
+        invoice_ok = db.execute(text("SELECT 1 FROM invoices WHERE clinic_id = :clinic_id AND id = :invoice_id AND patient_id = :patient_id AND status <> 'void'"), {"clinic_id": session["clinic_id"], "invoice_id": payload.invoice_id, "patient_id": payload.patient_id}).scalar_one_or_none()
+        if invoice_ok is None:
+            raise _error("NOT_FOUND", "The invoice is not associated with this patient.", status.HTTP_404_NOT_FOUND)
     services = db.execute(text("SELECT service_id, sessions_count FROM package_services WHERE clinic_id = :clinic_id AND package_definition_id = :id ORDER BY service_id"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().all()
     if not services:
         raise _error("INVALID_STATE", "Add at least one service to the package before purchase.", status.HTTP_400_BAD_REQUEST)
