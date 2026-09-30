@@ -18,6 +18,7 @@ from app.modules.files.jobs import run_next_document_metadata_encryption, run_ne
 from app.modules.governance.jobs import run_expired_artifact_cleanup, run_next_export_job
 from app.modules.operations.jobs import run_overdue_follow_up_job
 from app.modules.websites.scanner import run_next_stored_website_media_scan
+from app.modules.clinical_media.scanner import run_next_stored_patient_media_scan
 
 
 LOGGER = logging.getLogger("healthcare.worker")
@@ -25,6 +26,7 @@ HANDLERS: dict[str, Callable] = {
     "document_scan": run_next_stored_document_scan,
     "document_metadata_encrypt": run_next_document_metadata_encryption,
     "website_media_scan": run_next_stored_website_media_scan,
+    "patient_media_scan": run_next_stored_patient_media_scan,
     "export": run_next_export_job,
     "retention_cleanup": run_expired_artifact_cleanup,
 }

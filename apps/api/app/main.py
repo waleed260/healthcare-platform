@@ -22,6 +22,7 @@ from app.modules.blueprint_core.routes import billing_router, lead_router, speci
 from app.modules.clinical.routes import prescription_router, router as clinical_router
 from app.modules.packages.routes import router as packages_router
 from app.modules.inventory.routes import router as inventory_router
+from app.modules.clinical_media.routes import router as clinical_media_router
 from app.modules.files.storage import check_storage_readiness
 from app.db.session import engine
 from sqlalchemy import text
@@ -64,6 +65,7 @@ app.include_router(clinical_router)
 app.include_router(prescription_router)
 app.include_router(packages_router)
 app.include_router(inventory_router)
+app.include_router(clinical_media_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_allowed_origins),
