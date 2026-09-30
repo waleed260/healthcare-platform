@@ -10,14 +10,18 @@ class SectionContent(BaseModel):
 
     heading: str = Field(default="", max_length=240)
     body: str = Field(default="", max_length=5000)
+    eyebrow: str = Field(default="", max_length=120)
     button_label: str | None = Field(default=None, max_length=80)
     button_href: str | None = Field(default=None, max_length=500)
+    items: list[dict[str, object]] = Field(default_factory=list, max_length=50)
+    location: str = Field(default="", max_length=500)
+    address: str = Field(default="", max_length=500)
 
 
 class WebsiteSectionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    section_type: Literal["hero", "appointment_cta", "doctor_profile", "services", "faq", "hours", "location", "about", "legal"]
+    section_type: Literal["hero", "banner", "appointment_cta", "lead_form", "doctor_profile", "services", "pricing", "faq", "testimonials", "results", "statistics", "hours", "location", "contact", "about", "legal"]
     layout_key: str = Field(min_length=1, max_length=80)
     position: int = Field(ge=0, le=100)
     content: SectionContent

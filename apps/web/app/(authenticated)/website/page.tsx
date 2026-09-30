@@ -15,7 +15,7 @@ type Validation = { valid: boolean; code: string | null; message: string | null 
 type Session = { permissions?: string[] };
 type RequestOptions = { method?: string; headers?: Record<string, string>; body?: string | Blob | null };
 
-const sectionTypes = ["hero", "services", "doctor_profile", "hours", "location", "appointment_cta", "about", "faq"];
+const sectionTypes = ["hero", "banner", "services", "doctor_profile", "pricing", "testimonials", "results", "statistics", "hours", "location", "contact", "appointment_cta", "lead_form", "about", "faq", "legal"];
 const defaultContent: Content = { heading: "About this clinic", body: "A calm place for thoughtful care.", button_label: null, button_href: null };
 type TemplateKey = "calm_clinic" | "editorial_practice" | "warm_studio";
 const templates: Array<{ key: TemplateKey; label: string; description: string }> = [
