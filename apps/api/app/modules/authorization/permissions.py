@@ -47,6 +47,12 @@ PERMISSIONS = {
     "admin.plan.manage",
     "admin.support.access",
     "admin.analytics.read",
+    "specialty.read",
+    "specialty.manage",
+    "lead.read",
+    "lead.manage",
+    "billing.read",
+    "billing.manage",
 }
 
 
