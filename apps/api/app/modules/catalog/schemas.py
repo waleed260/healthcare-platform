@@ -47,6 +47,16 @@ class ServiceUpdate(BaseModel):
         return self
 
 
+class ServiceTemplateImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: UUID
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    amount_minor: int | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    visibility: Literal["public", "hidden"] | None = None
+
+
 class BranchCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

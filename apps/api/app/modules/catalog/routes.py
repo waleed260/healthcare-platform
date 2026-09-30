@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.authorization.service import ForbiddenError, require_permission
-from app.modules.catalog.schemas import BranchCreate, BranchHoursUpsert, BranchUpdate, CatalogStatusUpdate, DoctorCreate, DoctorUpdate, HolidayCreate, ResourceCreate, ResourceUpdate, RoomCreate, RoomUpdate, ServiceCreate, ServiceUpdate
+from app.modules.catalog.schemas import BranchCreate, BranchHoursUpsert, BranchUpdate, CatalogStatusUpdate, DoctorCreate, DoctorUpdate, HolidayCreate, ResourceCreate, ResourceUpdate, RoomCreate, RoomUpdate, ServiceCreate, ServiceTemplateImport, ServiceUpdate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -15,6 +15,57 @@ from app.core.security import decode_cursor, encode_cursor
 
 router = APIRouter(prefix="/api/v1/services", tags=["services"])
 catalog_router = APIRouter(prefix="/api/v1", tags=["catalog"])
+
+
+@catalog_router.get("/catalog/service-templates")
+def list_service_templates(request: Request, specialty_id: str | None = Query(default=None), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "service.read")
+    rows = db.execute(text("""
+        SELECT t.id, t.code, t.name, t.category, t.subcategory, t.short_description, t.full_description,
+               t.duration_minutes, t.buffer_before_minutes, t.buffer_after_minutes, t.price_mode,
+               t.online_booking_allowed, t.consultation_required, t.sessions_count, t.follow_up_required,
+               t.follow_up_days, t.patient_instructions, t.specialty_id, s.name AS specialty_name
+        FROM service_templates t
+        LEFT JOIN specialties s ON s.id = t.specialty_id
+        WHERE t.status = 'active'
+          AND (:specialty_id IS NULL OR t.specialty_id = CAST(:specialty_id AS uuid))
+          AND (t.specialty_id IS NULL OR EXISTS (
+              SELECT 1 FROM clinic_specialties cs
+              WHERE cs.clinic_id = :clinic_id AND cs.specialty_id = t.specialty_id AND cs.status = 'active'
+          ))
+        ORDER BY COALESCE(s.name, ''), t.name, t.id
+    """), {"clinic_id": session["clinic_id"], "specialty_id": specialty_id}).mappings().all()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@catalog_router.post("/services/from-template", status_code=status.HTTP_201_CREATED)
+def import_service_template(payload: ServiceTemplateImport, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "service.manage", csrf_token)
+    row = db.execute(text("""
+        INSERT INTO services (
+            clinic_id, source_template_id, specialty_id, name, category, subcategory, short_description,
+            full_description, duration_minutes, buffer_before_minutes, buffer_after_minutes, price_mode,
+            amount_minor, currency, online_booking_allowed, consultation_required, sessions_count,
+            follow_up_required, follow_up_days, patient_instructions, visibility
+        )
+        SELECT :clinic_id, t.id, cs.id, COALESCE(:name, t.name), t.category, t.subcategory, t.short_description,
+               t.full_description, t.duration_minutes, t.buffer_before_minutes, t.buffer_after_minutes, t.price_mode,
+               :amount_minor, :currency, t.online_booking_allowed, t.consultation_required, t.sessions_count,
+               t.follow_up_required, t.follow_up_days, t.patient_instructions, COALESCE(:visibility, 'public')
+        FROM service_templates t
+        LEFT JOIN clinic_specialties cs ON cs.clinic_id = :clinic_id AND cs.specialty_id = t.specialty_id AND cs.status = 'active'
+        WHERE t.id = :template_id AND t.status = 'active'
+          AND (t.specialty_id IS NULL OR cs.id IS NOT NULL)
+        RETURNING id, source_template_id, specialty_id, name, category, subcategory, short_description,
+                  full_description, duration_minutes, buffer_before_minutes, buffer_after_minutes, price_mode,
+                  amount_minor, currency, online_booking_allowed, consultation_required, sessions_count,
+                  follow_up_required, follow_up_days, patient_instructions, visibility, status, version
+    """), {"clinic_id": session["clinic_id"], **payload.model_dump()}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "The service template is unavailable or its specialty is not enabled for this clinic.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="service.import_template", entity_type="service", entity_id=row["id"], outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"source_template_id": str(payload.template_id)})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
 def _authorized(db: Session, session_token: str | None, permission: str, branch_id: str | None = None) -> dict:
