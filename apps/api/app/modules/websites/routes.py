@@ -47,7 +47,7 @@ def _capture_public_lead(clinic_id: UUID | None, payload: WebsiteLeadCreate, req
         raise _error("RATE_LIMITED", "Too many form submissions. Try again shortly.", status.HTTP_429_TOO_MANY_REQUESTS)
     specialty_id = payload.specialty_id
     if specialty_id is not None:
-        allowed = db.execute(text("SELECT 1 FROM clinic_specialties WHERE clinic_id = :clinic_id AND id = CAST(:specialty_id AS uuid) AND status = 'active' AND archived_at IS NULL"), {"clinic_id": clinic_id, "specialty_id": specialty_id}).scalar_one_or_none()
+        allowed = db.execute(text("SELECT 1 FROM clinic_specialties WHERE clinic_id = :clinic_id AND specialty_id = CAST(:specialty_id AS uuid) AND status = 'active' AND archived_at IS NULL"), {"clinic_id": clinic_id, "specialty_id": specialty_id}).scalar_one_or_none()
         if allowed is None:
             raise _error("NOT_FOUND", "The selected specialty is unavailable.", status.HTTP_404_NOT_FOUND)
     if payload.requested_service_id is not None:

@@ -33,7 +33,7 @@ def upgrade() -> None:
             archived_at timestamptz NULL,
             CONSTRAINT uq_package_definitions_clinic_id UNIQUE (clinic_id, id),
             FOREIGN KEY (clinic_id) REFERENCES clinics (id) ON DELETE CASCADE,
-            FOREIGN KEY (clinic_id, specialty_id) REFERENCES clinic_specialties (clinic_id, id) ON DELETE RESTRICT
+            FOREIGN KEY (clinic_id, specialty_id) REFERENCES clinic_specialties (clinic_id, specialty_id) ON DELETE RESTRICT
         )
     """)
     op.execute("""

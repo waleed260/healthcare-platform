@@ -48,14 +48,14 @@ def import_service_template(payload: ServiceTemplateImport, request: Request, db
             amount_minor, currency, online_booking_allowed, consultation_required, sessions_count,
             follow_up_required, follow_up_days, patient_instructions, visibility
         )
-        SELECT :clinic_id, t.id, cs.id, COALESCE(:name, t.name), t.category, t.subcategory, t.short_description,
+        SELECT :clinic_id, t.id, cs.specialty_id, COALESCE(:name, t.name), t.category, t.subcategory, t.short_description,
                t.full_description, t.duration_minutes, t.buffer_before_minutes, t.buffer_after_minutes, t.price_mode,
                :amount_minor, :currency, t.online_booking_allowed, t.consultation_required, t.sessions_count,
                t.follow_up_required, t.follow_up_days, t.patient_instructions, COALESCE(:visibility, 'public')
         FROM service_templates t
         LEFT JOIN clinic_specialties cs ON cs.clinic_id = :clinic_id AND cs.specialty_id = t.specialty_id AND cs.status = 'active'
         WHERE t.id = :template_id AND t.status = 'active'
-          AND (t.specialty_id IS NULL OR cs.id IS NOT NULL)
+          AND (t.specialty_id IS NULL OR cs.specialty_id IS NOT NULL)
         RETURNING id, source_template_id, specialty_id, name, category, subcategory, short_description,
                   full_description, duration_minutes, buffer_before_minutes, buffer_after_minutes, price_mode,
                   amount_minor, currency, online_booking_allowed, consultation_required, sessions_count,
