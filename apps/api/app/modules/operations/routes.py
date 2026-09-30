@@ -194,8 +194,53 @@ def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=3
             ) paid ON paid.invoice_id = i.id
             WHERE i.clinic_id = :clinic_id AND i.issued_at >= now() - (:days * INTERVAL '1 day')
         """), params).mappings().one()
+        payment_methods = db.execute(text("""
+            SELECT p.method, COUNT(*) AS payments, COALESCE(SUM(p.amount_minor), 0) AS paid_minor
+            FROM payments p
+            WHERE p.clinic_id = :clinic_id AND p.paid_at >= now() - (:days * INTERVAL '1 day')
+            GROUP BY p.method ORDER BY paid_minor DESC, p.method
+        """), params).mappings().all()
+        aging = db.execute(text("""
+            SELECT bucket, COUNT(*) AS invoices, COALESCE(SUM(outstanding_minor), 0) AS outstanding_minor
+            FROM (
+                SELECT CASE
+                    WHEN now() - i.issued_at < INTERVAL '30 days' THEN '0_29'
+                    WHEN now() - i.issued_at < INTERVAL '60 days' THEN '30_59'
+                    WHEN now() - i.issued_at < INTERVAL '90 days' THEN '60_89'
+                    ELSE '90_plus'
+                END AS bucket,
+                i.total_minor - COALESCE(paid.paid_minor, 0) AS outstanding_minor
+                FROM invoices i
+                LEFT JOIN (
+                    SELECT invoice_id, SUM(amount_minor) AS paid_minor
+                    FROM payment_allocations WHERE clinic_id = :clinic_id GROUP BY invoice_id
+                ) paid ON paid.invoice_id = i.id
+                WHERE i.clinic_id = :clinic_id
+                  AND i.status NOT IN ('paid', 'refunded', 'void')
+                  AND i.total_minor - COALESCE(paid.paid_minor, 0) > 0
+            ) open_invoices
+            GROUP BY bucket
+            ORDER BY CASE bucket WHEN '0_29' THEN 1 WHEN '30_59' THEN 2 WHEN '60_89' THEN 3 ELSE 4 END
+        """), params).mappings().all()
+        financial = {**dict(financial), "payment_methods": [dict(row) for row in payment_methods], "aging": [dict(row) for row in aging]}
     except ForbiddenError:
         financial = None
+    package_utilization = db.execute(text("""
+        SELECT COUNT(*) AS packages, COALESCE(SUM(total_sessions), 0) AS sessions_purchased,
+               COALESCE(SUM(used_sessions), 0) AS sessions_used,
+               COALESCE(SUM(total_sessions - used_sessions), 0) AS sessions_remaining
+        FROM patient_packages
+        WHERE clinic_id = :clinic_id AND purchased_at >= now() - (:days * INTERVAL '1 day')
+    """), params).mappings().one()
+    low_inventory = db.execute(text("""
+        SELECT COUNT(*)
+        FROM inventory_stock stock
+        JOIN inventory_products product ON product.clinic_id = stock.clinic_id AND product.id = stock.product_id
+        WHERE stock.clinic_id = :clinic_id AND product.status = 'active' AND product.archived_at IS NULL
+          AND stock.quantity <= product.minimum_stock
+          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id)
+               OR EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id AND scope.branch_id = stock.branch_id))
+    """), params).scalar_one()
     operational = db.execute(text("""
         SELECT
           (SELECT COUNT(*) FROM queue_entries q WHERE q.clinic_id = :clinic_id AND q.status IN ('waiting', 'in_consultation')) AS waiting_patients,
@@ -203,7 +248,7 @@ def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=3
           (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = :clinic_id AND a.status = 'no_show' AND a.created_at >= now() - (:days * INTERVAL '1 day')) AS no_shows
     """), params).mappings().one()
     db.commit()
-    return {"data": {"period_days": days, "appointments": [dict(row) for row in appointment_counts], "patients_created": patient_count, "leads": [dict(row) for row in lead_counts], "financial": dict(financial) if financial else None, "operational": dict(operational)}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"period_days": days, "appointments": [dict(row) for row in appointment_counts], "patients_created": patient_count, "leads": [dict(row) for row in lead_counts], "financial": financial, "package_utilization": dict(package_utilization), "operational": {**dict(operational), "low_inventory": low_inventory}}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/queue")
