@@ -154,6 +154,58 @@ def dashboard_summary(request: Request, db: Session = Depends(get_db), session_t
     return {"data": {**dict(counts), "waiting_patients": queue_count, "followups_due": followups_due}, "meta": {"request_id": request.state.request_id}}
 
 
+@router.get("/reporting-summary")
+def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=365), specialty_id: str | None = Query(default=None), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "report.read")
+    clinic_id = session["clinic_id"]
+    params = {"clinic_id": clinic_id, "user_id": session["user_id"], "days": days, "specialty_id": specialty_id}
+    appointment_counts = db.execute(text("""
+        SELECT a.status, COUNT(*) AS count
+        FROM appointments a
+        WHERE a.clinic_id = :clinic_id AND a.archived_at IS NULL
+          AND a.created_at >= now() - (:days * INTERVAL '1 day')
+          AND (:specialty_id IS NULL OR a.specialty_id = CAST(:specialty_id AS uuid))
+          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+               OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
+        GROUP BY a.status ORDER BY a.status
+    """), params).mappings().all()
+    patient_count = db.execute(text("""
+        SELECT COUNT(*) FROM patients p
+        WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL
+          AND p.created_at >= now() - (:days * INTERVAL '1 day')
+    """), params).scalar_one()
+    lead_counts = db.execute(text("""
+        SELECT l.status, COUNT(*) AS count FROM leads l
+        WHERE l.clinic_id = :clinic_id AND l.created_at >= now() - (:days * INTERVAL '1 day')
+          AND (:specialty_id IS NULL OR l.specialty_id = CAST(:specialty_id AS uuid))
+        GROUP BY l.status ORDER BY l.status
+    """), params).mappings().all()
+    financial = None
+    try:
+        require_permission(db, session["user_id"], clinic_id, "billing.read")
+        financial = db.execute(text("""
+            SELECT COUNT(*) AS invoices, COALESCE(SUM(i.total_minor), 0) AS invoiced_minor,
+                   COALESCE(SUM(i.total_minor - COALESCE(paid.paid_minor, 0)), 0) AS outstanding_minor,
+                   COALESCE(SUM(paid.paid_minor), 0) AS paid_minor
+            FROM invoices i
+            LEFT JOIN (
+                SELECT invoice_id, SUM(amount_minor) AS paid_minor
+                FROM payment_allocations WHERE clinic_id = :clinic_id GROUP BY invoice_id
+            ) paid ON paid.invoice_id = i.id
+            WHERE i.clinic_id = :clinic_id AND i.issued_at >= now() - (:days * INTERVAL '1 day')
+        """), params).mappings().one()
+    except ForbiddenError:
+        financial = None
+    operational = db.execute(text("""
+        SELECT
+          (SELECT COUNT(*) FROM queue_entries q WHERE q.clinic_id = :clinic_id AND q.status IN ('waiting', 'in_consultation')) AS waiting_patients,
+          (SELECT COUNT(*) FROM follow_up_tasks f WHERE f.clinic_id = :clinic_id AND f.status IN ('due', 'contacted', 'booked') AND f.due_at <= now()) AS followups_due,
+          (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = :clinic_id AND a.status = 'no_show' AND a.created_at >= now() - (:days * INTERVAL '1 day')) AS no_shows
+    """), params).mappings().one()
+    db.commit()
+    return {"data": {"period_days": days, "appointments": [dict(row) for row in appointment_counts], "patients_created": patient_count, "leads": [dict(row) for row in lead_counts], "financial": dict(financial) if financial else None, "operational": dict(operational)}, "meta": {"request_id": request.state.request_id}}
+
+
 @router.get("/queue")
 def queue_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "queue.read")

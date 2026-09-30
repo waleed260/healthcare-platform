@@ -55,6 +55,7 @@ PERMISSIONS = {
     "billing.manage",
     "clinical.read",
     "clinical.manage",
+    "report.read",
 }
 
 
