@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
   { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
   { href: "/billing", label: "Billing", icon: "₿", permission: "billing.read" },
   { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
+  { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
   { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
   { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
   { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
