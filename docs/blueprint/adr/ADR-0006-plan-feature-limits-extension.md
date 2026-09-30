@@ -1,6 +1,6 @@
 # ADR-0006: Specialty locking and upgrade requests extend the existing plan control plane
 
-- Status: proposed — pending human review
+- Status: Accepted — approved by human owner on 2026-09-30
 - Date: 2026-09-30
 - Scope: blueprint §§4.2–4.4 and §23
 

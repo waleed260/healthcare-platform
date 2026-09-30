@@ -1,6 +1,6 @@
 # ADR-0002: Leads are a separate pipeline entity with a patient conversion link
 
-- Status: proposed — pending human review
+- Status: Accepted — approved by human owner on 2026-09-30
 - Date: 2026-09-30
 - Scope: blueprint §9.1 and §22.2
 

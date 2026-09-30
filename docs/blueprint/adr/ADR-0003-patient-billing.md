@@ -1,6 +1,6 @@
 # ADR-0003: Patient billing uses clinic-scoped invoices plus an append-only payment ledger
 
-- Status: proposed — pending human review
+- Status: Accepted — approved by human owner on 2026-09-30
 - Date: 2026-09-30
 - Scope: blueprint §12 and §23
 

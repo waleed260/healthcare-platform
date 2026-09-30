@@ -1,6 +1,6 @@
 # ADR-0001: Specialty is a clinic-scoped dimension, alongside branch scope
 
-- Status: proposed — pending human review
+- Status: Accepted — approved by human owner on 2026-09-30
 - Date: 2026-09-30
 - Scope: blueprint §§3.1, 3.2, 6, 14.2
 

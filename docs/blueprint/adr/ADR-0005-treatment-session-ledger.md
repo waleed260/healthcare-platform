@@ -1,6 +1,6 @@
 # ADR-0005: Package and treatment sessions use a separate session ledger linked to appointments
 
-- Status: proposed — pending human review
+- Status: Accepted — approved by human owner on 2026-09-30
 - Date: 2026-09-30
 - Scope: blueprint §§8, 11, 12
 
