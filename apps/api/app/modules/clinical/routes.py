@@ -11,11 +11,12 @@ from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
-from app.modules.clinical.schemas import TreatmentPlanCreate, TreatmentPlanItemCreate, TreatmentPlanItemUpdate, TreatmentPlanUpdate
+from app.modules.clinical.schemas import PrescriptionCreate, PrescriptionStatusUpdate, TreatmentPlanCreate, TreatmentPlanItemCreate, TreatmentPlanItemUpdate, TreatmentPlanUpdate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 
 router = APIRouter(prefix="/api/v1/treatment-plans", tags=["clinical"])
+prescription_router = APIRouter(prefix="/api/v1/patients", tags=["clinical"])
 
 
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
@@ -119,4 +120,51 @@ def item_update(plan_id: UUID, item_id: UUID, payload: TreatmentPlanItemUpdate, 
     if row is None:
         raise _error("VERSION_CONFLICT", "The treatment item changed before this update.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="treatment_plan.item.update", entity_type="treatment_plan_item", entity_id=item_id, outcome="success", request_id=UUID(request.state.request_id))
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@prescription_router.get("/{patient_id}/prescriptions")
+def prescription_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "clinical.read")
+    rows = db.execute(text("""
+        SELECT id, patient_id, appointment_id, prescribed_by_user_id, medication_name, dosage, frequency,
+               duration, instructions, status, version, prescribed_at, updated_at
+        FROM prescriptions WHERE clinic_id = :clinic_id AND patient_id = :patient_id
+        ORDER BY prescribed_at DESC, id DESC
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@prescription_router.post("/{patient_id}/prescriptions", status_code=status.HTTP_201_CREATED)
+def prescription_create(patient_id: UUID, payload: PrescriptionCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "clinical.manage", csrf_token)
+    patient_exists = db.execute(text("SELECT 1 FROM patients WHERE clinic_id = :clinic_id AND id = :patient_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).scalar_one_or_none()
+    if patient_exists is None:
+        raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
+    if payload.appointment_id is not None:
+        appointment_ok = db.execute(text("SELECT 1 FROM appointments WHERE clinic_id = :clinic_id AND id = :appointment_id AND patient_id = :patient_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "appointment_id": payload.appointment_id, "patient_id": patient_id}).scalar_one_or_none()
+        if appointment_ok is None:
+            raise _error("NOT_FOUND", "The appointment is not associated with this patient.", status.HTTP_404_NOT_FOUND)
+    row = db.execute(text("""
+        INSERT INTO prescriptions (clinic_id, patient_id, appointment_id, prescribed_by_user_id, medication_name, dosage, frequency, duration, instructions)
+        VALUES (:clinic_id, :patient_id, :appointment_id, :user_id, :medication_name, :dosage, :frequency, :duration, :instructions)
+        RETURNING id, patient_id, appointment_id, prescribed_by_user_id, medication_name, dosage, frequency, duration, instructions, status, version, prescribed_at, updated_at
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"], **payload.model_dump()}).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="prescription.create", entity_type="prescription", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@prescription_router.patch("/{patient_id}/prescriptions/{prescription_id}/status")
+def prescription_status(patient_id: UUID, prescription_id: UUID, payload: PrescriptionStatusUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "clinical.manage", csrf_token)
+    row = db.execute(text("""
+        UPDATE prescriptions SET status = :status, version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id AND version = :expected_version
+        RETURNING id, patient_id, medication_name, status, version, updated_at
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "id": prescription_id, "status": payload.status, "expected_version": payload.expected_version}).mappings().one_or_none()
+    if row is None:
+        raise _error("VERSION_CONFLICT", "The prescription changed before this update.", status.HTTP_409_CONFLICT)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="prescription.status", entity_type="prescription", entity_id=prescription_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"status": payload.status})
+    db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}

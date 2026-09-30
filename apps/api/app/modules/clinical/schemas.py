@@ -46,3 +46,21 @@ class TreatmentPlanItemUpdate(BaseModel):
     status: str | None = Field(default=None, pattern="^(planned|in_progress|completed|skipped)$")
     due_on: date | None = None
     sort_order: int | None = Field(default=None, ge=0, le=10000)
+
+
+class PrescriptionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    medication_name: str = Field(min_length=1, max_length=200)
+    appointment_id: UUID | None = None
+    dosage: str | None = Field(default=None, max_length=200)
+    frequency: str | None = Field(default=None, max_length=200)
+    duration: str | None = Field(default=None, max_length=200)
+    instructions: str | None = Field(default=None, max_length=2000)
+
+
+class PrescriptionStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    status: str = Field(pattern="^(active|completed|discontinued)$")
