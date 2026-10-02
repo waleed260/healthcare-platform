@@ -19,7 +19,10 @@ const nextConfig: NextConfig = {
     if (!(["http:", "https:"] as string[]).includes(parsedOrigin.protocol)) {
       throw new Error("API_URL must use http or https");
     }
-    return [{ source: "/api/:path*", destination: `${apiOrigin.replace(/\/$/, "")}/api/:path*` }];
+    return [
+      { source: "/api/:path*", destination: `${apiOrigin.replace(/\/$/, "")}/api/:path*` },
+      { source: "/:clinicSlug/sitemap.xml", destination: "/:clinicSlug/sitemap-feed" },
+    ];
   },
 };
 export default nextConfig;
