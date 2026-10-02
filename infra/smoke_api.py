@@ -162,6 +162,23 @@ def main() -> int:
                 ok = bool(mine) and mine["status"] == "submitted" and mine["response_data"].get("area") == "B"
                 results.append(("form response persisted + submitted", ok, "" if ok else str(mine)))
                 print(f"{'PASS' if ok else 'FAIL'}  form response persisted + submitted")
+
+        # specialty tools: save structured state, reload, verify persistence + server-computed total
+        put_hdr = {**csrf(), "Content-Type": "application/json"}
+        graft = client.put(f"/api/v1/patients/{pid}/tool-states/graft_plan", headers=put_hdr, json={"tool_key": "graft_plan", "state": {"zones": {"hairline": 1500, "crown": 500}, "notes": "smoke"}})
+        gdata = check("tool state save (graft_plan)", graft)
+        if gdata:
+            results.append(("graft total computed server-side", gdata.get("state", {}).get("total") == 2000, str(gdata.get("state"))))
+            print(f"{'PASS' if results[-1][1] else 'FAIL'}  graft total computed server-side")
+        check("tool state save (dental_chart)", client.put(f"/api/v1/patients/{pid}/tool-states/dental_chart", headers=put_hdr, json={"tool_key": "dental_chart", "state": {"teeth": {"11": "crown", "36": "filled"}}}))
+        # invalid state must be rejected
+        bad_tool = client.put(f"/api/v1/patients/{pid}/tool-states/norwood", headers=put_hdr, json={"tool_key": "norwood", "state": {"stage": "XII"}})
+        results.append(("invalid tool state rejected", bad_tool.status_code == 400, str(bad_tool.status_code)))
+        print(f"{'PASS' if results[-1][1] else 'FAIL'}  invalid tool state rejected")
+        tools = check("tool states reload", client.get(f"/api/v1/patients/{pid}/tool-states")) or []
+        keys = {t["tool_key"] for t in tools}
+        results.append(("tool states persisted + reloaded", {"graft_plan", "dental_chart"} <= keys, str(keys)))
+        print(f"{'PASS' if results[-1][1] else 'FAIL'}  tool states persisted + reloaded")
     # patient media upload (raw image body) -> appears pending scan, verified over real HTTP + storage
     if patients:
         import base64 as _b64

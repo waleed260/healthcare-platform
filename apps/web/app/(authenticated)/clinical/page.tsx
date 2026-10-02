@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, label, patch, post } from "../_lib/client";
 import FormsPanel from "./forms-panel";
 import MediaUpload from "./media-upload";
+import ToolsPanel from "./tools-panel";
 
 type Patient = { id: string; full_name: string; patient_number: string };
 type Plan = { id: string; title: string; diagnosis: string | null; status: string; starts_on: string | null; version: number };
@@ -13,7 +14,7 @@ type Consent = { id: string; consent_type: string; status: string; recorded_at: 
 type Media = { id: string; media_kind: string; captured_on: string | null; scan_status: string; approval_status: string; approved_for_website: boolean; version: number };
 type Session = { permissions?: string[] };
 
-const TABS = ["plans", "prescriptions", "forms", "consent"] as const;
+const TABS = ["plans", "prescriptions", "forms", "tools", "consent"] as const;
 type Tab = (typeof TABS)[number];
 const list = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
@@ -91,6 +92,7 @@ export default function ClinicalPage() {
       <div className="invoice-list">{prescriptions.length === 0 && <div className="dashboard-empty"><strong>No prescriptions</strong></div>}{prescriptions.map((rx) => <article className="invoice-row" key={rx.id}><div className="invoice-mark">Rx</div><div className="invoice-main"><h3>{rx.medication_name}</h3><p>{[rx.dosage, rx.frequency, rx.duration].filter(Boolean).join(" · ") || "No details"}</p><small>{new Date(rx.prescribed_at).toLocaleDateString()}</small></div><div className="invoice-actions"><span className={`pipeline-status status-${rx.status === "active" ? "contacted" : "paid"}`}>{rx.status}</span>{can("clinical.manage") && rx.status === "active" && <button className="text-control" disabled={busy} onClick={() => void run(() => patch(`/api/v1/patients/${patientId}/prescriptions/${rx.id}/status`, { expected_version: rx.version, status: "completed" }), "Prescription completed.")}>Complete</button>}</div></article>)}</div></section>}
 
     {tab === "forms" && <FormsPanel patientId={patientId} permissions={permissions} onError={setError} />}
+    {tab === "tools" && <ToolsPanel patientId={patientId} permissions={permissions} onError={setError} />}
     {tab === "consent" && <section className="surface-card"><div className="surface-card-heading"><div><p className="eyebrow">CONSENT &amp; MEDIA</p><h2>Nothing public without consent.</h2></div></div>
       {can("consent.manage") && patientId && <form className="manage-form" onSubmit={addConsent}><div className="form-grid"><label>Consent type<input name="type" required maxLength={80} placeholder="website_media" /></label></div><div className="form-actions"><button className="button button-secondary" type="submit" disabled={busy}>Record granted consent</button></div></form>}
       <div className="invoice-list">{consents.map((consent) => <article className="invoice-row" key={consent.id}><div className="invoice-mark">✓</div><div className="invoice-main"><h3>{consent.consent_type}</h3><small>{new Date(consent.recorded_at).toLocaleString()}</small></div><div className="invoice-actions"><span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{consent.status}</span></div></article>)}
