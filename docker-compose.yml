@@ -48,6 +48,10 @@ services:
       SESSION_HMAC_KEY: ${SESSION_HMAC_KEY:-local-development-session-hmac-key-change-me}
       FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-l9E3deCfohbclkEMS8_mxCcgi-71x5H_f1f8sOmr1Jo=}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      # Trust forwarded headers only from peers on the compose network (the tunnel),
+      # never "*", so a direct client cannot spoof X-Forwarded-For. The default is
+      # the fixed subnet defined under `networks` below; override for other proxies.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.31.7.0/24}
       CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:-http://localhost:3000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
@@ -95,3 +99,12 @@ volumes:
   pgdata:
   privatedata:
   publicdata:
+
+# Pin the compose network to a known subnet so FORWARDED_ALLOW_IPS can name it
+# explicitly: the API then trusts forwarded headers only from containers on this
+# network (the Cloudflare tunnel), not from any client that reaches it directly.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.7.0/24

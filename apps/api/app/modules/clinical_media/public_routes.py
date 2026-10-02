@@ -53,7 +53,9 @@ def public_results(clinic_slug: str, request: Request, db: Session = Depends(get
         "url": f"/api/v1/public/sites/slug/{clinic_slug}/results/{row['id']}/image",
     } for row in rows]
     db.commit()
-    return {"data": items, "meta": {"request_id": request.state.request_id, "cache_control": "public, max-age=60"}}
+    # The gallery list is derived from live approval/consent state; keep it out of
+    # shared caches so a withdrawn case cannot linger behind the image revocation.
+    return {"data": items, "meta": {"request_id": request.state.request_id, "cache_control": "private, no-store"}}
 
 
 @public_router.get("/results/{media_id}/image")
@@ -74,4 +76,8 @@ def public_result_image(clinic_slug: str, media_id: UUID, db: Session = Depends(
         content = read_private_object(row["storage_key"])
     except Exception as exc:
         raise _error("NOT_FOUND", "Image not found.", status.HTTP_404_NOT_FOUND) from exc
-    return Response(content=content, media_type=row["mime_type"], headers={"Cache-Control": "public, max-age=300"})
+    # No shared/browser caching: approval or consent can be withdrawn at any time
+    # and the module contract promises the image disappears immediately. A cached
+    # copy (CDN or browser) would keep serving a revoked patient photo for the
+    # life of the max-age, so patient media must never be stored downstream.
+    return Response(content=content, media_type=row["mime_type"], headers={"Cache-Control": "private, no-store, max-age=0", "Vary": "Cookie"})

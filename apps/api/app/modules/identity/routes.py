@@ -71,6 +71,7 @@ def _session_or_401(db: Session, session_token: str | None, require_mfa: bool = 
 
 @router.post("/login")
 def login(payload: LoginRequest, response: Response, request: Request, db: Session = Depends(get_db)) -> dict:
+    _validate_origin(request)
     try:
         result = authenticate(db, payload.email, payload.password, request.client.host if request.client else "unknown", request.headers.get("user-agent"))
         if result.clinic_id is not None:
