@@ -9,7 +9,10 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -v runtime_password="$RUNTIME_PASSWORD" -f infra/neon/001_bootstrap_runtime_role.sql
 SQLALCHEMY_URL="postgresql+psycopg://${OWNER_URL#*://}"
-(cd apps/api && DATABASE_URL="$SQLALCHEMY_URL" DATABASE_MIGRATION_URL="$SQLALCHEMY_URL" alembic upgrade head)
+ALEMBIC=alembic; [ -x apps/api/.venv/bin/alembic ] && ALEMBIC="$PWD/apps/api/.venv/bin/alembic"
+command -v "$ALEMBIC" >/dev/null || { echo "alembic not found: activate apps/api/.venv or pip install -r apps/api/requirements.txt"; exit 1; }
+command -v psql >/dev/null || { echo "psql not found (install postgresql-client)"; exit 1; }
+(cd apps/api && DATABASE_URL="$SQLALCHEMY_URL" DATABASE_MIGRATION_URL="$SQLALCHEMY_URL" "$ALEMBIC" upgrade head)
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'alembic head: ' || version_num FROM alembic_version"
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime role owns tables: ' || count(*) FROM pg_tables WHERE schemaname='public' AND tableowner='healthcare_runtime'"
 
