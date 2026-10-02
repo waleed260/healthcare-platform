@@ -117,7 +117,7 @@ def run_overdue_follow_up_job(db: Session, clinic_id: UUID, now: datetime | None
             notification_id = db.execute(text("""
                 INSERT INTO notifications (clinic_id, user_id, kind, title, body, source_job_key)
                 VALUES (:clinic_id, :user_id, 'follow_up_overdue', 'Follow-up needs attention', 'A follow-up task is overdue. Open the dashboard to review it.', :job_key)
-                ON CONFLICT (clinic_id, user_id, source_job_key) DO NOTHING
+                ON CONFLICT (clinic_id, user_id, source_job_key) WHERE source_job_key IS NOT NULL DO NOTHING
                 RETURNING id
             """), {"clinic_id": clinic_id, "user_id": user_id, "job_key": job_key}).scalar_one_or_none()
             if notification_id is None:
