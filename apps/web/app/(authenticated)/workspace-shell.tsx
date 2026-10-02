@@ -15,10 +15,13 @@ const navItems: NavItem[] = [
   { href: "/leads", label: "Leads", icon: "↳", permission: "lead.read" },
   { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
   { href: "/billing", label: "Billing", icon: "₿", permission: "billing.read" },
+  { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },
   { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
   { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
   { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
   { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
+  { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
+  { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
   { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
   { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read" },
 ];
@@ -67,7 +70,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
       <div className="workspace-sidebar-foot"><span className="workspace-status-dot" />Live clinic data</div>
     </aside>
     <div className="workspace-stage">
-      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "AUTHENTICATED WORKSPACE" : "CHECKING WORKSPACE ACCESS"}</p><span className="workspace-greeting">Good morning, <em>{session?.display_name?.split(" ")[0] ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/operations" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><button className="workspace-avatar" type="button" aria-label="Open account menu">{initials}</button></div></header>
+      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "AUTHENTICATED WORKSPACE" : "CHECKING WORKSPACE ACCESS"}</p><span className="workspace-greeting">Good morning, <em>{session?.display_name?.split(" ")[0] ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><button className="workspace-avatar" type="button" aria-label="Open account menu">{initials}</button></div></header>
       {connectionIssue && <div className="workspace-connection-alert" role="status">Your workspace connection could not be checked. Protected pages will explain how to retry.</div>}
       <div className="workspace-body">{children}</div>
     </div>
