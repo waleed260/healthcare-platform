@@ -12,4 +12,18 @@ SQLALCHEMY_URL="postgresql+psycopg://${OWNER_URL#*://}"
 (cd apps/api && DATABASE_URL="$SQLALCHEMY_URL" DATABASE_MIGRATION_URL="$SQLALCHEMY_URL" alembic upgrade head)
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'alembic head: ' || version_num FROM alembic_version"
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime role owns tables: ' || count(*) FROM pg_tables WHERE schemaname='public' AND tableowner='healthcare_runtime'"
+
+# --- verify the runtime role really can use what the migrations created (silent-failure guard) ---
+missing=$(psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname='public' AND tablename <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', format('public.%I', tablename), 'SELECT')")
+if [ -n "$missing" ]; then echo "FAIL: healthcare_runtime has no SELECT on: $missing"; exit 1; fi
+echo "runtime SELECT privilege: ok on every public table"
+RUNTIME_URL=$(python3 - <<PY
+import os, urllib.parse as u
+parts = u.urlsplit(os.environ["OWNER_URL"])
+host = parts.netloc.rsplit("@", 1)[-1]
+print(u.urlunsplit((parts.scheme, "healthcare_runtime:" + u.quote(os.environ["RUNTIME_PASSWORD"], safe="") + "@" + host, parts.path, parts.query, "")))
+PY
+)
+psql "$RUNTIME_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime read plans: ' || count(*) FROM plans"
+psql "$RUNTIME_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime can INSERT clinics: ' || has_table_privilege('healthcare_runtime','public.clinics','INSERT')"
 echo "OK. Use the POOLED host + healthcare_runtime for DATABASE_URL and this OWNER_URL (direct) for DATABASE_MIGRATION_URL."

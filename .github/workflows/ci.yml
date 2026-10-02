@@ -149,6 +149,11 @@ jobs:
           echo "migration did not finish"; docker compose logs migrate; exit 1
       - name: Probe the API
         run: bash infra/verify_deploy.sh http://localhost:8000
+      - name: Runtime role privilege check (throwaway local Postgres only; never touches Neon)
+        run: |
+          missing=$(docker compose exec -T db psql -U healthcare_migrator -d healthcare -Atc "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname='public' AND tablename <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', format('public.%I', tablename), 'SELECT')")
+          test -z "$missing" || { echo "healthcare_runtime lacks SELECT on: $missing"; exit 1; }
+          docker compose exec -T db psql -U healthcare_runtime -d healthcare -Atc "SELECT count(*) FROM plans"
       - name: Logs on failure
         if: failure()
         run: docker compose logs --no-color
