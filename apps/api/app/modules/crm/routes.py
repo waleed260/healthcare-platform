@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.core.security import decode_cursor, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
+from app.modules.crm.merge import merge_patients
 from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
@@ -27,6 +28,15 @@ def _normalize_email(value: str | None) -> str | None:
 
 def _normalize_phone(value: str | None) -> str | None:
     return "".join(character for character in value if character.isdigit() or character == "+") if value else None
+
+
+def _like_contains(value: str) -> str:
+    """Build a case-insensitive ``contains`` pattern that treats the user's text
+    literally. ``%``, ``_`` and the escape char ``\\`` are neutralised so a search
+    for e.g. ``50%`` cannot turn into a wildcard scan of every patient. Pair with
+    ``ILIKE :pattern ESCAPE '\\'`` in the query."""
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
@@ -216,9 +226,9 @@ def patient_list(request: Request, search: str | None = Query(default=None, max_
         WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL AND p.duplicate_of IS NULL
           {_patient_scope_sql('p')}
           AND (:after_name IS NULL OR p.full_name > :after_name OR (p.full_name = :after_name AND p.id > :after_id))
-          AND (:term = '' OR p.full_name ILIKE :like_term OR p.normalized_email = :email OR p.normalized_phone = :phone)
+          AND (:term = '' OR p.full_name ILIKE :like_term ESCAPE '\\' OR p.normalized_email = :email OR p.normalized_phone = :phone)
         ORDER BY p.full_name, p.id LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_name": cursor_values.get("full_name") if cursor_values else None, "after_id": UUID(cursor_values["id"]) if cursor_values else None, "term": term, "like_term": f"%{term}%", "email": _normalize_email(term), "phone": _normalize_phone(term), "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_name": cursor_values.get("full_name") if cursor_values else None, "after_id": UUID(cursor_values["id"]) if cursor_values else None, "term": term, "like_term": _like_contains(term), "email": _normalize_email(term), "phone": _normalize_phone(term), "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = None
@@ -231,29 +241,30 @@ def patient_list(request: Request, search: str | None = Query(default=None, max_
 @router.post("/duplicate-candidates")
 def duplicate_candidates(payload: PatientCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     """Return ranked possible matches before a staff member creates a patient."""
+    _validate_origin(request)
     session = _authorized(db, session_token, "patient.read")
     normalized_email = _normalize_email(payload.email)
     normalized_phone = _normalize_phone(payload.phone)
-    rows = db.execute(text("""
+    rows = db.execute(text(f"""
         SELECT id, patient_number, full_name, normalized_email, normalized_phone,
                date_of_birth, status, version,
                (CASE WHEN :email IS NOT NULL AND normalized_email = :email THEN 8 ELSE 0 END
                 + CASE WHEN :phone IS NOT NULL AND normalized_phone = :phone THEN 8 ELSE 0 END
                 + CASE WHEN :date_of_birth IS NOT NULL AND date_of_birth = :date_of_birth THEN 4 ELSE 0 END
                 + CASE WHEN lower(full_name) = lower(:full_name) THEN 4
-                       WHEN full_name ILIKE :name_pattern THEN 1 ELSE 0 END) AS match_score
+                       WHEN full_name ILIKE :name_pattern ESCAPE '\\' THEN 1 ELSE 0 END) AS match_score
         FROM patients p
         WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL AND p.duplicate_of IS NULL
           {_patient_scope_sql('p')}
           AND (
             (:email IS NOT NULL AND normalized_email = :email)
             OR (:phone IS NOT NULL AND normalized_phone = :phone)
-            OR (:date_of_birth IS NOT NULL AND date_of_birth = :date_of_birth AND full_name ILIKE :name_pattern)
-            OR full_name ILIKE :name_pattern
+            OR (:date_of_birth IS NOT NULL AND date_of_birth = :date_of_birth AND full_name ILIKE :name_pattern ESCAPE '\\')
+            OR full_name ILIKE :name_pattern ESCAPE '\\'
           )
         ORDER BY match_score DESC, full_name, id
         LIMIT 20
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "email": normalized_email, "phone": normalized_phone, "date_of_birth": payload.date_of_birth, "full_name": payload.full_name.strip(), "name_pattern": f"%{payload.full_name.strip()}%"}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "email": normalized_email, "phone": normalized_phone, "date_of_birth": payload.date_of_birth, "full_name": payload.full_name.strip(), "name_pattern": _like_contains(payload.full_name.strip())}).mappings().all()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.duplicate_candidates", entity_type="patient", entity_id=None, outcome="success", request_id=UUID(request.state.request_id), metadata={"candidate_count": len(rows)})
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "review_required": bool(rows)}}
@@ -443,11 +454,25 @@ def patient_create(payload: PatientCreate, request: Request, db: Session = Depen
     """), {"clinic_id": session["clinic_id"], "email": normalized_email, "phone": normalized_phone}).scalar_one_or_none()
     if duplicate is not None:
         raise _error("DUPLICATE_REVIEW_REQUIRED", "A matching patient already exists and requires review.", status.HTTP_409_CONFLICT)
-    patient = db.execute(text("""
-        INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth)
-        VALUES (:clinic_id, :patient_number, :full_name, :email, :phone, :date_of_birth)
-        RETURNING id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth, status, version, created_at
-    """), {"clinic_id": session["clinic_id"], "patient_number": f"P-{secrets.token_hex(6).upper()}", "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "date_of_birth": payload.date_of_birth}).mappings().one()
+    insert_params = {"clinic_id": session["clinic_id"], "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "date_of_birth": payload.date_of_birth}
+    patient = None
+    # The random 12-hex patient number has a vanishing but non-zero collision
+    # chance against the (clinic_id, patient_number) unique index; retry on the
+    # unique violation inside a savepoint so one unlucky draw is not a 500.
+    for _ in range(5):
+        try:
+            with db.begin_nested():
+                patient = db.execute(text("""
+                    INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth)
+                    VALUES (:clinic_id, :patient_number, :full_name, :email, :phone, :date_of_birth)
+                    RETURNING id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth, status, version, created_at
+                """), {**insert_params, "patient_number": f"P-{secrets.token_hex(6).upper()}"}).mappings().one()
+            break
+        except IntegrityError:
+            patient = None
+            continue
+    if patient is None:
+        raise _error("CONFLICT", "Could not allocate a unique patient number; please retry.", status.HTTP_409_CONFLICT)
     db.commit()
     return {"data": dict(patient), "meta": {"request_id": request.state.request_id}}
 
@@ -473,20 +498,9 @@ def patient_merge(patient_id: UUID, payload: PatientMerge, request: Request, db:
     rows = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND id IN (:source, :target) AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "source": patient_id, "target": payload.target_patient_id}).scalars().all()
     if len(rows) != 2:
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
-    params = {"clinic_id": session["clinic_id"], "source": patient_id, "target": payload.target_patient_id}
-    db.execute(text("UPDATE appointments SET patient_id = :target WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("UPDATE follow_up_tasks SET patient_id = :target, updated_at = now() WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("UPDATE patient_notes SET patient_id = :target, updated_at = now(), version = version + 1 WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("UPDATE consent_records SET patient_id = :target WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("UPDATE patient_contacts SET patient_id = :target, updated_at = now() WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("INSERT INTO patient_care_team (clinic_id, patient_id, doctor_id, assigned_by_user_id) SELECT clinic_id, :target, doctor_id, assigned_by_user_id FROM patient_care_team WHERE clinic_id = :clinic_id AND patient_id = :source ON CONFLICT DO NOTHING"), params)
-    db.execute(text("DELETE FROM patient_care_team WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("INSERT INTO patient_tags (clinic_id, patient_id, tag_id) SELECT clinic_id, :target, tag_id FROM patient_tags WHERE clinic_id = :clinic_id AND patient_id = :source ON CONFLICT DO NOTHING"), params)
-    db.execute(text("DELETE FROM patient_tags WHERE clinic_id = :clinic_id AND patient_id = :source"), params)
-    db.execute(text("UPDATE patients SET duplicate_of = :target, status = 'merged', archived_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :source"), params)
-    db.execute(text("INSERT INTO patient_merge_events (clinic_id, source_patient_id, target_patient_id, actor_user_id, reason) VALUES (:clinic_id, :source, :target, :actor, :reason)"), {"clinic_id": session["clinic_id"], "source": patient_id, "target": payload.target_patient_id, "actor": session["user_id"], "reason": payload.reason})
+    counts = merge_patients(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], source_id=patient_id, target_id=payload.target_patient_id, reason=payload.reason)
     db.commit()
-    return {"data": {"source_patient_id": patient_id, "target_patient_id": payload.target_patient_id, "merged": True}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"source_patient_id": patient_id, "target_patient_id": payload.target_patient_id, "merged": True, "moved": counts}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/{patient_id}/contacts")

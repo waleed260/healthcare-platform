@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
@@ -62,22 +63,39 @@ def normalize_email(email: str) -> str:
     return email.strip().casefold()
 
 
-def _record_failure(db: Session, bucket_key: str) -> None:
+def _record_failure(bucket_key: str) -> None:
+    """Persist a failed-attempt increment in its OWN short transaction.
+
+    The login route rolls back the request transaction whenever authentication
+    fails, so recording the failure on that same session would be undone by the
+    rollback and the 5-attempt lockout could never trigger. We therefore commit
+    the increment on an independent session. ``auth_rate_limit_buckets`` carries
+    no ``clinic_id`` and no RLS policy, so it is safe to touch without tenant
+    context. The atomic ``ON CONFLICT ... failure_count + 1`` upsert keeps
+    concurrent failures from losing increments.
+    """
+    from app.db.session import SessionLocal
+
     now = utc_now()
-    db.execute(
-        text("""
-            INSERT INTO auth_rate_limit_buckets (bucket_key, failure_count, first_failure_at, updated_at)
-            VALUES (:bucket_key, 1, :now, :now)
-            ON CONFLICT (bucket_key) DO UPDATE SET
-                failure_count = auth_rate_limit_buckets.failure_count + 1,
-                locked_until = CASE
-                    WHEN auth_rate_limit_buckets.failure_count + 1 >= 5 THEN :locked_until
-                    ELSE auth_rate_limit_buckets.locked_until
-                END,
-                updated_at = :now
-        """),
-        {"bucket_key": bucket_key, "now": now, "locked_until": now + timedelta(minutes=15)},
-    )
+    session = SessionLocal()
+    try:
+        session.execute(
+            text("""
+                INSERT INTO auth_rate_limit_buckets (bucket_key, failure_count, first_failure_at, updated_at)
+                VALUES (:bucket_key, 1, :now, :now)
+                ON CONFLICT (bucket_key) DO UPDATE SET
+                    failure_count = auth_rate_limit_buckets.failure_count + 1,
+                    locked_until = CASE
+                        WHEN auth_rate_limit_buckets.failure_count + 1 >= 5 THEN :locked_until
+                        ELSE auth_rate_limit_buckets.locked_until
+                    END,
+                    updated_at = :now
+            """),
+            {"bucket_key": bucket_key, "now": now, "locked_until": now + timedelta(minutes=15)},
+        )
+        session.commit()
+    finally:
+        session.close()
 
 
 def _is_locked(db: Session, bucket_key: str) -> bool:
@@ -109,7 +127,7 @@ def authenticate(db: Session, email: str, password: str, ip_address: str, user_a
         {"email": normalized_email},
     ).mappings().one_or_none()
     if user is None or not verify_password(user["password_hash"], password):
-        _record_failure(db, bucket_key)
+        _record_failure(bucket_key)
         raise AuthenticationError()
 
     _clear_failure(db, bucket_key)
@@ -226,7 +244,8 @@ def get_session(db: Session, session_token: str) -> dict:
 
 
 def verify_csrf(session: dict, csrf_token: str) -> None:
-    if hash_token(csrf_token) != session["csrf_token_hash"].strip():
+    # Constant-time comparison so a token mismatch cannot be probed by timing.
+    if not hmac.compare_digest(hash_token(csrf_token), session["csrf_token_hash"].strip()):
         raise SessionError()
 
 

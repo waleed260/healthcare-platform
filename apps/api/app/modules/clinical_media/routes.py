@@ -64,6 +64,16 @@ async def media_upload(patient_id: UUID, request: Request, media_kind: str = "ot
         """), {"clinic_id": session["clinic_id"], "item_id": payload.treatment_plan_item_id, "patient_id": patient_id}).scalar_one_or_none()
         if valid_item is None:
             raise _error("NOT_FOUND", "Treatment item not found for this patient.", status.HTTP_404_NOT_FOUND)
+    if payload.provider_user_id is not None:
+        # The (clinic_id, provider_user_id) FK already blocks cross-tenant ids, but
+        # reject inactive/unknown users up front with a clean error instead of an
+        # opaque integrity failure, and never attribute media to a disabled account.
+        valid_provider = db.execute(text("""
+            SELECT 1 FROM users
+            WHERE clinic_id = :clinic_id AND id = :provider_user_id AND status = 'active'
+        """), {"clinic_id": session["clinic_id"], "provider_user_id": payload.provider_user_id}).scalar_one_or_none()
+        if valid_provider is None:
+            raise _error("INVALID_INPUT", "The provider must be an active user of this clinic.", status.HTTP_400_BAD_REQUEST)
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().casefold()
     content = await request.body()
     if content_type not in {"image/jpeg", "image/png", "image/webp"} or not content or len(content) > MAX_PATIENT_MEDIA_BYTES:

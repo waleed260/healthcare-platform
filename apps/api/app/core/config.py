@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     session_hmac_key: str = "local-development-session-hmac-key-change-me"
     field_encryption_key: str = Field(default="", validation_alias=AliasChoices("FIELD_ENCRYPTION_KEYS", "FIELD_ENCRYPTION_KEY"))
     cookie_domain: str = ""
+    # Which peers uvicorn may trust X-Forwarded-For/Proto from (comma-separated
+    # IPs or CIDRs, or "*"). A wildcard lets any direct client spoof the client
+    # IP that feeds per-IP login rate limiting and audit attribution, so it must
+    # be an explicit, deliberate choice — see validate_forwarded_ip_trust.
+    forwarded_allow_ips: str = "127.0.0.1"
+    allow_wildcard_forwarded_ips: bool = False
     csrf_allowed_origins: str = "http://localhost:3000"
     cors_origins: str = ""
     sentry_dsn: str = ""
@@ -84,6 +90,16 @@ class Settings(BaseSettings):
     def reject_tenant_fault_injection_outside_tests(self) -> "Settings":
         if self.app_env != "test" and os.environ.get("BREAK_TENANT_ISOLATION") == "1":
             raise ValueError("BREAK_TENANT_ISOLATION is test-only and cannot be enabled outside APP_ENV=test")
+        return self
+
+    @model_validator(mode="after")
+    def validate_forwarded_ip_trust(self) -> "Settings":
+        # Fail closed on a wildcard forwarded-IP trust in production: it would let
+        # a client that can reach the API directly spoof X-Forwarded-For and defeat
+        # per-IP rate limiting. Operators who really front the API with a trusted
+        # proxy on an unknown source range must opt in explicitly.
+        if self.app_env == "production" and "*" in self.forwarded_allow_ips and not self.allow_wildcard_forwarded_ips:
+            raise ValueError("FORWARDED_ALLOW_IPS must name trusted proxy IPs/CIDRs in production; set ALLOW_WILDCARD_FORWARDED_IPS=true only if you deliberately trust every peer")
         return self
 
     @model_validator(mode="after")
