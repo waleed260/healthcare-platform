@@ -69,7 +69,7 @@ services:
 
   worker:
     build: ./apps/api
-    command: ["python", "infra/docker/scan-worker.py"]
+    command: ["python", "scripts/scan_worker.py"]
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-local}
