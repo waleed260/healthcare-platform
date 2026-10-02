@@ -4755,6 +4755,31 @@
         "title": "TestimonialModerate",
         "type": "object"
       },
+      "ToolStateUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "additionalProperties": true,
+            "title": "State",
+            "type": "object"
+          },
+          "tool_key": {
+            "enum": [
+              "dental_chart",
+              "norwood",
+              "graft_plan",
+              "skin_map"
+            ],
+            "title": "Tool Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_key"
+        ],
+        "title": "ToolStateUpsert",
+        "type": "object"
+      },
       "TreatmentPlanCreate": {
         "additionalProperties": false,
         "properties": {
@@ -20649,6 +20674,163 @@
         "summary": "Prescription Status",
         "tags": [
           "clinical"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/tool-states": {
+      "get": {
+        "operationId": "tool_state_list_api_v1_patients__patient_id__tool_states_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tool State List Api V1 Patients  Patient Id  Tool States Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tool State List",
+        "tags": [
+          "clinical-tools"
+        ]
+      }
+    },
+    "/api/v1/patients/{patient_id}/tool-states/{tool_key}": {
+      "put": {
+        "operationId": "tool_state_upsert_api_v1_patients__patient_id__tool_states__tool_key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "patient_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Patient Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool_key",
+            "required": true,
+            "schema": {
+              "title": "Tool Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolStateUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Tool State Upsert Api V1 Patients  Patient Id  Tool States  Tool Key  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tool State Upsert",
+        "tags": [
+          "clinical-tools"
         ]
       }
     },

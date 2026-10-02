@@ -24,6 +24,7 @@ from app.modules.packages.routes import router as packages_router
 from app.modules.inventory.routes import router as inventory_router
 from app.modules.identity.security_routes import router as account_security_router
 from app.modules.identity.google import router as google_auth_router
+from app.modules.clinical_tools.routes import router as clinical_tools_router
 from app.modules.clinical_media.public_routes import public_router as patient_media_public_router
 from app.modules.website_content.routes import public_router as website_content_public_router, router as website_content_router
 from app.modules.websites.seo_routes import router as website_seo_router
@@ -84,6 +85,7 @@ app.include_router(account_security_router)
 app.include_router(website_content_router)
 app.include_router(website_content_public_router)
 app.include_router(patient_media_public_router)
+app.include_router(clinical_tools_router)
 app.include_router(upgrade_admin_router)
 app.include_router(clinical_media_router)
 app.include_router(clinical_forms_router)
