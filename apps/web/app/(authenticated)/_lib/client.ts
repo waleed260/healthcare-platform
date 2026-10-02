@@ -7,6 +7,16 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
   return payload?.data as T;
 }
 
+export type Page<T> = { data: T[]; nextCursor: string | null };
+
+// Like api(), but keeps meta.next_cursor so callers can page through cursor-paginated lists.
+export async function apiPage<T>(url: string, fallback = "The request could not be completed."): Promise<Page<T>> {
+  const response = await fetch(url, { credentials: "include", cache: "no-store" });
+  const payload = await response.json().catch(() => null) as { data?: T[]; meta?: { next_cursor?: string | null }; error?: { message?: string } } | null;
+  if (!response.ok) throw new Error(payload?.error?.message ?? fallback);
+  return { data: Array.isArray(payload?.data) ? (payload!.data as T[]) : [], nextCursor: payload?.meta?.next_cursor ?? null };
+}
+
 export function csrfToken(): string {
   return document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrf_token="))?.slice(11) ?? "";
 }

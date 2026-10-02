@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, errorMessage, label, patch, post } from "../_lib/client";
+import { api, apiPage, errorMessage, label, patch, post } from "../_lib/client";
 import FormsPanel from "./forms-panel";
 import MediaUpload from "./media-upload";
 import ToolsPanel from "./tools-panel";
@@ -28,6 +28,7 @@ export default function ClinicalPage() {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [consents, setConsents] = useState<Consent[]>([]);
   const [media, setMedia] = useState<Media[]>([]);
+  const [mediaCursor, setMediaCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -40,10 +41,10 @@ export default function ClinicalPage() {
       has("clinical.read") ? api<Plan[]>(`/api/v1/treatment-plans?patient_id=${id}&limit=50`).catch(() => []) : Promise.resolve([]),
       has("clinical.read") ? api<Prescription[]>(`/api/v1/patients/${id}/prescriptions`).catch(() => []) : Promise.resolve([]),
       has("consent.read") ? api<Consent[]>(`/api/v1/patients/${id}/consents`).catch(() => []) : Promise.resolve([]),
-      has("patient.media.read") ? api<Media[]>(`/api/v1/patients/${id}/media`).catch(() => []) : Promise.resolve([]),
+      has("patient.media.read") ? apiPage<Media>(`/api/v1/patients/${id}/media`).catch(() => ({ data: [], nextCursor: null })) : Promise.resolve({ data: [], nextCursor: null }),
     ]);
     const nextPlans = list<Plan>(planRows);
-    setPlans(nextPlans); setPrescriptions(list<Prescription>(prescriptionRows)); setConsents(list<Consent>(consentRows)); setMedia(list<Media>(mediaRows));
+    setPlans(nextPlans); setPrescriptions(list<Prescription>(prescriptionRows)); setConsents(list<Consent>(consentRows)); setMedia(mediaRows.data); setMediaCursor(mediaRows.nextCursor);
     const entries = await Promise.all(nextPlans.map(async (plan) => [plan.id, list<PlanItem>(await api<PlanItem[]>(`/api/v1/treatment-plans/${plan.id}/items`).catch(() => []))] as const));
     setItems(Object.fromEntries(entries));
   }, []);
@@ -65,7 +66,14 @@ export default function ClinicalPage() {
     setBusy(true); setError(null); setNotice(null);
     try { await action(); setNotice(success); await loadPatient(patientId, permissions); } catch (reason) { setError(errorMessage(reason, "That change could not be saved.")); } finally { setBusy(false); }
   };
-  const choosePatient = (id: string) => { setPatientId(id); setPlans([]); setPrescriptions([]); setConsents([]); setMedia([]); void loadPatient(id, permissions).catch((reason) => setError(errorMessage(reason, "Records could not be loaded."))); };
+  const choosePatient = (id: string) => { setPatientId(id); setPlans([]); setPrescriptions([]); setConsents([]); setMedia([]); setMediaCursor(null); void loadPatient(id, permissions).catch((reason) => setError(errorMessage(reason, "Records could not be loaded."))); };
+  const loadMoreMedia = useCallback(async () => {
+    if (!mediaCursor) return;
+    try {
+      const page = await apiPage<Media>(`/api/v1/patients/${patientId}/media?cursor=${encodeURIComponent(mediaCursor)}`);
+      setMedia((current) => [...current, ...page.data]); setMediaCursor(page.nextCursor);
+    } catch (reason) { setError(errorMessage(reason, "More media could not be loaded.")); }
+  }, [mediaCursor, patientId]);
   const text = (event: FormEvent<HTMLFormElement>, key: string) => String(new FormData(event.currentTarget).get(key) ?? "").trim();
 
   const addPlan = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const title = text(event, "title"); const diagnosis = text(event, "diagnosis"); void run(async () => { await post("/api/v1/treatment-plans", { patient_id: patientId, title, diagnosis: diagnosis || null }); target.reset(); }, "Treatment plan created."); };
@@ -97,6 +105,7 @@ export default function ClinicalPage() {
       {can("consent.manage") && patientId && <form className="manage-form" onSubmit={addConsent}><div className="form-grid"><label>Consent type<input name="type" required maxLength={80} placeholder="website_media" /></label></div><div className="form-actions"><button className="button button-secondary" type="submit" disabled={busy}>Record granted consent</button></div></form>}
       <div className="invoice-list">{consents.map((consent) => <article className="invoice-row" key={consent.id}><div className="invoice-mark">✓</div><div className="invoice-main"><h3>{consent.consent_type}</h3><small>{new Date(consent.recorded_at).toLocaleString()}</small></div><div className="invoice-actions"><span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{consent.status}</span></div></article>)}
         {can("patient.media.write") && <MediaUpload patientId={patientId} onUploaded={() => void run(() => Promise.resolve(), "Upload complete — scanning.")} />}{media.length === 0 && <div className="dashboard-empty"><strong>No patient media</strong><span>Uploaded before/after photos appear here for review.</span></div>}
-        {media.map((item) => <article className="invoice-row" key={item.id}><div className="invoice-mark">{item.media_kind.slice(0, 3).toUpperCase()}</div><div className="invoice-main"><h3>{label(item.media_kind)} photo</h3><p>Scan: {item.scan_status} · Approval: {item.approval_status}</p><small>{item.captured_on ?? "No capture date"}{item.approved_for_website ? " · on website" : ""}</small></div><div className="invoice-actions">{can("patient.media.write") && item.approval_status !== "approved" && <button className="text-control" disabled={busy || !grantedConsent || item.scan_status !== "clean"} title={!grantedConsent ? "Record granted consent first" : undefined} onClick={() => grantedConsent && void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/approve`, { expected_version: item.version, consent_record_id: grantedConsent.id }), "Approved for website.")}>Approve for website</button>}{can("patient.media.write") && item.approval_status === "approved" && <button className="text-control" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/revoke`, { expected_version: item.version }), "Approval revoked.")}>Revoke</button>}</div></article>)}</div></section>}
+        {media.map((item) => <article className="invoice-row" key={item.id}><div className="invoice-mark">{item.media_kind.slice(0, 3).toUpperCase()}</div><div className="invoice-main"><h3>{label(item.media_kind)} photo</h3><p>Scan: {item.scan_status} · Approval: {item.approval_status}</p><small>{item.captured_on ?? "No capture date"}{item.approved_for_website ? " · on website" : ""}</small></div><div className="invoice-actions">{can("patient.media.write") && item.approval_status !== "approved" && <button className="text-control" disabled={busy || !grantedConsent || item.scan_status !== "clean"} title={!grantedConsent ? "Record granted consent first" : undefined} onClick={() => grantedConsent && void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/approve`, { expected_version: item.version, consent_record_id: grantedConsent.id }), "Approved for website.")}>Approve for website</button>}{can("patient.media.write") && item.approval_status === "approved" && <button className="text-control" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/revoke`, { expected_version: item.version }), "Approval revoked.")}>Revoke</button>}</div></article>)}
+        {mediaCursor && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void loadMoreMedia()}>Load more media</button>}</div></section>}
   </main>;
 }
