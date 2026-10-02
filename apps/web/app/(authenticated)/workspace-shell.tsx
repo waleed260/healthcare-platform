@@ -13,6 +13,7 @@ const navItems: NavItem[] = [
   { href: "/schedule", label: "Schedule", icon: "◷", permission: "appointment.read" },
   { href: "/patients", label: "Patients", icon: "○", permission: "patient.read" },
   { href: "/leads", label: "Leads", icon: "↳", permission: "lead.read" },
+  { href: "/clinical", label: "Clinical", icon: "✚", permission: "clinical.read" },
   { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
   { href: "/billing", label: "Billing", icon: "₿", permission: "billing.read" },
   { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },

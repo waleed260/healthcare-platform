@@ -730,6 +730,27 @@
         "title": "ClinicUpdate",
         "type": "object"
       },
+      "CommissionRuleUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "percent_bp": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Percent Bp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "percent_bp"
+        ],
+        "title": "CommissionRuleUpdate",
+        "type": "object"
+      },
       "ConsentCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2052,6 +2073,18 @@
             "minLength": 1,
             "title": "Description",
             "type": "string"
+          },
+          "provider_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Id"
           },
           "quantity": {
             "exclusiveMinimum": 0.0,
@@ -12506,6 +12539,144 @@
         ]
       }
     },
+    "/api/v1/finance/commission-rules": {
+      "get": {
+        "operationId": "commission_rules_api_v1_finance_commission_rules_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Commission Rules Api V1 Finance Commission Rules Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commission Rules",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/commission-rules/{doctor_id}": {
+      "put": {
+        "operationId": "commission_rule_set_api_v1_finance_commission_rules__doctor_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doctor_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Doctor Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommissionRuleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Commission Rule Set Api V1 Finance Commission Rules  Doctor Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Commission Rule Set",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
     "/api/v1/finance/expenses": {
       "get": {
         "operationId": "expense_list_api_v1_finance_expenses_get",
@@ -12760,6 +12931,78 @@
           }
         },
         "summary": "Expense Void",
+        "tags": [
+          "finance"
+        ]
+      }
+    },
+    "/api/v1/finance/provider-revenue": {
+      "get": {
+        "description": "Cash-basis revenue per provider for payments received in [start, end], plus commission where a rule is active.",
+        "operationId": "provider_revenue_report_api_v1_finance_provider_revenue_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "End",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Provider Revenue Report Api V1 Finance Provider Revenue Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Provider Revenue Report",
         "tags": [
           "finance"
         ]

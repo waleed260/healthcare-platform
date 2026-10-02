@@ -20,3 +20,10 @@ class ExpenseVoid(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     reason: str = Field(min_length=3, max_length=300)
+
+
+class CommissionRuleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    percent_bp: int = Field(ge=0, le=10000)
+    active: bool = True

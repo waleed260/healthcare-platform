@@ -356,9 +356,9 @@ def invoice_create(payload: InvoiceCreate, request: Request, db: Session = Depen
     """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "discount": payload.discount_minor, "tax": tax, "total": total, "notes": payload.notes, "user_id": session["user_id"]}).mappings().one()
     for line in payload.lines:
         db.execute(text("""
-            INSERT INTO invoice_lines (clinic_id, invoice_id, service_id, description, quantity, unit_price_minor, tax_minor, line_total_minor)
-            VALUES (:clinic_id, :invoice_id, :service_id, :description, :quantity, :unit_price, :tax, :line_total)
-        """), {"clinic_id": session["clinic_id"], "invoice_id": invoice["id"], "service_id": line.service_id, "description": line.description.strip(), "quantity": line.quantity, "unit_price": line.unit_price_minor, "tax": line.tax_minor, "line_total": line.quantity * line.unit_price_minor + line.tax_minor})
+            INSERT INTO invoice_lines (clinic_id, invoice_id, service_id, provider_id, description, quantity, unit_price_minor, tax_minor, line_total_minor)
+            VALUES (:clinic_id, :invoice_id, :service_id, :provider_id, :description, :quantity, :unit_price, :tax, :line_total)
+        """), {"clinic_id": session["clinic_id"], "invoice_id": invoice["id"], "service_id": line.service_id, "provider_id": line.provider_id, "description": line.description.strip(), "quantity": line.quantity, "unit_price": line.unit_price_minor, "tax": line.tax_minor, "line_total": line.quantity * line.unit_price_minor + line.tax_minor})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="invoice.create", entity_type="invoice", entity_id=invoice["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"total_minor": total, "currency": currency})
     db.commit()
     return {"data": dict(invoice), "meta": {"request_id": request.state.request_id}}

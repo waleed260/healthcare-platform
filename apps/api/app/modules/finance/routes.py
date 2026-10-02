@@ -6,13 +6,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.audit.service import record_event
 from app.modules.blueprint_core.routes import _authorized, _write_authorized, invoice_receipt
 from app.modules.finance.receipt import render_html, render_pdf
-from app.modules.finance.schemas import ExpenseCreate, ExpenseVoid
+from app.modules.finance.commissions import commission_minor, provider_revenue
+from app.modules.finance.schemas import CommissionRuleUpdate, ExpenseCreate, ExpenseVoid
 from app.modules.identity.routes import _error
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
@@ -106,3 +108,64 @@ def expense_void(expense_id: UUID, payload: ExpenseVoid, request: Request, db: S
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="expense.void", entity_type="expense", entity_id=expense_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"reason": payload.reason})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/commission-rules")
+def commission_rules(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "billing.read")
+    rows = db.execute(text("""
+        SELECT d.id AS doctor_id, d.public_name, COALESCE(r.percent_bp, 0) AS percent_bp, COALESCE(r.active, false) AS active
+        FROM doctor_profiles d LEFT JOIN provider_commission_rules r ON r.clinic_id = d.clinic_id AND r.doctor_id = d.id
+        WHERE d.clinic_id = :c AND d.archived_at IS NULL ORDER BY d.public_name LIMIT 200
+    """), {"c": session["clinic_id"]}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.put("/commission-rules/{doctor_id}")
+def commission_rule_set(doctor_id: UUID, payload: CommissionRuleUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "billing.manage", csrf_token)
+    try:
+        row = db.execute(text("""
+            INSERT INTO provider_commission_rules (clinic_id, doctor_id, percent_bp, active, updated_by)
+            VALUES (:c, :doctor_id, :percent_bp, :active, :user)
+            ON CONFLICT (clinic_id, doctor_id) DO UPDATE SET percent_bp = EXCLUDED.percent_bp, active = EXCLUDED.active, updated_by = EXCLUDED.updated_by, updated_at = now()
+            RETURNING doctor_id, percent_bp, active
+        """), {"c": session["clinic_id"], "doctor_id": doctor_id, "percent_bp": payload.percent_bp, "active": payload.active, "user": session["user_id"]}).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _error("NOT_FOUND", "That provider does not exist in this clinic.", status.HTTP_404_NOT_FOUND) from exc
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="commission.rule.set", entity_type="provider_commission_rule", entity_id=doctor_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"percent_bp": payload.percent_bp, "active": payload.active})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/provider-revenue")
+def provider_revenue_report(request: Request, start: date = Query(), end: date = Query(), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    """Cash-basis revenue per provider for payments received in [start, end], plus commission where a rule is active."""
+    session = _authorized(db, session_token, "billing.read")
+    if end < start or (end - start).days > 366:
+        raise _error("INVALID_INPUT", "Choose a range of at most one year with the end on or after the start.", status.HTTP_400_BAD_REQUEST)
+    params = {"c": session["clinic_id"], "start": start, "end": end}
+    allocations = db.execute(text("""
+        SELECT pa.invoice_id, SUM(pa.amount_minor)::bigint AS amount
+        FROM payment_allocations pa JOIN payments p ON p.clinic_id = pa.clinic_id AND p.id = pa.payment_id
+        WHERE pa.clinic_id = :c AND p.paid_at >= :start AND p.paid_at < CAST(:end AS date) + 1
+        GROUP BY pa.invoice_id
+    """), params).mappings().all()
+    invoice_ids = [row["invoice_id"] for row in allocations]
+    line_totals: dict = {}
+    if invoice_ids:
+        for row in db.execute(text("SELECT invoice_id, provider_id, SUM(line_total_minor)::bigint AS total FROM invoice_lines WHERE clinic_id = :c AND invoice_id = ANY(:ids) GROUP BY invoice_id, provider_id"), {"c": session["clinic_id"], "ids": invoice_ids}).mappings().all():
+            line_totals.setdefault(row["invoice_id"], {})[row["provider_id"]] = row["total"]
+    revenue = provider_revenue([(row["invoice_id"], row["amount"]) for row in allocations], line_totals)
+    providers = {row["id"]: row for row in db.execute(text("""
+        SELECT d.id, d.public_name, r.percent_bp, COALESCE(r.active, false) AS active
+        FROM doctor_profiles d LEFT JOIN provider_commission_rules r ON r.clinic_id = d.clinic_id AND r.doctor_id = d.id WHERE d.clinic_id = :c
+    """), {"c": session["clinic_id"]}).mappings().all()}
+    rows = []
+    for provider_id, amount in sorted(revenue.items(), key=lambda item: -item[1]):
+        info = providers.get(provider_id)
+        rows.append({"provider_id": provider_id, "provider_name": info["public_name"] if info else "Unassigned", "revenue_minor": amount, "percent_bp": info["percent_bp"] if info else None, "commission_minor": commission_minor(amount, info["percent_bp"], info["active"]) if info else 0})
+    db.commit()
+    return {"data": {"start": start.isoformat(), "end": end.isoformat(), "providers": rows, "total_revenue_minor": sum(revenue.values()), "total_commission_minor": sum(row["commission_minor"] for row in rows)}, "meta": {"request_id": request.state.request_id}}

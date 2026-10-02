@@ -77,6 +77,7 @@ class InvoiceLineCreate(BaseModel):
     unit_price_minor: int = Field(ge=0)
     tax_minor: int = Field(default=0, ge=0)
     service_id: UUID | None = None
+    provider_id: UUID | None = None
 
 
 class InvoiceCreate(BaseModel):
