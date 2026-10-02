@@ -54,3 +54,12 @@ def test_new_routes_are_registered() -> None:
     paths = set(app.openapi()["paths"])
     for expected in ("/api/v1/invoices/{invoice_id}/receipt.pdf", "/api/v1/invoices/{invoice_id}/receipt.html", "/api/v1/finance/cashier-summary", "/api/v1/finance/expenses", "/api/v1/upgrade-requests", "/api/v1/admin/upgrade-requests", "/api/v1/admin/overview"):
         assert expected in paths
+
+
+def test_clinic_update_accepts_only_iso_style_currency() -> None:
+    from app.modules.authorization.schemas import ClinicUpdate
+
+    assert ClinicUpdate(expected_version=1, default_currency="USD").default_currency == "USD"
+    for bad in ("usd", "US", "USDX", "12A"):
+        with pytest.raises(ValidationError):
+            ClinicUpdate(expected_version=1, default_currency=bad)

@@ -25,7 +25,7 @@ def _clinic_read(request: Request, db: Session, session_token: str | None) -> di
         require_permission(db, session["user_id"], session["clinic_id"], "clinic.read")
     except ForbiddenError as exc:
         raise _error("FORBIDDEN", "You do not have permission to read this clinic.", status.HTTP_403_FORBIDDEN) from exc
-    clinic = db.execute(text("SELECT id, name, slug, status, timezone, locale, version, created_at, updated_at FROM clinics WHERE id = :id AND archived_at IS NULL"), {"id": session["clinic_id"]}).mappings().one_or_none()
+    clinic = db.execute(text("SELECT id, name, slug, status, timezone, locale, default_currency, version, created_at, updated_at FROM clinics WHERE id = :id AND archived_at IS NULL"), {"id": session["clinic_id"]}).mappings().one_or_none()
     if clinic is None:
         raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
     return {"data": dict(clinic), "meta": {"request_id": request.state.request_id}}
@@ -122,7 +122,7 @@ def clinic_update(payload: ClinicUpdate, request: Request, db: Session = Depends
     updates = ", ".join(f"{field} = :{field}" for field in values)
     params = {"clinic_id": session["clinic_id"], "expected_version": payload.expected_version, **values}
     try:
-        row = db.execute(text(f"UPDATE clinics SET {updates}, version = version + 1, updated_at = now() WHERE id = :clinic_id AND version = :expected_version AND archived_at IS NULL RETURNING id, name, slug, status, timezone, locale, version, updated_at"), params).mappings().one_or_none()
+        row = db.execute(text(f"UPDATE clinics SET {updates}, version = version + 1, updated_at = now() WHERE id = :clinic_id AND version = :expected_version AND archived_at IS NULL RETURNING id, name, slug, status, timezone, locale, default_currency, version, updated_at"), params).mappings().one_or_none()
     except IntegrityError as exc:
         db.rollback()
         raise _error("DUPLICATE", "The clinic slug is already in use.", status.HTTP_409_CONFLICT) from exc

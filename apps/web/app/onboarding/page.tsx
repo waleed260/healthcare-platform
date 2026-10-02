@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import SetupExtras from "./setup-extras";
 
 type SetupState = { completed: boolean; completed_at: string | null; ready_to_complete: boolean; steps: Record<string, boolean> };
 type Branch = { id: string; name: string; code: string; timezone: string };
@@ -101,5 +102,5 @@ export default function OnboardingPage() {
       </section>
       <div className="setup-actions">{setup.completed ? <p className="setup-success" role="status">Setup completed. Your workspace is ready.</p> : <button className="button button-primary" type="button" disabled={!setup.ready_to_complete || busy !== null} onClick={() => void completeSetup()}>{buttonText("complete", setup.ready_to_complete ? "Complete setup" : "Finish the steps above")}<span>→</span></button>}</div>
     </>}
-  </div></main>;
+  {!loading && setup && <SetupExtras />}</div></main>;
 }

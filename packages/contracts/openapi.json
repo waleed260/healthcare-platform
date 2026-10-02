@@ -652,6 +652,20 @@
       "ClinicUpdate": {
         "additionalProperties": false,
         "properties": {
+          "default_currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Currency"
+          },
           "expected_version": {
             "minimum": 1.0,
             "title": "Expected Version",

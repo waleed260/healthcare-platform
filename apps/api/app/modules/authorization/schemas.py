@@ -9,6 +9,7 @@ class ClinicUpdate(BaseModel):
     slug: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
     timezone: str | None = Field(default=None, min_length=1, max_length=80)
     locale: str | None = Field(default=None, pattern=r"^[a-z]{2}(?:-[A-Z]{2})?$", max_length=10)
+    default_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$", min_length=3, max_length=3)
 
 
 class ClinicStatusUpdate(BaseModel):
