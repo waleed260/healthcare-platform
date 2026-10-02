@@ -22,8 +22,8 @@ export default function SeoPanel({ website, disabled, onSaveSeo }: { website: { 
   const load = useCallback(async () => {
     try {
       const [pageRows, redirectRows] = await Promise.all([api<PageRow[]>(`/api/v1/websites/${website.id}/pages?limit=100`), api<RedirectRow[]>(`/api/v1/websites/${website.id}/redirects`)]);
-      setPages(pageRows ?? []);
-      setRedirects(redirectRows ?? []);
+      setPages(Array.isArray(pageRows) ? pageRows : []);
+      setRedirects(Array.isArray(redirectRows) ? redirectRows : []);
       setPageId((current) => current || pageRows?.[0]?.id || "");
     } catch (reason) {
       setError(errorMessage(reason, "SEO settings could not be loaded."));
@@ -55,7 +55,7 @@ export default function SeoPanel({ website, disabled, onSaveSeo }: { website: { 
   return <section className="detail-card seo-panel" aria-label="SEO, sitemap and redirects">
     <div className="card-heading"><div><p className="eyebrow">SEO · INDEXING · REDIRECTS</p><h2>Be found</h2></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
-    {notice && <div className="permission-strip" role="status"><span className="permission-ok">{notice}</span></div>}
+    {notice && <div className="permission-strip" aria-live="polite"><span className="permission-ok">{notice}</span></div>}
 
     <fieldset className="theme-group" disabled={disabled || busy}><legend>Site-wide</legend><div className="brand-fields">
       <label>Allow search engines<input type="checkbox" checked={seo.robots_index ?? true} onChange={(event) => void run(() => onSaveSeo({ ...seo, robots_index: event.target.checked }), "Indexing preference saved.")} /></label>

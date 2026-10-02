@@ -29,8 +29,8 @@ export default function LibraryPanel({ website, pageId, sections, disabled, onCh
   const load = useCallback(async () => {
     try {
       const [lib, rows] = await Promise.all([api<Library>("/api/v1/website-library/templates"), api<Reusable[]>("/api/v1/website-library/reusable-sections")]);
-      setLibrary(lib);
-      setReusable(rows ?? []);
+      setLibrary(lib && !Array.isArray(lib) ? lib : null);
+      setReusable(Array.isArray(rows) ? rows : []);
     } catch (reason) {
       setError(errorMessage(reason, "The template library could not be loaded."));
     }
@@ -72,13 +72,13 @@ export default function LibraryPanel({ website, pageId, sections, disabled, onCh
   return <section className="detail-card library-panel" aria-label="Templates and reusable sections">
     <div className="card-heading"><div><p className="eyebrow">TEMPLATES · REUSABLE SECTIONS</p><h2>Start fast, stay consistent</h2></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
-    {notice && <div className="permission-strip" role="status"><span className="permission-ok">{notice}</span></div>}
+    {notice && <div className="permission-strip" aria-live="polite"><span className="permission-ok">{notice}</span></div>}
 
     <p className="eyebrow">SPECIALTY SITE TEMPLATES</p>
-    <div className="library-grid">{library?.site_templates.map((template) => <article className="library-card" key={template.key}><h3>{template.name}</h3><p>{template.description}</p><small>{template.page_count} pages · {template.specialty}</small>{template.locked ? <span className="pipeline-status status-void">Specialty locked</span> : <button className="button button-secondary" disabled={disabled || busy !== null} onClick={() => applySite(template)}>{busy === template.key ? "Applying…" : "Apply template"}</button>}</article>)}</div>
+    <div className="library-grid">{library?.site_templates?.map((template) => <article className="library-card" key={template.key}><h3>{template.name}</h3><p>{template.description}</p><small>{template.page_count} pages · {template.specialty}</small>{template.locked ? <span className="pipeline-status status-void">Specialty locked</span> : <button className="button button-secondary" disabled={disabled || busy !== null} onClick={() => applySite(template)}>{busy === template.key ? "Applying…" : "Apply template"}</button>}</article>)}</div>
 
     <p className="eyebrow">PAGE TEMPLATES</p>
-    <div className="library-grid">{library?.page_templates.map((template) => <form className="library-card" key={template.key} onSubmit={(event) => addPage(event, template)}><h3>{template.name}</h3><p>{template.description}</p><input name="title" required maxLength={160} placeholder="Page title" disabled={disabled} /><input name="slug" required maxLength={120} pattern="[a-z0-9][a-z0-9_\-]*" placeholder="url-slug" disabled={disabled} /><button className="button button-secondary" type="submit" disabled={disabled || busy !== null}>Create page</button></form>)}</div>
+    <div className="library-grid">{library?.page_templates?.map((template) => <form className="library-card" key={template.key} onSubmit={(event) => addPage(event, template)}><h3>{template.name}</h3><p>{template.description}</p><input name="title" required maxLength={160} placeholder="Page title" disabled={disabled} /><input name="slug" required maxLength={120} pattern="[a-z0-9][a-z0-9_\-]*" placeholder="url-slug" disabled={disabled} /><button className="button button-secondary" type="submit" disabled={disabled || busy !== null}>Create page</button></form>)}</div>
 
     <p className="eyebrow">REUSABLE SECTIONS</p>
     <form className="theme-row" onSubmit={saveReusable}><select aria-label="Section to save" value={sourceId} onChange={(event) => setSourceId(event.target.value)} required disabled={disabled}><option value="">Choose a section on this page…</option>{sections.map((section) => <option key={section.id} value={section.id}>{section.section_type} · {section.content.heading ?? ""}</option>)}</select><input aria-label="Reusable name" value={newName} onChange={(event) => setNewName(event.target.value)} required maxLength={120} placeholder="Name, e.g. Booking banner" disabled={disabled} /><button className="button button-primary" type="submit" disabled={disabled || busy !== null || !sourceId}>Save for reuse</button></form>

@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { SiteFooter, SiteHeader } from "../../site-chrome";
-import { themeStyle } from "../../../site-theme";
-import type { SiteBrand } from "../../../site-theme";
+import { SiteFooter, SiteHeader } from "./site-chrome";
+import { themeStyle } from "../site-theme";
+import type { SiteBrand } from "../site-theme";
 
 type Branch = { id: string; code: string; name: string; timezone: string; address: Record<string, string> | null; phone: string | null };
 type Service = { id: string; name: string; category: string | null; short_description: string | null; duration_minutes: number; amount_minor: number | null; currency: string | null; branch_id: string };
@@ -17,8 +17,8 @@ type Kind = (typeof KINDS)[number];
 const price = (service: Service) => service.amount_minor == null ? "Contact us for pricing" : new Intl.NumberFormat(undefined, { style: "currency", currency: service.currency ?? "PKR", maximumFractionDigits: 0 }).format(service.amount_minor / 100);
 const unique = <T extends { id: string }>(rows: T[]) => [...new Map(rows.map((row) => [row.id, row])).values()];
 
-export default function DynamicCrmPage() {
-  const params = useParams<{ clinicSlug: string; kind: string; id: string }>();
+export default function DynamicCrmPage({ kind: kindParam }: { kind: Kind }) {
+  const params = { ...useParams<{ clinicSlug: string; id: string }>(), kind: kindParam };
   const clinicSlug = params.clinicSlug;
   const [brand, setBrand] = useState<SiteBrand>({});
   const [catalog, setCatalog] = useState<Catalog | null>(null);

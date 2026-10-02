@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 
-type Session = { display_name?: string; permissions?: string[] };
+type Session = { display_name?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
 type Notification = { id: string; read_at: string | null };
 type NavItem = { href: string; label: string; icon: string; permission: string };
 
@@ -45,14 +45,17 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    void Promise.all([readJson<Session>("/api/v1/auth/me"), readJson<Notification[]>("/api/v1/operations/notifications?limit=25")]).then(([nextSession, nextNotifications]) => {
+    void readJson<Session>("/api/v1/auth/me").then(async (nextSession) => {
       if (!mounted) return;
       if (!nextSession) {
         setConnectionIssue(true);
         return;
       }
       setSession(nextSession);
-      setNotifications(nextNotifications ?? []);
+      // Platform administrators have no clinic context, so there is no clinic inbox to poll.
+      if (!nextSession.clinic_id || nextSession.is_platform_admin) return;
+      const nextNotifications = await readJson<Notification[]>("/api/v1/operations/notifications?limit=25");
+      if (mounted) setNotifications(nextNotifications ?? []);
     });
     return () => { mounted = false; };
   }, []);
