@@ -152,7 +152,7 @@ jobs:
       - name: Runtime role privilege check (throwaway local Postgres only; never touches Neon)
         run: |
           set +e
-          missing=$(docker compose exec -T db psql -U healthcare_migrator -d healthcare -Atc "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname='public' AND tablename <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', format('public.%I', tablename), 'SELECT')" 2>&1)
+          missing=$(docker compose exec -T db psql -U healthcare_migrator -d healthcare -Atc "SELECT string_agg(c.relname, ', ' ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relname <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', c.oid, 'SELECT')" 2>&1)
           status=$?
           if [ $status -ne 0 ]; then echo "::error title=privilege query failed::$(echo "$missing" | tr '\n' ' ')"; exit 1; fi
           if [ -n "$missing" ]; then echo "::error title=runtime role lacks SELECT::$missing"; exit 1; fi

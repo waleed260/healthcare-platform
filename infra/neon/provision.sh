@@ -14,7 +14,7 @@ psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'alembic head: ' || version_nu
 psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime role owns tables: ' || count(*) FROM pg_tables WHERE schemaname='public' AND tableowner='healthcare_runtime'"
 
 # --- verify the runtime role really can use what the migrations created (silent-failure guard) ---
-missing=$(psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname='public' AND tablename <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', format('public.%I', tablename), 'SELECT')")
+missing=$(psql "$OWNER_URL" -v ON_ERROR_STOP=1 -Atc "SELECT string_agg(c.relname, ', ' ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND c.relname <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', c.oid, 'SELECT')")
 if [ -n "$missing" ]; then echo "FAIL: healthcare_runtime has no SELECT on: $missing"; exit 1; fi
 echo "runtime SELECT privilege: ok on every public table"
 RUNTIME_URL=$(python3 - <<PY
