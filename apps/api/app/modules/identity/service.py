@@ -94,6 +94,11 @@ def _record_failure(bucket_key: str) -> None:
             {"bucket_key": bucket_key, "now": now, "locked_until": now + timedelta(minutes=15)},
         )
         session.commit()
+    except Exception:
+        # Best effort: a hiccup recording the failure must not turn the caller's
+        # invalid-credentials 401 into a 500 (which would also be an enumeration
+        # signal). The worst case is one un-counted attempt, not a broken login.
+        session.rollback()
     finally:
         session.close()
 
