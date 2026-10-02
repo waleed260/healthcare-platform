@@ -64,6 +64,8 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
   await expect(page.getByText("SYN-BOOK-001")).toBeVisible();
   await page.locator(".calendar-appointment").first().click({ force: true });
   await page.getByRole("button", { name: "Approve" }).click({ force: true });
+  // Wait for the approval to land before reopening the appointment; otherwise the drawer can still show the pre-approval state.
+  await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
   await page.locator(".calendar-appointment").first().click({ force: true });
   await expect(page.getByRole("button", { name: "Check in" })).toBeVisible({ timeout: 15000 });
   await page.getByRole("button", { name: "Check in" }).click({ force: true });
