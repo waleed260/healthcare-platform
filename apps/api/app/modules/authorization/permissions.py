@@ -61,6 +61,8 @@ PERMISSIONS = {
     "package.override",
     "inventory.read",
     "inventory.manage",
+    "expense.read",
+    "expense.manage",
 }
 
 
