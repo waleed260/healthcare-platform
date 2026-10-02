@@ -12,9 +12,10 @@ export type HeaderSettings = { nav?: NavLink[]; sticky?: boolean; transparent?: 
 export type FooterColumn = { kind: string; title?: string; body?: string; links?: NavLink[] };
 export type FooterSettings = { columns?: FooterColumn[]; copyright?: string; show_legal_links?: boolean };
 export type DeviceOverrides = { font_scale?: number; spacing_scale?: number; hide_section_ids?: string[]; hero_mobile_media_id?: string | null };
+export type SeoSettings = { robots_index?: boolean; site_name?: string | null; favicon_media_id?: string | null; default_og_image_media_id?: string | null; disallow_paths?: string[] };
 export type SiteBrand = {
   logo_media_id?: string; primary_color?: string; accent_color?: string; text_color?: string; background_color?: string; font_pairing?: string;
-  theme?: ThemeSettings; header?: HeaderSettings; footer?: FooterSettings; tablet?: DeviceOverrides; mobile?: DeviceOverrides;
+  theme?: ThemeSettings; header?: HeaderSettings; footer?: FooterSettings; seo?: SeoSettings; tablet?: DeviceOverrides; mobile?: DeviceOverrides;
 };
 
 export const FONT_STACKS: Record<string, string> = {

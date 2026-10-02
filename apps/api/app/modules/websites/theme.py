@@ -132,6 +132,24 @@ class DeviceOverrides(_Strict):
     hero_mobile_media_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
 
 
+class SeoSettings(_Strict):
+    """Site-wide SEO: robots.txt behaviour, favicon and default social image (blueprint §18.3)."""
+
+    robots_index: bool = True
+    site_name: str | None = Field(default=None, max_length=120)
+    favicon_media_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
+    default_og_image_media_id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
+    disallow_paths: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("disallow_paths")
+    @classmethod
+    def safe_paths(cls, value: list[str]) -> list[str]:
+        for path in value:
+            if not re.fullmatch(r"/[A-Za-z0-9\-._~/*]{0,200}", path):
+                raise ValueError("disallowed paths must start with / and contain only URL-safe characters")
+        return value
+
+
 class BrandDocument(BaseModel):
     """Known brand keys are validated; legacy flat color keys keep working."""
 
@@ -146,6 +164,7 @@ class BrandDocument(BaseModel):
     theme: ThemeSettings | None = None
     header: HeaderSettings | None = None
     footer: FooterSettings | None = None
+    seo: SeoSettings | None = None
     tablet: DeviceOverrides | None = None
     mobile: DeviceOverrides | None = None
 

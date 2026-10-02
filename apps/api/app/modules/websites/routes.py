@@ -227,7 +227,7 @@ def page_list(website_id: UUID, request: Request, cursor: str | None = Query(def
     session = _authorized(db, session_token, "website.read")
     after = _collection_cursor(cursor, "website-pages")
     rows = db.execute(text("""
-        SELECT id, slug, title, seo_title, seo_description, version, created_at, updated_at
+        SELECT id, slug, title, seo_title, seo_description, canonical_url, noindex, og_title, og_description, og_image_media_id, version, created_at, updated_at
         FROM website_pages
         WHERE clinic_id = :clinic_id AND website_id = :website_id
           AND (:after_slug IS NULL OR slug > :after_slug OR (slug = :after_slug AND id > :after_id))
@@ -245,7 +245,7 @@ def page_create(website_id: UUID, payload: WebsitePageCreate, request: Request, 
     session = _authorized(db, session_token, "website.edit")
     _csrf(request, session, csrf_token)
     try:
-        row = db.execute(text("INSERT INTO website_pages (clinic_id, website_id, slug, title, seo_title, seo_description) SELECT :clinic_id, id, :slug, :title, :seo_title, :seo_description FROM websites WHERE clinic_id = :clinic_id AND id = :website_id AND archived_at IS NULL RETURNING id, slug, title, seo_title, seo_description, version, created_at"), {"clinic_id": session["clinic_id"], "website_id": website_id, **payload.model_dump()}).mappings().one_or_none()
+        row = db.execute(text("INSERT INTO website_pages (clinic_id, website_id, slug, title, seo_title, seo_description, canonical_url, noindex, og_title, og_description, og_image_media_id) SELECT :clinic_id, id, :slug, :title, :seo_title, :seo_description, :canonical_url, COALESCE(:noindex, false), :og_title, :og_description, :og_image_media_id FROM websites WHERE clinic_id = :clinic_id AND id = :website_id AND archived_at IS NULL RETURNING id, slug, title, seo_title, seo_description, canonical_url, noindex, og_title, og_description, og_image_media_id, version, created_at"), {"clinic_id": session["clinic_id"], "website_id": website_id, **payload.model_dump()}).mappings().one_or_none()
     except Exception as exc:
         db.rollback()
         raise _error("DUPLICATE", "A page with this slug already exists for the website.", status.HTTP_409_CONFLICT) from exc
@@ -270,7 +270,7 @@ def page_update(website_id: UUID, page_id: UUID, payload: WebsitePageUpdate, req
         SET {', '.join(assignments)}, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :page_id
           AND version = :expected_version
-        RETURNING id, slug, title, seo_title, seo_description, version, updated_at
+        RETURNING id, slug, title, seo_title, seo_description, canonical_url, noindex, og_title, og_description, og_image_media_id, version, updated_at
     """), {"clinic_id": session["clinic_id"], "website_id": website_id, "page_id": page_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
     if row is None:
         exists = db.execute(text("SELECT version FROM website_pages WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :page_id"), {"clinic_id": session["clinic_id"], "website_id": website_id, "page_id": page_id}).scalar_one_or_none()

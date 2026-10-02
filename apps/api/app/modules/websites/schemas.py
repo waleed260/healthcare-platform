@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
+from app.modules.websites.sanitizer import validate_navigation_href
 from app.modules.websites.theme import normalize_brand
 
 
@@ -90,6 +91,16 @@ class WebsitePageCreate(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     seo_title: str | None = Field(default=None, max_length=160)
     seo_description: str | None = Field(default=None, max_length=320)
+    canonical_url: str | None = Field(default=None, max_length=500)
+    noindex: bool | None = None
+    og_title: str | None = Field(default=None, max_length=160)
+    og_description: str | None = Field(default=None, max_length=320)
+    og_image_media_id: UUID | None = None
+
+    @field_validator("canonical_url")
+    @classmethod
+    def validate_canonical(cls, value: str | None) -> str | None:
+        return None if value is None or value == "" else validate_navigation_href(value)
 
     @field_validator("slug")
     @classmethod
@@ -108,6 +119,16 @@ class WebsitePageUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=160)
     seo_title: str | None = Field(default=None, max_length=160)
     seo_description: str | None = Field(default=None, max_length=320)
+    canonical_url: str | None = Field(default=None, max_length=500)
+    noindex: bool | None = None
+    og_title: str | None = Field(default=None, max_length=160)
+    og_description: str | None = Field(default=None, max_length=320)
+    og_image_media_id: UUID | None = None
+
+    @field_validator("canonical_url")
+    @classmethod
+    def validate_canonical(cls, value: str | None) -> str | None:
+        return None if value is None or value == "" else validate_navigation_href(value)
 
     @field_validator("slug")
     @classmethod
@@ -166,3 +187,23 @@ class DomainVerify(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_proof: str = Field(min_length=20, max_length=200)
+
+
+class RedirectCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    from_path: str = Field(min_length=2, max_length=300, pattern=r"^/[A-Za-z0-9\-._~/]*$")
+    to_path: str = Field(min_length=1, max_length=500)
+    status_code: Literal[301, 302] = 301
+
+    @field_validator("to_path")
+    @classmethod
+    def validate_target(cls, value: str) -> str:
+        validated = validate_navigation_href(value)
+        assert validated is not None
+        return validated
+
+    @field_validator("from_path")
+    @classmethod
+    def no_trailing_slash(cls, value: str) -> str:
+        return value.rstrip("/") or "/"
