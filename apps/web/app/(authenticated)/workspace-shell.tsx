@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
   { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
   { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
+  { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
   { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
   { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
   { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },

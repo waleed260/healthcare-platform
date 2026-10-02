@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { SiteFooter, SiteHeader } from "./site-chrome";
+import FormEmbed from "./form-embed";
 import { themeStyle } from "../site-theme";
 import type { SiteBrand } from "../site-theme";
 
@@ -33,15 +34,17 @@ function label(item: Record<string, unknown>, ...keys: string[]) { return keys.m
 type TemplateKey = "calm_clinic" | "editorial_practice" | "warm_studio";
 function templateKey(value?: string): TemplateKey { return value === "editorial_practice" || value === "warm_studio" ? value : "calm_clinic"; }
 
-function SectionBlock({ section, clinicSlug, template, catalog }: { section: Section; clinicSlug: string; template: TemplateKey; catalog: PublicCatalog | null }) {
+function SectionBlock({ section, clinicSlug, template, catalog, testimonials, brand }: { section: Section; clinicSlug: string; template: TemplateKey; catalog: PublicCatalog | null; testimonials: Array<Record<string, unknown>>; brand: SiteBrand }) {
   const content = section.content ?? {};
   const type = section.section_type.toLowerCase();
   const heading = text(content.heading);
   const body = text(content.body);
   const records = items(content);
-  const dynamicRecords = ["services", "service"].includes(type) ? catalog?.services ?? [] : catalog?.doctors ?? [];
+  const dynamicRecords = type === "testimonials" ? testimonials : ["services", "service"].includes(type) ? catalog?.services ?? [] : type === "doctor_profile" || ["doctors", "doctor", "team", "care_team"].includes(type) ? catalog?.doctors ?? [] : [];
   const visibleRecords = records.length > 0 ? records : dynamicRecords;
   const style = `template-${template}`;
+  const embeddedFormId = type === "lead_form" ? text(records[0]?.form_id) : "";
+  if (embeddedFormId) return <FormEmbed clinicSlug={clinicSlug} formId={embeddedFormId} brand={brand} heading={heading} />;
   if (["hero", "banner"].includes(type)) return <section className={`public-hero ${style} ${template}-hero`} aria-labelledby="public-hero-heading"><div><p className="public-eyebrow">{text(content.eyebrow, "THOUGHTFUL CARE, CLOSE TO HOME")}</p><h1 id="public-hero-heading">{heading || "Care that feels considered."}</h1>{body && <p className="public-lede">{body}</p>}<Link className="button button-primary" href={`/book/${encodeURIComponent(clinicSlug)}`}>{text(content.button_label, "Book an appointment")} <span>→</span></Link></div>{template === "calm_clinic" ? <div className="public-hero-art" aria-hidden="true"><div className="public-hero-sun" /><div className="public-hero-card"><span>YOUR HEALTH, IN GOOD HANDS</span><strong>Make space for feeling well.</strong></div></div> : template === "editorial_practice" ? <div className="editorial-hero-art" aria-hidden="true"><span>01</span><div><strong>Care, edited.</strong><small>PERSONAL · PRECISE · PRESENT</small></div></div> : <div className="warm-hero-art" aria-hidden="true"><div className="warm-orb" /><span>Good care<br />starts here.</span></div>}</section>;
   if (["services", "service"].includes(type) || (records.length > 0 && type.includes("service"))) return <section className={`public-section ${style}`} id="services"><div className="public-section-heading"><p className="public-eyebrow">SERVICES</p><h2>{heading || "Care, thoughtfully delivered."}</h2>{body && <p>{body}</p>}</div><div className="public-record-grid">{visibleRecords.map((item, index) => <article className={`public-record ${style}-record`} key={`${label(item, "name", "title")}-${index}`}><span className="public-record-number">{String(index + 1).padStart(2, "0")}</span><h3>{label(item, "name", "title") || "Consultation"}</h3><p>{label(item, "description", "short_description", "body")}</p>{typeof item.id === "string" && <Link className="text-link" href={`/${clinicSlug}/services/${item.id}`}>Details <span>→</span></Link>}{label(item, "duration", "duration_minutes") && <small>{label(item, "duration", "duration_minutes")} min</small>}</article>)}</div></section>;
   if (["doctors", "doctor", "team", "care_team"].includes(type)) return <section className={`public-section ${style}`} id="care-team"><div className="public-section-heading"><p className="public-eyebrow">YOUR CARE TEAM</p><h2>{heading || "People who listen."}</h2>{body && <p>{body}</p>}</div><div className="public-record-grid public-doctors">{visibleRecords.map((item, index) => <article className={`public-record ${style}-record`} key={`${label(item, "name", "public_name")}-${index}`}><div className="public-avatar" aria-hidden="true">{label(item, "name", "public_name").slice(0, 1) || "C"}</div><h3>{label(item, "name", "public_name") || "Care professional"}</h3><p>{label(item, "specialty", "role", "bio")}</p>{typeof item.id === "string" && <Link className="text-link" href={`/${clinicSlug}/doctors/${item.id}`}>Profile <span>→</span></Link>}</article>)}</div></section>;
@@ -61,6 +64,8 @@ export default function PublicSite({ pageSlug }: { pageSlug?: string }) {
   const clinicSlug = decodeURIComponent(params.clinicSlug);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [catalog, setCatalog] = useState<PublicCatalog | null>(null);
+  const [testimonials, setTestimonials] = useState<Array<Record<string, unknown>>>([]);
+  useEffect(() => { void fetch(`/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}/testimonials`, { cache: "no-store" }).then((response) => response.ok ? response.json() : { data: [] }).then((payload) => setTestimonials(Array.isArray(payload.data) ? payload.data : [])).catch(() => undefined); }, [clinicSlug]);
   const [missing, setMissing] = useState(false);
   useEffect(() => { setSnapshot(null); setCatalog(null); setMissing(false); void fetch(`/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error("missing"); const payload = await response.json(); setSnapshot(payload.data.snapshot as Snapshot); const catalogResponse = await fetch(`/api/v1/public/catalog?clinic_slug=${encodeURIComponent(clinicSlug)}&limit=100`, { cache: "no-store" }); if (catalogResponse.ok) { const catalogPayload = await catalogResponse.json(); setCatalog(catalogPayload.data as PublicCatalog); } }).catch(() => setMissing(true)); }, [clinicSlug]);
   const page = useMemo(() => pageSlug ? snapshot?.pages.find((item) => item.slug === pageSlug) : snapshot?.pages.find((item) => item.slug === "home") ?? snapshot?.pages[0], [snapshot, pageSlug]);
@@ -106,5 +111,5 @@ export default function PublicSite({ pageSlug }: { pageSlug?: string }) {
   if (!snapshot || !page) return <main className="public-loading"><p className="public-eyebrow">LOADING CLINIC</p><p role="status">Preparing your visit…</p></main>;
   const brand = snapshot.brand ?? {};
   const template = templateKey(snapshot.template_key);
-  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}><SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} />)}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
+  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}><SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} testimonials={testimonials} brand={brand} />)}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
 }
