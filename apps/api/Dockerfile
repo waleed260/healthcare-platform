@@ -8,7 +8,7 @@ COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
 
 FROM python:3.12-slim AS runtime
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY . .

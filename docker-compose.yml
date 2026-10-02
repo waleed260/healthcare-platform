@@ -13,7 +13,8 @@ services:
       POSTGRES_USER: healthcare_migrator
       POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:-healthcare_migrator_dev}
       HEALTHCARE_RUNTIME_PASSWORD: ${HEALTHCARE_RUNTIME_PASSWORD:-healthcare_runtime_dev}
-    ports: ["127.0.0.1:5432:5432"]          # loopback only; never expose the database
+    # no published port: only the migrate/api containers reach the database over the compose network
+    # (to inspect it from the host: docker compose exec db psql -U healthcare_migrator healthcare)
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/docker/postgres-init:/docker-entrypoint-initdb.d:ro
