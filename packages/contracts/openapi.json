@@ -21598,6 +21598,100 @@
         ]
       }
     },
+    "/api/v1/public/sites/slug/{clinic_slug}/results": {
+      "get": {
+        "operationId": "public_results_api_v1_public_sites_slug__clinic_slug__results_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clinic_slug",
+            "required": true,
+            "schema": {
+              "title": "Clinic Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Public Results Api V1 Public Sites Slug  Clinic Slug  Results Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Results",
+        "tags": [
+          "public-results"
+        ]
+      }
+    },
+    "/api/v1/public/sites/slug/{clinic_slug}/results/{media_id}/image": {
+      "get": {
+        "operationId": "public_result_image_api_v1_public_sites_slug__clinic_slug__results__media_id__image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clinic_slug",
+            "required": true,
+            "schema": {
+              "title": "Clinic Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "media_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Media Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Result Image",
+        "tags": [
+          "public-results"
+        ]
+      }
+    },
     "/api/v1/public/sites/slug/{clinic_slug}/testimonials": {
       "get": {
         "operationId": "public_testimonials_api_v1_public_sites_slug__clinic_slug__testimonials_get",
