@@ -4,7 +4,7 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class SpecialtyEnable(BaseModel):
@@ -38,8 +38,24 @@ class LeadUpdate(BaseModel):
 
     @model_validator(mode="after")
     def require_change(self):
-        if not any(getattr(self, field) is not None for field in ('status', 'assigned_to_user_id', 'notes', 'lost_reason')):
+        if not self.model_fields_set - {'expected_version'}:
             raise ValueError('at least one lead field must be supplied')
+        if 'status' in self.model_fields_set and self.status is None:
+            raise ValueError('status cannot be null')
+        return self
+
+
+class LeadActivityCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    kind: Literal['call', 'note', 'message', 'follow_up']
+    body: str = Field(min_length=1, max_length=5000)
+    due_at: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_follow_up_date(self):
+        if (self.kind == 'follow_up') != (self.due_at is not None):
+            raise ValueError('a due date is required only for follow-up activities')
         return self
 
 

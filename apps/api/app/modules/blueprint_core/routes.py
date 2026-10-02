@@ -12,7 +12,15 @@ from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
-from app.modules.blueprint_core.schemas import InvoiceCreate, LeadConvert, LeadCreate, LeadUpdate, PaymentCreate, SpecialtyEnable
+from app.modules.blueprint_core.schemas import (
+    InvoiceCreate,
+    LeadActivityCreate,
+    LeadConvert,
+    LeadCreate,
+    LeadUpdate,
+    PaymentCreate,
+    SpecialtyEnable,
+)
 from app.modules.crm.routes import _normalize_email, _normalize_phone
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
@@ -133,6 +141,17 @@ def lead_create(payload: LeadCreate, request: Request, db: Session = Depends(get
 @lead_router.patch("/{lead_id}")
 def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    lead = db.execute(text("""
+        SELECT status, converted_to_patient_id, version FROM leads
+        WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL
+        FOR UPDATE
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().one_or_none()
+    if lead is None or lead["version"] != payload.expected_version:
+        raise _error("VERSION_CONFLICT", "The lead changed before this update or is unavailable.", status.HTTP_409_CONFLICT)
+    if payload.status is not None and (
+        lead["status"] == "converted" or lead["converted_to_patient_id"] is not None
+    ):
+        raise _error("LEAD_CONVERTED", "A converted lead cannot return to the sales pipeline.", status.HTTP_409_CONFLICT)
     values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
     assignments = ", ".join(f"{field} = :{field}" for field in values)
     row = db.execute(text(f"""
@@ -143,6 +162,105 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
     if row is None:
         raise _error("VERSION_CONFLICT", "The lead changed before this update or is unavailable.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.update", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(values)})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+def _require_activity_lead(db: Session, session: dict, lead_id: UUID) -> None:
+    lead = db.execute(text("""
+        SELECT l.id FROM leads l
+        WHERE l.clinic_id = :clinic_id AND l.id = :lead_id AND l.archived_at IS NULL
+          AND (
+            NOT EXISTS (SELECT 1 FROM user_specialty_scopes s
+                        WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+            OR EXISTS (SELECT 1 FROM user_specialty_scopes s
+                       WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id
+                         AND s.specialty_id = l.specialty_id)
+          )
+          AND (
+            NOT EXISTS (SELECT 1 FROM user_branch_scopes s
+                        WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+            OR EXISTS (
+                SELECT 1 FROM appointments a JOIN user_branch_scopes s
+                  ON s.clinic_id = a.clinic_id AND s.branch_id = a.branch_id
+                WHERE a.clinic_id = l.clinic_id AND a.id = l.appointment_id
+                  AND s.user_id = :user_id
+            )
+          )
+        FOR SHARE OF l
+    """), {
+        "clinic_id": session["clinic_id"], "user_id": session["user_id"], "lead_id": lead_id,
+    }).scalar_one_or_none()
+    if lead is None:
+        raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
+
+
+@lead_router.get("/{lead_id}/activities")
+def lead_activity_list(
+    lead_id: UUID,
+    request: Request,
+    cursor: str | None = Query(default=None, max_length=512),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias="healthcare_session"),
+) -> dict:
+    session = _authorized(db, session_token, "lead.read")
+    _require_activity_lead(db, session, lead_id)
+    namespace = f"lead-activities:{session['clinic_id']}:{lead_id}"
+    values = decode_cursor(cursor, namespace) if cursor else {}
+    if cursor and values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
+    values = values or {}
+    rows = db.execute(text("""
+        SELECT id, lead_id, actor_user_id, kind, body, due_at, created_at
+        FROM lead_activities
+        WHERE clinic_id = :clinic_id AND lead_id = :lead_id
+          AND (CAST(:after_created_at AS timestamptz) IS NULL
+               OR created_at < CAST(:after_created_at AS timestamptz)
+               OR (created_at = CAST(:after_created_at AS timestamptz)
+                   AND id < CAST(:after_id AS uuid)))
+        ORDER BY created_at DESC, id DESC LIMIT :page_size
+    """), {
+        "clinic_id": session["clinic_id"], "lead_id": lead_id,
+        "after_created_at": values.get("created_at"), "after_id": values.get("id"),
+        "page_size": limit + 1,
+    }).mappings().all()
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    next_cursor = encode_cursor(namespace, {
+        "created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"]),
+    }) if has_next and rows else None
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {
+        "request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit,
+    }}
+
+
+@lead_router.post("/{lead_id}/activities", status_code=status.HTTP_201_CREATED)
+def lead_activity_create(
+    lead_id: UUID,
+    payload: LeadActivityCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias="healthcare_session"),
+    csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict:
+    session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_activity_lead(db, session, lead_id)
+    row = db.execute(text("""
+        INSERT INTO lead_activities (clinic_id, lead_id, actor_user_id, kind, body, due_at)
+        VALUES (:clinic_id, :lead_id, :actor_user_id, :kind, :body, :due_at)
+        RETURNING id, lead_id, actor_user_id, kind, body, due_at, created_at
+    """), {
+        "clinic_id": session["clinic_id"], "lead_id": lead_id,
+        "actor_user_id": session["user_id"], **payload.model_dump(),
+    }).mappings().one()
+    record_event(
+        db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"],
+        action="lead.activity.create", entity_type="lead_activity", entity_id=row["id"],
+        outcome="success", request_id=UUID(request.state.request_id),
+        metadata={"lead_id": str(lead_id), "kind": payload.kind},
+    )
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 

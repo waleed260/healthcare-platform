@@ -1,6 +1,7 @@
 """Add specialty enablement, lead CRM, and patient billing foundations."""
 
 from alembic import op
+import sqlalchemy as sa
 
 
 revision = "0046_blueprint_core_foundations"
@@ -202,21 +203,24 @@ def upgrade() -> None:
         ('billing.read', 'Read patient invoices and payments'),
         ('billing.manage', 'Create invoices and record payments'),
     ):
-        op.execute("INSERT INTO permissions (code, description) VALUES (:code, :description) ON CONFLICT DO NOTHING", {"code": code, "description": description})
+        op.execute(sa.text(
+            "INSERT INTO permissions (code, description) "
+            "VALUES (:code, :description) ON CONFLICT DO NOTHING"
+        ).bindparams(code=code, description=description))
     for role in ('owner', 'manager'):
-        op.execute("""
+        op.execute(sa.text("""
             INSERT INTO role_permissions (role_id, permission_code)
             SELECT r.id, p.code FROM roles r CROSS JOIN permissions p
             WHERE r.name = :role AND p.code IN ('specialty.read', 'specialty.manage', 'lead.read', 'lead.manage', 'billing.read', 'billing.manage')
             ON CONFLICT DO NOTHING
-        """, {"role": role})
+        """).bindparams(role=role))
     for role in ('receptionist', 'doctor'):
-        op.execute("""
+        op.execute(sa.text("""
             INSERT INTO role_permissions (role_id, permission_code)
             SELECT r.id, p.code FROM roles r CROSS JOIN permissions p
             WHERE r.name = :role AND p.code IN ('specialty.read', 'lead.read', 'lead.manage', 'billing.read')
             ON CONFLICT DO NOTHING
-        """, {"role": role})
+        """).bindparams(role=role))
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON specialties, clinic_specialties, user_specialty_scopes, leads, invoices, invoice_lines, invoice_number_sequences, payments, payment_allocations TO healthcare_runtime")
 
 
