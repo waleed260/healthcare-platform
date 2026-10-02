@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
@@ -333,13 +334,19 @@ def patient_history(patient_id: UUID, request: Request, db: Session = Depends(ge
         FROM appointment_history h
         WHERE h.clinic_id = :clinic_id
           AND h.appointment_id IN (SELECT id FROM appointments WHERE clinic_id = :clinic_id AND patient_id = :patient_id)
+        ORDER BY h.created_at DESC
+        LIMIT 200
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
     merges = db.execute(text("""
         SELECT id, 'merge' AS event_type, source_patient_id AS entity_id,
                NULL AS from_status, NULL AS to_status, reason, actor_user_id, created_at
         FROM patient_merge_events
         WHERE clinic_id = :clinic_id AND (source_patient_id = :patient_id OR target_patient_id = :patient_id)
+        ORDER BY created_at DESC
+        LIMIT 200
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+    # Each source is capped at its own newest 200, so the merged newest 200 below
+    # is still globally correct while the per-source scan stays bounded.
     events = sorted((dict(row) for row in [*appointments, *merges]), key=lambda row: (row["created_at"], str(row["id"])), reverse=True)
     db.commit()
     return {"data": events[:200], "meta": {"request_id": request.state.request_id}}
@@ -357,6 +364,7 @@ def care_team_list(patient_id: UUID, request: Request, db: Session = Depends(get
         WHERE team.clinic_id = :clinic_id AND team.patient_id = :patient_id
           AND doctor.status = 'active' AND doctor.archived_at IS NULL
         ORDER BY doctor.public_name, doctor.id
+        LIMIT 200
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
@@ -527,9 +535,12 @@ def contact_create(patient_id: UUID, payload: ContactCreate, request: Request, d
 
 
 @router.get("/{patient_id}/notes")
-def note_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def note_list(patient_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.note.read")
     _require_patient(db, session, patient_id)
+    cursor_values = decode_cursor(cursor, "patient_notes") if cursor else None
+    if cursor and cursor_values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid or expired.", status.HTTP_400_BAD_REQUEST)
     private_filter = " OR (note.visibility = 'private_doctor' AND note.author_user_id = :user_id)"
     try:
         require_permission(db, session["user_id"], session["clinic_id"], "patient.private_note.read")
@@ -584,10 +595,18 @@ def note_list(patient_id: UUID, request: Request, db: Session = Depends(get_db),
             )
             {private_filter}
           )
-        ORDER BY note.created_at DESC
-    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"]}).mappings().all()
+          AND (:after_id IS NULL OR note.created_at < :after_created OR (note.created_at = :after_created AND note.id < :after_id))
+        ORDER BY note.created_at DESC, note.id DESC
+        LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"],
+           "after_created": datetime.fromisoformat(cursor_values["created_at"]) if cursor_values else None,
+           "after_id": UUID(cursor_values["id"]) if cursor_values else None,
+           "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = list(rows[:limit])
+    next_cursor = encode_cursor("patient_notes", {"created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("/{patient_id}/notes", status_code=status.HTTP_201_CREATED)
