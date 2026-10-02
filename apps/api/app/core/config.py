@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_public_key: str = ""
     session_cookie_name: str = "healthcare_session"
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
     public_app_url: str = "http://localhost:3000"
     public_website_domain: str = ""
     private_storage_root: str = "/tmp/healthcare-private"
@@ -42,6 +45,14 @@ class Settings(BaseSettings):
     def cors_allowed_origins(self) -> set[str]:
         value = self.cors_origins or self.csrf_allowed_origins
         return {origin.strip() for origin in value.split(",") if origin.strip()}
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def google_callback_url(self) -> str:
+        return self.google_redirect_uri or f"{self.public_app_url.rstrip('/')}/api/v1/auth/google/callback"
 
     @property
     def push_enabled(self) -> bool:

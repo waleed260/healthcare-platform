@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Phase = "login" | "mfa" | "enroll";
@@ -26,6 +26,25 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+
+  async function beginEnrollment() {
+    const enrollmentResponse = await fetch("/api/v1/auth/mfa/enroll", { method: "POST", headers: { "X-CSRF-Token": csrfToken() }, credentials: "include" });
+    if (!enrollmentResponse.ok) throw new Error(await apiMessage(enrollmentResponse));
+    setEnrollment(await enrollmentResponse.json() as { secret: string; recovery_codes: string[] });
+    setPhase("enroll");
+  }
+
+  useEffect(() => {
+    void fetch("/api/v1/auth/google/config", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((payload) => setGoogleEnabled(payload?.data?.enabled === true)).catch(() => undefined);
+    const outcome = new URLSearchParams(window.location.search).get("google");
+    if (!outcome) return;
+    window.history.replaceState(null, "", "/login");
+    if (outcome === "ok") router.push("/dashboard");
+    else if (outcome === "mfa") setPhase("mfa");
+    else if (outcome === "enroll") void beginEnrollment().catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to start MFA enrollment."));
+    else setError(outcome === "no_account" ? "No active workspace account matches that Google email. Ask your clinic administrator for an invitation." : outcome === "unverified" ? "Google could not verify that email address." : "Google sign-in could not be completed. Try again.");
+  }, []);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,6 +77,6 @@ export default function LoginPage() {
 
   return <main className="auth-page"><div className="auth-panel"><Link className="wordmark" href="/">care<span>/</span>fully</Link><div className="auth-copy"><p className="eyebrow">SECURE CLINIC WORKSPACE</p><h1>{phase === "login" ? <>Welcome<br /><em>back.</em></> : phase === "enroll" ? <>Secure your<br /><em>workspace.</em></> : <>One more<br /><em>step.</em></>}</h1><p>{phase === "login" ? "Sign in to continue to your clinic workspace." : phase === "enroll" ? "Set up an authenticator before continuing. Save the recovery codes somewhere secure; they are shown only once." : recovery ? "Enter one unused recovery code to continue." : "Enter the verification code from your authenticator app."}</p></div>
     {error && <div className="workspace-alert" role="alert">{error}</div>}
-    {phase === "login" ? <form className="auth-form" onSubmit={submitLogin}><label htmlFor="email">Clinic email</label><input id="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /><button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}<span>→</span></button><p className="auth-help">Forgot your password? Contact your clinic administrator. This workspace does not send recovery email or SMS.</p></form> : phase === "enroll" ? <><div className="auth-help"><strong>Authenticator secret</strong><code>{enrollment?.secret}</code><strong>Recovery codes</strong><code>{enrollment?.recovery_codes.join("\n")}</code></div><form className="auth-form" onSubmit={submitMfa}><label htmlFor="code">First authenticator code</label><input id="code" inputMode="numeric" autoComplete="one-time-code" minLength={6} required value={code} onChange={(event) => setCode(event.target.value)} /><button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Checking…" : "Verify and continue"}<span>→</span></button></form></> : <form className="auth-form" onSubmit={submitMfa}><label htmlFor="code">{recovery ? "Recovery code" : "Authenticator code"}</label><input id="code" inputMode="numeric" autoComplete="one-time-code" minLength={recovery ? 8 : 6} required value={code} onChange={(event) => setCode(event.target.value)} /><button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Checking…" : "Continue"}<span>→</span></button><button className="text-link auth-switch" type="button" onClick={() => { setRecovery(!recovery); setCode(""); }}>{recovery ? "Use authenticator code" : "Use a recovery code"}</button></form>}
+    {phase === "login" ? <form className="auth-form" onSubmit={submitLogin}><label htmlFor="email">Clinic email</label><input id="email" type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /><label htmlFor="password">Password</label><input id="password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /><button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}<span>→</span></button>{googleEnabled && <button className="button button-secondary auth-submit" type="button" onClick={() => window.location.assign("/api/v1/auth/google/start")}>Continue with Google <span>→</span></button>}<p className="auth-help">Forgot your password? Contact your clinic administrator. This workspace does not send recovery email or SMS.</p></form> : phase === "enroll" ? <><div className="auth-help"><strong>Authenticator secret</strong><code>{enrollment?.secret}</code><strong>Recovery codes</strong><code>{enrollment?.recovery_codes.join("\n")}</code></div><form className="auth-form" onSubmit={submitMfa}><label htmlFor="code">First authenticator code</label><input id="code" inputMode="numeric" autoComplete="one-time-code" minLength={6} required value={code} onChange={(event) => setCode(event.target.value)} /><button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Checking…" : "Verify and continue"}<span>→</span></button></form></> : <form className="auth-form" onSubmit={submitMfa}><label htmlFor="code">{recovery ? "Recovery code" : "Authenticator code"}</label><input id="code" inputMode="numeric" autoComplete="one-time-code" minLength={recovery ? 8 : 6} required value={code} onChange={(event) => setCode(event.target.value)} /><button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? "Checking…" : "Continue"}<span>→</span></button><button className="text-link auth-switch" type="button" onClick={() => { setRecovery(!recovery); setCode(""); }}>{recovery ? "Use authenticator code" : "Use a recovery code"}</button></form>}
     <p className="auth-footer"><Link href="/">Return to carefully</Link></p></div></main>;
 }

@@ -23,6 +23,7 @@ const navItems: NavItem[] = [
   { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
   { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
   { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
+  { href: "/security", label: "Security", icon: "⚿", permission: "" },
   { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
   { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read" },
 ];
@@ -62,7 +63,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   }, []);
 
   const permissions = session?.permissions ?? [];
-  const visibleItems = useMemo(() => navItems.filter((item) => !session || permissions.includes(item.permission)), [permissions, session]);
+  const visibleItems = useMemo(() => navItems.filter((item) => !session || !item.permission || permissions.includes(item.permission)), [permissions, session]);
   const unreadCount = notifications.filter((item) => !item.read_at).length;
   const initials = (session?.display_name ?? "Care team").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 

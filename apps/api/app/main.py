@@ -22,6 +22,8 @@ from app.modules.blueprint_core.routes import billing_router, lead_router, speci
 from app.modules.clinical.routes import prescription_router, router as clinical_router
 from app.modules.packages.routes import router as packages_router
 from app.modules.inventory.routes import router as inventory_router
+from app.modules.identity.security_routes import router as account_security_router
+from app.modules.identity.google import router as google_auth_router
 from app.modules.website_content.routes import public_router as website_content_public_router, router as website_content_router
 from app.modules.websites.seo_routes import router as website_seo_router
 from app.modules.website_library.routes import router as website_library_router
@@ -76,6 +78,8 @@ app.include_router(finance_router)
 app.include_router(upgrade_router)
 app.include_router(website_library_router)
 app.include_router(website_seo_router)
+app.include_router(google_auth_router)
+app.include_router(account_security_router)
 app.include_router(website_content_router)
 app.include_router(website_content_public_router)
 app.include_router(upgrade_admin_router)

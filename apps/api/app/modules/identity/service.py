@@ -113,6 +113,32 @@ def authenticate(db: Session, email: str, password: str, ip_address: str, user_a
         raise AuthenticationError()
 
     _clear_failure(db, bucket_key)
+    return _start_session(db, user, ip_address, user_agent)
+
+
+def authenticate_external(db: Session, email: str, ip_address: str, user_agent: str | None) -> LoginResult:
+    """Start a session for an already-provisioned active user whose email an external IdP has verified.
+
+    No account is created here: clinics onboard staff by invitation. MFA policy is unchanged.
+    """
+    normalized_email = normalize_email(email)
+    user = db.execute(
+        text("""
+            SELECT u.id, u.clinic_id, u.display_name, u.password_hash, u.status
+            FROM users u
+            LEFT JOIN clinics c ON c.id = u.clinic_id
+            WHERE u.normalized_email = :email
+              AND u.status = 'active'
+              AND (u.clinic_id IS NULL OR (c.status = 'active' AND c.archived_at IS NULL))
+        """),
+        {"email": normalized_email},
+    ).mappings().one_or_none()
+    if user is None:
+        raise AuthenticationError()
+    return _start_session(db, user, ip_address, user_agent)
+
+
+def _start_session(db: Session, user: dict, ip_address: str, user_agent: str | None) -> LoginResult:
     now = utc_now()
     # Owner/MFA role discovery is tenant-scoped under forced RLS. Establish the
     # context only after the password has been verified and the user/clinic
