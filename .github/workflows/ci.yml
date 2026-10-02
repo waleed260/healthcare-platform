@@ -151,9 +151,15 @@ jobs:
         run: bash infra/verify_deploy.sh http://localhost:8000
       - name: Runtime role privilege check (throwaway local Postgres only; never touches Neon)
         run: |
-          missing=$(docker compose exec -T db psql -U healthcare_migrator -d healthcare -Atc "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname='public' AND tablename <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', format('public.%I', tablename), 'SELECT')")
-          test -z "$missing" || { echo "healthcare_runtime lacks SELECT on: $missing"; exit 1; }
-          docker compose exec -T db psql -U healthcare_runtime -d healthcare -Atc "SELECT count(*) FROM plans"
+          set +e
+          missing=$(docker compose exec -T db psql -U healthcare_migrator -d healthcare -Atc "SELECT string_agg(tablename, ', ') FROM pg_tables WHERE schemaname='public' AND tablename <> 'alembic_version' AND NOT has_table_privilege('healthcare_runtime', format('public.%I', tablename), 'SELECT')" 2>&1)
+          status=$?
+          if [ $status -ne 0 ]; then echo "::error title=privilege query failed::$(echo "$missing" | tr '\n' ' ')"; exit 1; fi
+          if [ -n "$missing" ]; then echo "::error title=runtime role lacks SELECT::$missing"; exit 1; fi
+          read_plans=$(docker compose exec -T db psql -U healthcare_runtime -d healthcare -Atc "SELECT count(*) FROM plans" 2>&1)
+          status=$?
+          if [ $status -ne 0 ]; then echo "::error title=runtime read of plans failed::$(echo "$read_plans" | tr '\n' ' ')"; exit 1; fi
+          echo "runtime role can read plans (rows: $read_plans)"
       - name: Logs on failure
         if: failure()
         run: docker compose logs --no-color
