@@ -98,7 +98,9 @@ class Settings(BaseSettings):
         # a client that can reach the API directly spoof X-Forwarded-For and defeat
         # per-IP rate limiting. Operators who really front the API with a trusted
         # proxy on an unknown source range must opt in explicitly.
-        if self.app_env == "production" and "*" in self.forwarded_allow_ips and not self.allow_wildcard_forwarded_ips:
+        entries = {entry.strip() for entry in self.forwarded_allow_ips.split(",")}
+        trusts_everything = bool(entries & {"*", "0.0.0.0/0", "::/0"})
+        if self.app_env == "production" and trusts_everything and not self.allow_wildcard_forwarded_ips:
             raise ValueError("FORWARDED_ALLOW_IPS must name trusted proxy IPs/CIDRs in production; set ALLOW_WILDCARD_FORWARDED_IPS=true only if you deliberately trust every peer")
         return self
 
