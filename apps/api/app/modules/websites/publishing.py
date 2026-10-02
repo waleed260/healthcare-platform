@@ -25,7 +25,16 @@ def validate_snapshot_contrast(snapshot: Mapping[str, object]) -> None:
     brand = snapshot.get("brand")
     if not isinstance(brand, Mapping):
         return
-    pairs = (("text_color", "background_color"), ("foreground", "background"), ("primary_color", "background_color"))
+    theme = brand.get("theme")
+    theme_colors = theme.get("colors") if isinstance(theme, Mapping) else None
+    sources: list[tuple[Mapping[str, object], tuple[tuple[str, str], ...]]] = [(brand, (("text_color", "background_color"), ("foreground", "background"), ("primary_color", "background_color")))]
+    if isinstance(theme_colors, Mapping):
+        sources.append((theme_colors, (("text", "background"), ("primary", "background"))))
+    for source, pairs in sources:
+        _check_pairs(source, pairs)
+
+
+def _check_pairs(brand: Mapping[str, object], pairs: tuple[tuple[str, str], ...]) -> None:
     for foreground_key, background_key in pairs:
         foreground, background = brand.get(foreground_key), brand.get(background_key)
         if foreground is None or background is None:

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { SiteFooter, SiteHeader } from "./site-chrome";
+import { themeStyle } from "../site-theme";
+import type { SiteBrand } from "../site-theme";
 
 type Content = {
   heading?: string;
@@ -20,7 +22,7 @@ type Content = {
 };
 type Section = { section_type: string; content: Content; is_visible?: boolean; position?: number };
 type Page = { slug: string; title: string; seo_title?: string | null; seo_description?: string | null; sections: Section[] };
-type Snapshot = { template_key?: string; brand?: Record<string, string>; pages: Page[] };
+type Snapshot = { template_key?: string; brand?: SiteBrand; pages: Page[] };
 type PublicCatalog = { services: Array<Record<string, unknown>>; doctors: Array<Record<string, unknown>> };
 
 function text(value: unknown, fallback = "") { return typeof value === "string" ? value : fallback; }
@@ -65,5 +67,5 @@ export default function PublicClinicPage() {
   if (!snapshot || !page) return <main className="public-loading"><p className="public-eyebrow">LOADING CLINIC</p><p role="status">Preparing your visit…</p></main>;
   const brand = snapshot.brand ?? {};
   const template = templateKey(snapshot.template_key);
-  return <main className={`public-site public-site-${template}`} style={{ "--public-accent": brand.primary_color || "#274c42", "--public-paper": brand.background_color || "#f5f4ee" } as CSSProperties}><header className="public-header"><Link className="wordmark" href="/">care<span>/</span>fully</Link><nav aria-label="Clinic website"><a href="#services">Services</a><a href="#visit">Visit</a><a href="#contact">Contact</a><Link className="button button-primary" href={`/book/${encodeURIComponent(clinicSlug)}`}>Book <span>→</span></Link></nav></header><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} />)}<LeadForm clinicSlug={clinicSlug} /></div><footer className="public-footer"><span>{page.title}</span><Link href={`/book/${encodeURIComponent(clinicSlug)}`}>Request an appointment <span>↗</span></Link></footer></main>;
+  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}><SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} />)}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
 }

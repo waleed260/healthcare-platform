@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
+from app.modules.websites.theme import normalize_brand
+
 
 class SectionContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -48,6 +50,11 @@ class WebsiteCreate(BaseModel):
     template_key: Literal["calm_clinic", "editorial_practice", "warm_studio"]
     brand: dict[str, object] = Field(default_factory=dict)
 
+    @field_validator("brand")
+    @classmethod
+    def validate_brand(cls, value: dict[str, object]) -> dict[str, object]:
+        return normalize_brand(value)
+
 
 class WebsiteUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -56,6 +63,11 @@ class WebsiteUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     template_key: Literal["calm_clinic", "editorial_practice", "warm_studio"] | None = None
     brand: dict[str, object] | None = None
+
+    @field_validator("brand")
+    @classmethod
+    def validate_brand(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        return None if value is None else normalize_brand(value)
 
 
 class WebsiteArchiveRequest(BaseModel):
