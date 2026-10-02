@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, label, patch, post } from "../_lib/client";
 import FormsPanel from "./forms-panel";
+import MediaUpload from "./media-upload";
 
 type Patient = { id: string; full_name: string; patient_number: string };
 type Plan = { id: string; title: string; diagnosis: string | null; status: string; starts_on: string | null; version: number };
@@ -93,7 +94,7 @@ export default function ClinicalPage() {
     {tab === "consent" && <section className="surface-card"><div className="surface-card-heading"><div><p className="eyebrow">CONSENT &amp; MEDIA</p><h2>Nothing public without consent.</h2></div></div>
       {can("consent.manage") && patientId && <form className="manage-form" onSubmit={addConsent}><div className="form-grid"><label>Consent type<input name="type" required maxLength={80} placeholder="website_media" /></label></div><div className="form-actions"><button className="button button-secondary" type="submit" disabled={busy}>Record granted consent</button></div></form>}
       <div className="invoice-list">{consents.map((consent) => <article className="invoice-row" key={consent.id}><div className="invoice-mark">✓</div><div className="invoice-main"><h3>{consent.consent_type}</h3><small>{new Date(consent.recorded_at).toLocaleString()}</small></div><div className="invoice-actions"><span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{consent.status}</span></div></article>)}
-        {media.length === 0 && <div className="dashboard-empty"><strong>No patient media</strong><span>Uploaded before/after photos appear here for review.</span></div>}
+        {can("patient.media.write") && <MediaUpload patientId={patientId} onUploaded={() => void run(() => Promise.resolve(), "Upload complete — scanning.")} />}{media.length === 0 && <div className="dashboard-empty"><strong>No patient media</strong><span>Uploaded before/after photos appear here for review.</span></div>}
         {media.map((item) => <article className="invoice-row" key={item.id}><div className="invoice-mark">{item.media_kind.slice(0, 3).toUpperCase()}</div><div className="invoice-main"><h3>{label(item.media_kind)} photo</h3><p>Scan: {item.scan_status} · Approval: {item.approval_status}</p><small>{item.captured_on ?? "No capture date"}{item.approved_for_website ? " · on website" : ""}</small></div><div className="invoice-actions">{can("patient.media.write") && item.approval_status !== "approved" && <button className="text-control" disabled={busy || !grantedConsent || item.scan_status !== "clean"} title={!grantedConsent ? "Record granted consent first" : undefined} onClick={() => grantedConsent && void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/approve`, { expected_version: item.version, consent_record_id: grantedConsent.id }), "Approved for website.")}>Approve for website</button>}{can("patient.media.write") && item.approval_status === "approved" && <button className="text-control" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/revoke`, { expected_version: item.version }), "Approval revoked.")}>Revoke</button>}</div></article>)}</div></section>}
   </main>;
 }

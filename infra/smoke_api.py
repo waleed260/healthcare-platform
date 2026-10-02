@@ -162,6 +162,15 @@ def main() -> int:
                 ok = bool(mine) and mine["status"] == "submitted" and mine["response_data"].get("area") == "B"
                 results.append(("form response persisted + submitted", ok, "" if ok else str(mine)))
                 print(f"{'PASS' if ok else 'FAIL'}  form response persisted + submitted")
+    # patient media upload (raw image body) -> appears pending scan, verified over real HTTP + storage
+    if patients:
+        import base64 as _b64
+        png = _b64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAQGl9jAAAAAASUVORK5CYII=")
+        up = client.post(f"/api/v1/patients/{patients[0]['id']}/media/upload?media_kind=before", headers={**csrf(), "Content-Type": "image/png"}, content=png)
+        media_row = check("patient media upload", up)
+        if media_row:
+            results.append(("uploaded media is pending scan", media_row.get("scan_status") == "pending_scan", str(media_row.get("scan_status"))))
+            print(f"{'PASS' if results[-1][1] else 'FAIL'}  uploaded media is pending scan")
     check("security overview", client.get("/api/v1/auth/security"))
     check("google config", public.get("/api/v1/auth/google/config"))
 

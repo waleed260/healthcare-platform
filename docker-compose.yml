@@ -54,6 +54,9 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+    volumes:
+      - privatedata:/tmp/healthcare-private
+      - publicdata:/tmp/healthcare-public
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -63,6 +66,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  worker:
+    build: ./apps/api
+    command: ["python", "infra/docker/scan-worker.py"]
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: postgresql+psycopg://healthcare_runtime:${HEALTHCARE_RUNTIME_PASSWORD:-healthcare_runtime_dev}@db:5432/healthcare
+      FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-dev-only-change-me-not-a-real-fernet-key}
+    volumes:
+      - privatedata:/tmp/healthcare-private
+      - publicdata:/tmp/healthcare-public
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
   tunnel:
     profiles: ["public"]
@@ -75,3 +93,5 @@ services:
 
 volumes:
   pgdata:
+  privatedata:
+  publicdata:

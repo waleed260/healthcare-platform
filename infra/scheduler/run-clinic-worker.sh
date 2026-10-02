@@ -12,7 +12,7 @@ if [[ ! "$clinic_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 fi
 
 case "$job_type" in
-  document_scan|document_metadata_encrypt|website_media_scan|export|retention_cleanup|follow_up_overdue_notification) ;;
+  document_scan|document_metadata_encrypt|website_media_scan|patient_media_scan|export|retention_cleanup|follow_up_overdue_notification) ;;
   *)
     echo "unsupported job type: $job_type" >&2
     exit 2
