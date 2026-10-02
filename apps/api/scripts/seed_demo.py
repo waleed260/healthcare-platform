@@ -139,6 +139,27 @@ def main() -> None:
                     VALUES (%s, %s, %s, 'follow_up_due', 'Synthetic follow-up due', 'A demo follow-up needs attention.')
                     ON CONFLICT (id) DO UPDATE SET read_at = NULL
                 """, (ident(f"notification-{clinic_number}"), clinic_id, user_ids["receptionist"]))
+
+                # Clinical form template (specialty-agnostic) + a draft response on the first patient.
+                form_id = ident(f"form-template-{clinic_number}")
+                field_schema = (
+                    '{"fields":[' 
+                    '{"key":"graft_count","label":"Estimated graft count","type":"number","required":true,"options":[]},' 
+                    '{"key":"donor_area","label":"Donor area","type":"select","required":true,"options":["Occipital","Temporal","Beard"]},' 
+                    '{"key":"review_on","label":"Review date","type":"date","required":false,"options":[]},' 
+                    '{"key":"consent_confirmed","label":"Consent discussed","type":"checkbox","required":false,"options":[]},' 
+                    '{"key":"clinical_notes","label":"Clinical notes","type":"textarea","required":false,"options":[]}]}'
+                )
+                cur.execute("""
+                    INSERT INTO clinical_form_templates (id, clinic_id, specialty_id, form_key, name, field_schema, created_by_user_id)
+                    VALUES (%s, %s, NULL, 'hair_assessment', 'Hair transplant assessment', CAST(%s AS jsonb), %s)
+                    ON CONFLICT (id) DO UPDATE SET field_schema = EXCLUDED.field_schema, status = 'active', archived_at = NULL
+                """, (form_id, clinic_id, field_schema, user_ids["doctor"]))
+                cur.execute("""
+                    INSERT INTO clinical_form_responses (id, clinic_id, patient_id, template_id, response_data)
+                    VALUES (%s, %s, %s, %s, CAST(%s AS jsonb))
+                    ON CONFLICT (id) DO UPDATE SET response_data = EXCLUDED.response_data, status = 'draft'
+                """, (ident(f"form-response-{clinic_number}"), clinic_id, patient_ids[0], form_id, '{"graft_count": 2500, "donor_area": "Occipital"}'))
         db.commit()
     print("Seeded two synthetic clinics: demo-collision-a and demo-collision-b")
     print(f"Synthetic login password: {PASSWORD}")

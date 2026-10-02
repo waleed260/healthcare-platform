@@ -144,6 +144,24 @@ def main() -> int:
             check("plan item", client.post(f"/api/v1/treatment-plans/{plan['id']}/items", headers=csrf(), json={"title": "Step 1", "sort_order": 0}))
         check("prescription", client.post(f"/api/v1/patients/{pid}/prescriptions", headers=csrf(), json={"medication_name": "Smoke med", "dosage": "1"}))
         check("consent record", client.post(f"/api/v1/patients/{pid}/consents", headers=csrf(), json={"consent_type": "smoke", "status": "granted", "version": "1"}))
+
+        # clinical forms: builder (template) + fill-in (draft -> submit), verified against the real DB
+        templates = check("form templates", client.get("/api/v1/clinical-forms/templates")) or []
+        results.append(("seeded hair_assessment present", any(t["form_key"] == "hair_assessment" for t in templates), ""))
+        print(f"{'PASS' if results[-1][1] else 'FAIL'}  seeded hair_assessment present")
+        tmpl = check("form template create", client.post("/api/v1/clinical-forms/templates", headers=csrf(), json={"form_key": f"smoke_form_{RUN}", "name": "Smoke form", "field_schema": {"fields": [{"key": "score", "label": "Score", "type": "number", "required": True}, {"key": "area", "label": "Area", "type": "select", "required": True, "options": ["A", "B"]}]}}), ok=(201, 409))
+        if tmpl:
+            resp = check("form response draft", client.post(f"/api/v1/patients/{pid}/form-responses", headers=csrf(), json={"template_id": tmpl["id"], "response_data": {"score": 7}}))
+            if resp:
+                check("form response update", client.patch(f"/api/v1/patients/{pid}/form-responses/{resp['id']}", headers=csrf(), json={"expected_version": resp["version"], "response_data": {"score": 9, "area": "B"}}))
+                # submit must reject a missing required field, then accept once complete
+                bad = client.post(f"/api/v1/patients/{pid}/form-responses/{resp['id']}/submit", headers=csrf(), json={"expected_version": resp["version"] + 1})
+                check("form submit (complete)", bad)
+                reread = check("form responses reread", client.get(f"/api/v1/patients/{pid}/form-responses")) or []
+                mine = next((r for r in reread if r["id"] == resp["id"]), None)
+                ok = bool(mine) and mine["status"] == "submitted" and mine["response_data"].get("area") == "B"
+                results.append(("form response persisted + submitted", ok, "" if ok else str(mine)))
+                print(f"{'PASS' if ok else 'FAIL'}  form response persisted + submitted")
     check("security overview", client.get("/api/v1/auth/security"))
     check("google config", public.get("/api/v1/auth/google/config"))
 

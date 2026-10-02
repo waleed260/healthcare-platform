@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.clinical.routes import _authorized, _write_authorized
-from app.modules.clinical_forms.schemas import FormResponseCreate, FormResponseSubmit, FormResponseUpdate, FormTemplateCreate, FormTemplateStatus
+from app.modules.clinical_forms.schemas import FormResponseCreate, FormResponseSubmit, FormResponseUpdate, FormTemplateCreate, FormTemplateStatus, validate_answers
 from app.modules.crm.routes import _require_patient
 from app.modules.identity.routes import _error
 
@@ -104,6 +104,10 @@ def response_create(patient_id: UUID, payload: FormResponseCreate, request: Requ
         appointment = db.execute(text("SELECT 1 FROM appointments WHERE clinic_id = :clinic_id AND id = :appointment_id AND patient_id = :patient_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "appointment_id": payload.appointment_id, "patient_id": patient_id}).scalar_one_or_none()
         if appointment is None:
             raise _error("NOT_FOUND", "The appointment is not associated with this patient.", status.HTTP_404_NOT_FOUND)
+    try:
+        validate_answers(template["field_schema"], payload.response_data, require_all=False)
+    except ValueError as exc:
+        raise _error("INVALID_INPUT", str(exc), status.HTTP_400_BAD_REQUEST) from exc
     row = db.execute(text("""
         INSERT INTO clinical_form_responses (clinic_id, patient_id, template_id, appointment_id, response_data)
         VALUES (:clinic_id, :patient_id, :template_id, :appointment_id, CAST(:response_data AS jsonb))
@@ -118,6 +122,15 @@ def response_create(patient_id: UUID, payload: FormResponseCreate, request: Requ
 def response_update(patient_id: UUID, response_id: UUID, payload: FormResponseUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "clinical.form.manage", csrf_token)
     _require_patient(db, session, patient_id)
+    schema = db.execute(text("""
+        SELECT t.field_schema FROM clinical_form_responses r JOIN clinical_form_templates t ON t.clinic_id = r.clinic_id AND t.id = r.template_id
+        WHERE r.clinic_id = :clinic_id AND r.patient_id = :patient_id AND r.id = :response_id
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "response_id": response_id}).scalar_one_or_none()
+    if schema is not None:
+        try:
+            validate_answers(schema, payload.response_data, require_all=False)
+        except ValueError as exc:
+            raise _error("INVALID_INPUT", str(exc), status.HTTP_400_BAD_REQUEST) from exc
     row = db.execute(text("""
         UPDATE clinical_form_responses SET response_data = CAST(:response_data AS jsonb), version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :response_id AND status = 'draft' AND version = :expected_version
@@ -134,6 +147,15 @@ def response_update(patient_id: UUID, response_id: UUID, payload: FormResponseUp
 def response_submit(patient_id: UUID, response_id: UUID, payload: FormResponseSubmit, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "clinical.form.manage", csrf_token)
     _require_patient(db, session, patient_id)
+    current = db.execute(text("""
+        SELECT r.response_data, t.field_schema FROM clinical_form_responses r JOIN clinical_form_templates t ON t.clinic_id = r.clinic_id AND t.id = r.template_id
+        WHERE r.clinic_id = :clinic_id AND r.patient_id = :patient_id AND r.id = :response_id AND r.status = 'draft'
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "response_id": response_id}).mappings().one_or_none()
+    if current is not None:
+        try:
+            validate_answers(current["field_schema"], current["response_data"] or {}, require_all=True)
+        except ValueError as exc:
+            raise _error("INVALID_INPUT", str(exc), status.HTTP_400_BAD_REQUEST) from exc
     row = db.execute(text("""
         UPDATE clinical_form_responses SET status = 'submitted', submitted_at = now(), submitted_by_user_id = :actor, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :response_id AND status = 'draft' AND version = :expected_version
