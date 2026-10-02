@@ -4,10 +4,11 @@ import hashlib
 from datetime import date
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Cookie, Depends, Header, Request, status
+from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.security import decode_cursor, encode_cursor
 from app.db.session import get_db
 from app.modules.audit.service import record_event
 from app.modules.clinical.routes import _authorized, _write_authorized
@@ -36,19 +37,30 @@ def _media_or_404(db: Session, session: dict, patient_id: UUID, media_id: UUID) 
 
 
 @router.get("/{patient_id}/media")
-def media_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def media_list(patient_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.media.read")
     _require_patient(db, session, patient_id)
+    cursor_values = decode_cursor(cursor, "patient_media") if cursor else None
+    if cursor and cursor_values is None:
+        raise _error("INVALID_INPUT", "The page cursor is invalid or expired.", status.HTTP_400_BAD_REQUEST)
     rows = db.execute(text("""
         SELECT id, treatment_plan_item_id, provider_user_id, captured_on, media_kind, mime_type, size_bytes,
                scan_status, scan_failure_reason, approval_status, approved_for_website, consent_record_id,
                approved_by_user_id, approved_at, version, created_at, updated_at
         FROM patient_media
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL
-        ORDER BY captured_on DESC, created_at DESC, id DESC
-    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+          AND (:after_id IS NULL OR captured_on < :after_captured OR (captured_on = :after_captured AND id < :after_id))
+        ORDER BY captured_on DESC, id DESC
+        LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id,
+           "after_captured": date.fromisoformat(cursor_values["captured_on"]) if cursor_values else None,
+           "after_id": UUID(cursor_values["id"]) if cursor_values else None,
+           "page_size": limit + 1}).mappings().all()
+    has_next = len(rows) > limit
+    rows = list(rows[:limit])
+    next_cursor = encode_cursor("patient_media", {"captured_on": rows[-1]["captured_on"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
     db.commit()
-    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 @router.post("/{patient_id}/media/upload", status_code=status.HTTP_201_CREATED)

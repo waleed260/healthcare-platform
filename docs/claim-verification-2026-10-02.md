@@ -50,11 +50,11 @@ The database has **17** tables with a `patient_id` column. Both reviews stopped 
 
 ---
 
-## Deferred (with rationale — not silently dropped)
+## Previously deferred — now also done
 
-- **Cursor pagination** on media/notes/care-team/history lists (claim #9). Real at scale, but it changes the API contract and the frontend; it is a scalability hardening, not a correctness or security defect. Should be its own PR. `patient_list`/`tag_list` already paginate and are the template to follow.
-- **MFA commit-before-cookie ordering** (claim #13). Low-impact robustness; recommend an end-to-end test first, then reorder.
-- **Historical reconciliation job** (doc §10) for merges performed *before* this fix. If any production merges already ran on the old code, code alone won't heal them — a dry-run job keyed off `patient_merge_events` should report orphaned rows per source/target before any data change. Not built here because it's operational tooling that must run against a real backup, not test data.
+- **Cursor pagination** (claim #9). `media` and `notes` (the genuinely high-volume patient lists) got keyset cursor pagination (`cursor`+`limit`, default 100/max 200, `next_cursor` in meta) following the `patient_list` template; `care-team` and `history` (small / already sliced) got bounded `LIMIT` caps on their underlying queries. Backward-compatible; OpenAPI contract regenerated.
+- **MFA commit/cookie ordering** (claim #13). `mfa_verify` now stages the rotated cookies **before** `db.commit()` (matching `/login`), so a commit failure rolls back and leaves the old session valid instead of rotating in the DB but never delivering the new token.
+- **Historical reconciliation job** (doc §10). `apps/api/scripts/reconcile_merges.py` — a strictly read-only scan keyed off `patient_merge_events` that reuses the merge registry to report orphaned rows (and un-tombstoned sources) per merge, with `--json` and `--fail-on-findings`. Covered by an integration test. It reports only; clinical/financial conflicts are left for a human against a backup.
 
 ---
 

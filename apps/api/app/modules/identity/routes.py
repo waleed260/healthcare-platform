@@ -199,8 +199,11 @@ def mfa_verify(payload: MfaVerifyRequest, response: Response, request: Request, 
         if session["clinic_id"] is not None:
             set_tenant_context(db, session["clinic_id"], session["user_id"])
             record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="auth.mfa_verify", entity_type="session", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
-        db.commit()
+        # Stage the rotated cookies before committing (as /login does): if the
+        # commit fails we roll back and the old session stays valid, instead of
+        # rotating the session in the DB but never delivering the new token.
         _set_session_cookies(response, rotation.session_token, rotation.csrf_token, session["clinic_id"])
+        db.commit()
     except (SessionError, AuthenticationError) as exc:
         db.rollback()
         raise _error("MFA_INVALID", "The MFA code is invalid.", status.HTTP_401_UNAUTHORIZED) from exc
