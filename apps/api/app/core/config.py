@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_version: str = "v1"
     database_url: str = "postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost:5432/healthcare"
     database_migration_url: str = ""
+    database_connect_timeout: int = Field(default=2, ge=1, le=60)
     session_hmac_key: str = "local-development-session-hmac-key-change-me"
     field_encryption_key: str = Field(default="", validation_alias=AliasChoices("FIELD_ENCRYPTION_KEYS", "FIELD_ENCRYPTION_KEY"))
     cookie_domain: str = ""

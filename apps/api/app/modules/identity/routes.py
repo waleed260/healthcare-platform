@@ -36,7 +36,7 @@ def _error(code: str, message: str, status_code: int, fields: object | None = No
 
 def _set_session_cookies(response: Response, session_token: str, csrf_token: str, clinic_id: UUID | None = None) -> None:
     settings = get_settings()
-    secure = settings.app_env == "production"
+    secure = settings.app_env in {"staging", "production"}
     max_age = 60 * 60 * 24 if clinic_id is None else 60 * 60 * 24 * 7
     common = {"secure": secure, "httponly": True, "samesite": "lax", "path": "/", "max_age": max_age}
     if settings.cookie_domain:

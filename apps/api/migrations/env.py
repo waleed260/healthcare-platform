@@ -6,7 +6,10 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import get_settings
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
+settings = get_settings()
+# Migrations run as the schema owner (DATABASE_MIGRATION_URL) when it is set; the app role cannot alter schema.
+migration_url = settings.database_migration_url or settings.database_url
+config.set_main_option("sqlalchemy.url", migration_url.replace("%", "%%"))
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
@@ -14,7 +17,7 @@ target_metadata = None
 
 
 def run_migrations_offline() -> None:
-    context.configure(url=get_settings().database_url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
+    context.configure(url=migration_url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
     with context.begin_transaction():
         context.run_migrations()
 

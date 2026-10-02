@@ -128,6 +128,30 @@ jobs:
         with:
           name: lighthouse-gate-0-mobile
           path: artifacts/lighthouse-gate-0-mobile.json
+  docker-stack:
+    # Runbook phases A+B in CI: build the image, create the runtime role, migrate as the owner,
+    # start the API as the least-privilege role and probe it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, migrate and start the stack
+        run: docker compose up -d --build
+      - name: Wait for the migration job to finish cleanly
+        run: |
+          for attempt in $(seq 1 60); do
+            state=$(docker compose ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}' | grep '^migrate ' || true)
+            case "$state" in
+              "migrate exited 0") echo "$state"; exit 0 ;;
+              "migrate exited "*) echo "migration failed: $state"; docker compose logs migrate; exit 1 ;;
+            esac
+            sleep 3
+          done
+          echo "migration did not finish"; docker compose logs migrate; exit 1
+      - name: Probe the API
+        run: bash infra/verify_deploy.sh http://localhost:8000
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
   container:
     runs-on: ubuntu-latest
     steps:

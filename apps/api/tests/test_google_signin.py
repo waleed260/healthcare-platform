@@ -39,3 +39,14 @@ def test_disabled_without_credentials_and_routes_registered() -> None:
 def test_account_security_routes_registered() -> None:
     paths = set(app.openapi()["paths"])
     assert {"/api/v1/auth/security", "/api/v1/auth/mfa/recovery-codes/regenerate", "/api/v1/auth/mfa/disable", "/api/v1/auth/sessions/revoke-others"} <= paths
+
+
+def test_database_connect_timeout_is_bounded_and_overridable() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    assert Settings().database_connect_timeout == 2
+    assert Settings(database_connect_timeout=10).database_connect_timeout == 10
+    for bad in (0, 61):
+        with pytest.raises(ValidationError):
+            Settings(database_connect_timeout=bad)
