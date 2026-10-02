@@ -21,7 +21,7 @@ type Content = {
   address?: string;
   [key: string]: unknown;
 };
-type Section = { section_type: string; content: Content; is_visible?: boolean; position?: number };
+type Section = { id?: string; section_type: string; content: Content; is_visible?: boolean; position?: number };
 type Page = { slug: string; title: string; seo_title?: string | null; seo_description?: string | null; canonical_url?: string | null; noindex?: boolean; og_title?: string | null; og_description?: string | null; og_image_media_id?: string | null; sections: Section[] };
 type Redirect = { from_path: string; to_path: string; status_code: number };
 type Snapshot = { template_key?: string; brand?: SiteBrand; pages: Page[]; redirects?: Redirect[] };
@@ -111,5 +111,5 @@ export default function PublicSite({ pageSlug }: { pageSlug?: string }) {
   if (!snapshot || !page) return <main className="public-loading"><p className="public-eyebrow">LOADING CLINIC</p><p role="status">Preparing your visit…</p></main>;
   const brand = snapshot.brand ?? {};
   const template = templateKey(snapshot.template_key);
-  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}><SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} testimonials={testimonials} brand={brand} />)}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
+  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}><SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => { const hiddenOn = [section.id && (brand.tablet?.hide_section_ids ?? []).includes(section.id) ? "hide-tablet" : "", section.id && (brand.mobile?.hide_section_ids ?? []).includes(section.id) ? "hide-mobile" : ""].filter(Boolean).join(" "); const block = <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} testimonials={testimonials} brand={brand} />; return hiddenOn ? <div key={`${section.section_type}-${index}`} className={hiddenOn}>{block}</div> : block; })}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
 }

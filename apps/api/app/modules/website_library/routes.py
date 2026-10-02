@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.audit.service import record_event
 from app.modules.identity.routes import _error
-from app.modules.website_library.schemas import ApplySiteTemplate, PageFromTemplate, ReusableCreate, ReusableInsert, ReusableUpdate
+from app.modules.website_library.schemas import ApplySiteTemplate, PageFromTemplate, ReusableCreate, ReusableInsert, ReusableUpdate, SectionReorder
 from app.modules.website_library.templates import PAGE_BY_KEY, PAGE_TEMPLATES, SECTION_PRESETS, SITE_BY_KEY, SITE_TEMPLATES
 from app.modules.websites.publishing import refresh_draft_snapshot
 from app.modules.websites.routes import _authorized, _csrf
@@ -208,3 +208,26 @@ def reusable_insert(website_id: UUID, page_id: UUID, reusable_id: UUID, payload:
     refresh_draft_snapshot(db, clinic_id, website_id, session["user_id"])
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/websites/{website_id}/pages/{page_id}/reorder-sections")
+def reorder_sections(website_id: UUID, page_id: UUID, payload: SectionReorder, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    """Atomically set the order of every section on a page (positions are unique per page)."""
+    session = _write(request, db, session_token, csrf_token)
+    clinic_id = session["clinic_id"]
+    if len(set(payload.section_ids)) != len(payload.section_ids):
+        raise _error("INVALID_INPUT", "Each section may appear only once.", status.HTTP_400_BAD_REQUEST)
+    current = db.execute(text("""
+        SELECT s.id FROM website_sections s JOIN website_pages p ON p.clinic_id = s.clinic_id AND p.id = s.page_id
+        WHERE s.clinic_id = :clinic_id AND p.id = :page_id AND p.website_id = :website_id FOR UPDATE OF s
+    """), {"clinic_id": clinic_id, "page_id": page_id, "website_id": website_id}).scalars().all()
+    if set(current) != set(payload.section_ids):
+        raise _error("VERSION_CONFLICT", "The page's sections changed. Reload and try again.", status.HTTP_409_CONFLICT)
+    # Two phases so the (page, position) unique constraint is never violated mid-update.
+    db.execute(text("UPDATE website_sections SET position = position + 1000 WHERE clinic_id = :clinic_id AND page_id = :page_id"), {"clinic_id": clinic_id, "page_id": page_id})
+    for position, section_id in enumerate(payload.section_ids):
+        db.execute(text("UPDATE website_sections SET position = :position, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"), {"position": position, "clinic_id": clinic_id, "id": section_id})
+    record_event(db, clinic_id=clinic_id, actor_user_id=session["user_id"], action="website.sections.reorder", entity_type="website_page", entity_id=page_id, outcome="success", request_id=UUID(request.state.request_id))
+    refresh_draft_snapshot(db, clinic_id, website_id, session["user_id"])
+    db.commit()
+    return {"data": {"reordered": len(payload.section_ids)}, "meta": {"request_id": request.state.request_id}}

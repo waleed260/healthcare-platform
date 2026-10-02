@@ -42,3 +42,9 @@ class ReusableInsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["copy", "synced"] = "copy"
+
+
+class SectionReorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section_ids: list[UUID] = Field(min_length=1, max_length=100)

@@ -37,3 +37,14 @@ def test_schema_guards() -> None:
     with pytest.raises(ValidationError):
         ReusableInsert(mode="linked")
     assert "/api/v1/website-library/templates" in app.openapi()["paths"]
+
+
+def test_reorder_schema_and_route() -> None:
+    from uuid import uuid4
+
+    from app.modules.website_library.schemas import SectionReorder
+
+    SectionReorder(section_ids=[uuid4(), uuid4()])
+    with pytest.raises(ValidationError):
+        SectionReorder(section_ids=[])
+    assert "/api/v1/website-library/websites/{website_id}/pages/{page_id}/reorder-sections" in app.openapi()["paths"]

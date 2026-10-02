@@ -66,10 +66,10 @@ def build_draft_snapshot(db: Session, clinic_id: UUID, website_id: UUID) -> dict
     if website is None:
         raise ValueError("website not found")
     pages = db.execute(text("SELECT id, slug, title, seo_title, seo_description, canonical_url, noindex, og_title, og_description, og_image_media_id FROM website_pages WHERE clinic_id = :clinic_id AND website_id = :website_id ORDER BY slug, id"), {"clinic_id": clinic_id, "website_id": website_id}).mappings().all()
-    sections = db.execute(text("SELECT page_id, section_type, layout_key, position, content, is_visible FROM website_sections WHERE clinic_id = :clinic_id AND page_id = ANY(:page_ids) ORDER BY position, id"), {"clinic_id": clinic_id, "page_ids": [page["id"] for page in pages]}).mappings().all() if pages else []
+    sections = db.execute(text("SELECT id, page_id, section_type, layout_key, position, content, is_visible FROM website_sections WHERE clinic_id = :clinic_id AND page_id = ANY(:page_ids) ORDER BY position, id"), {"clinic_id": clinic_id, "page_ids": [page["id"] for page in pages]}).mappings().all() if pages else []
     by_page: dict[object, list[dict[str, object]]] = {page["id"]: [] for page in pages}
     for section in sections:
-        by_page[section["page_id"]].append({"section_type": section["section_type"], "layout_key": section["layout_key"], "position": section["position"], "content": section["content"], "is_visible": section["is_visible"]})
+        by_page[section["page_id"]].append({"id": str(section["id"]), "section_type": section["section_type"], "layout_key": section["layout_key"], "position": section["position"], "content": section["content"], "is_visible": section["is_visible"]})
     redirects = db.execute(text("SELECT from_path, to_path, status_code FROM website_redirects WHERE clinic_id = :clinic_id AND website_id = :website_id ORDER BY from_path"), {"clinic_id": clinic_id, "website_id": website_id}).mappings().all()
     return {"template_key": website["template_key"], "brand": website["brand"], "redirects": [dict(row) for row in redirects], "pages": [{"slug": page["slug"], "title": page["title"], "seo_title": page["seo_title"], "seo_description": page["seo_description"], "canonical_url": page["canonical_url"], "noindex": page["noindex"], "og_title": page["og_title"], "og_description": page["og_description"], "og_image_media_id": str(page["og_image_media_id"]) if page["og_image_media_id"] else None, "sections": by_page[page["id"]]} for page in pages]}
 

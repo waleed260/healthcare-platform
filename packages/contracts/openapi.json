@@ -4085,6 +4085,26 @@
         "title": "SectionContent",
         "type": "object"
       },
+      "SectionReorder": {
+        "additionalProperties": false,
+        "properties": {
+          "section_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Section Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "section_ids"
+        ],
+        "title": "SectionReorder",
+        "type": "object"
+      },
       "ServiceCreate": {
         "additionalProperties": false,
         "properties": {
@@ -26286,6 +26306,104 @@
           }
         },
         "summary": "Reusable Insert",
+        "tags": [
+          "website-library"
+        ]
+      }
+    },
+    "/api/v1/website-library/websites/{website_id}/pages/{page_id}/reorder-sections": {
+      "post": {
+        "description": "Atomically set the order of every section on a page (positions are unique per page).",
+        "operationId": "reorder_sections_api_v1_website_library_websites__website_id__pages__page_id__reorder_sections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "website_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Website Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Page Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionReorder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reorder Sections Api V1 Website Library Websites  Website Id  Pages  Page Id  Reorder Sections Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reorder Sections",
         "tags": [
           "website-library"
         ]
