@@ -149,6 +149,11 @@ jobs:
           echo "migration did not finish"; docker compose logs migrate; exit 1
       - name: Probe the API
         run: bash infra/verify_deploy.sh http://localhost:8000
+      - name: Seed fake data and run the API smoke test (real DB, real runtime role)
+        run: |
+          docker compose run --rm -e APP_ENV=test -e SEED_DATABASE_URL=postgresql+psycopg://healthcare_migrator:healthcare_migrator_dev@db:5432/healthcare api python scripts/seed_demo.py
+          pip install --quiet httpx pyotp
+          python infra/smoke_api.py http://127.0.0.1:8000
       - name: Runtime role privilege check (throwaway local Postgres only; never touches Neon)
         run: |
           set +e

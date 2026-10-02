@@ -72,6 +72,7 @@ def plan_create(payload: TreatmentPlanCreate, request: Request, db: Session = De
         RETURNING id, patient_id, created_by_user_id, title, diagnosis, status, starts_on, ends_on, version, created_at, updated_at
     """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "user_id": session["user_id"], **payload.model_dump(exclude={"patient_id"})}).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="treatment_plan.create", entity_type="treatment_plan", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
@@ -86,6 +87,7 @@ def plan_update(plan_id: UUID, payload: TreatmentPlanUpdate, request: Request, d
     if row is None:
         raise _error("VERSION_CONFLICT", "The treatment plan changed before this update.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="treatment_plan.update", entity_type="treatment_plan", entity_id=plan_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
@@ -105,6 +107,7 @@ def item_create(plan_id: UUID, payload: TreatmentPlanItemCreate, request: Reques
         RETURNING id, plan_id, service_id, appointment_id, assigned_doctor_id, title, instructions, status, sort_order, due_on, completed_at, version, created_at, updated_at
     """), {"clinic_id": session["clinic_id"], "plan_id": plan_id, **payload.model_dump()}).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="treatment_plan.item.create", entity_type="treatment_plan_item", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
@@ -120,6 +123,7 @@ def item_update(plan_id: UUID, item_id: UUID, payload: TreatmentPlanItemUpdate, 
     if row is None:
         raise _error("VERSION_CONFLICT", "The treatment item changed before this update.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="treatment_plan.item.update", entity_type="treatment_plan_item", entity_id=item_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 

@@ -17,3 +17,17 @@ htmlcov/
 test-results/
 playwright-report/
 .vercel/
+
+# tooling traces, local agent state and generated evidence (never commit)
+.playwright-mcp/
+.agents/
+skills-lock.json
+.codex/
+.freebuff/
+docs/reports/screenshots/
+docs/reports/evidence/
+# local secrets and generated credentials (templates end in .example)
+docker.env
+*.pem
+*.key
+neon_*.url

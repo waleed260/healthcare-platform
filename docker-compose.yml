@@ -1,18 +1,22 @@
-# Production-like local stack: real Postgres 16, owner-run migrations, app on the least-privilege role.
-#   docker compose up -d --build        # builds, migrates, starts the API on :8000
-#   curl -fsS http://localhost:8000/health/ready
-# For hot-reload development use infra/docker/compose.yml instead.
+# Self-hosted stack: Postgres 16 + owner-run migrations + the API as the least-privilege role.
+#   infra/docker/up.sh            local stack on http://127.0.0.1:8000
+#   infra/docker/up.sh --public   also opens a free Cloudflare quick tunnel (https URL for the Vercel frontend)
+# The FIELD_ENCRYPTION_KEYS fallback is a DEV-ONLY key so a plain "docker compose up" works; init-env.sh generates a unique one.
+# Values come from docker.env (git-ignored; created by infra/docker/init-env.sh). Without it, safe local defaults apply.
+name: clinic
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: healthcare
       POSTGRES_USER: healthcare_migrator
-      POSTGRES_PASSWORD: healthcare_migrator_dev
-    ports: ["5432:5432"]
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:-healthcare_migrator_dev}
+      HEALTHCARE_RUNTIME_PASSWORD: ${HEALTHCARE_RUNTIME_PASSWORD:-healthcare_runtime_dev}
+    ports: ["127.0.0.1:5432:5432"]          # loopback only; never expose the database
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./infra/docker/postgres-init:/docker-entrypoint-initdb.d:ro   # creates healthcare_runtime BEFORE migrations
+      - ./infra/docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U healthcare_migrator -d healthcare"]
       interval: 5s
@@ -23,9 +27,11 @@ services:
     build: ./apps/api
     command: ["alembic", "upgrade", "head"]
     environment:
-      APP_ENV: local
-      DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@db:5432/healthcare
-      DATABASE_MIGRATION_URL: postgresql+psycopg://healthcare_migrator:healthcare_migrator_dev@db:5432/healthcare
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: postgresql+psycopg://healthcare_runtime:${HEALTHCARE_RUNTIME_PASSWORD:-healthcare_runtime_dev}@db:5432/healthcare
+      DATABASE_MIGRATION_URL: postgresql+psycopg://healthcare_migrator:${POSTGRES_OWNER_PASSWORD:-healthcare_migrator_dev}@db:5432/healthcare
+      SESSION_HMAC_KEY: ${SESSION_HMAC_KEY:-local-development-session-hmac-key-change-me}
+      FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-l9E3deCfohbclkEMS8_mxCcgi-71x5H_f1f8sOmr1Jo=}
     depends_on:
       db:
         condition: service_healthy
@@ -33,15 +39,38 @@ services:
 
   api:
     build: ./apps/api
-    ports: ["8000:8000"]
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"]          # reach it publicly only through the tunnel profile
     environment:
-      APP_ENV: local
-      DATABASE_URL: postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@db:5432/healthcare
-      CSRF_ALLOWED_ORIGINS: http://localhost:3000
-      CORS_ORIGINS: http://localhost:3000
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: postgresql+psycopg://healthcare_runtime:${HEALTHCARE_RUNTIME_PASSWORD:-healthcare_runtime_dev}@db:5432/healthcare
+      SESSION_HMAC_KEY: ${SESSION_HMAC_KEY:-local-development-session-hmac-key-change-me}
+      FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-l9E3deCfohbclkEMS8_mxCcgi-71x5H_f1f8sOmr1Jo=}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  tunnel:
+    profiles: ["public"]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--url", "http://api:8000"]
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

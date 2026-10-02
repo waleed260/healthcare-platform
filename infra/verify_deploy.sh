@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify a running API (local or Render). Usage: infra/verify_deploy.sh https://clinic-api.onrender.com
+# Verify a running API (local Docker, tunnel or any host). Usage: infra/verify_deploy.sh https://your-api.example
 set -euo pipefail
 BASE="${1:?usage: verify_deploy.sh <base-url>}"
 retry() { for _ in $(seq 1 30); do "$@" && return 0; sleep 4; done; return 1; }  # free tiers cold-start

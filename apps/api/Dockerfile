@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Production image for the FastAPI backend (Render/any container host).
+# Production image for the FastAPI backend (any container host; see docker-compose.yml).
 # Build context: apps/api. Dependencies ship wheels, so no compiler is needed.
 FROM python:3.12-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -19,6 +19,6 @@ RUN chmod +x scripts/docker-entrypoint.sh \
 USER appuser
 EXPOSE 8000
 ENTRYPOINT ["scripts/docker-entrypoint.sh"]
-# Render injects $PORT. One worker keeps memory inside the 512 MB free tier.
-# Proxy headers let per-IP rate limits see the real client behind Render/Vercel.
+# $PORT overrides the port on platforms that inject one; one worker keeps memory small.
+# Proxy headers let per-IP rate limits see the real client behind the tunnel/Vercel proxy.
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips='*'"]

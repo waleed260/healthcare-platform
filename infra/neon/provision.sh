@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Provision a Neon (or any Postgres 16) database: runtime role -> migrations as owner -> verification.
 #   OWNER_URL      libpq URL of the schema owner, DIRECT host   (postgresql://owner:pw@ep-xxx.neon.tech/db?sslmode=require)
-#   RUNTIME_PASSWORD  password for healthcare_runtime (generate one; store it only in Render)
+#   RUNTIME_PASSWORD  password for healthcare_runtime (generate one; keep it only in docker.env or a password manager)
 # Table privileges are granted by the migrations themselves, deliberately narrower than blanket GRANTs:
 # do NOT add "GRANT ... ON ALL TABLES" for the runtime role.
 set -euo pipefail
@@ -26,4 +26,4 @@ PY
 )
 psql "$RUNTIME_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime read plans: ' || count(*) FROM plans"
 psql "$RUNTIME_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'runtime can INSERT clinics: ' || has_table_privilege('healthcare_runtime','public.clinics','INSERT')"
-echo "OK. Use the POOLED host + healthcare_runtime for DATABASE_URL and this OWNER_URL (direct) for DATABASE_MIGRATION_URL."
+echo "OK. Use the POOLED host + healthcare_runtime for DATABASE_URL and this OWNER_URL (direct) for DATABASE_MIGRATION_URL (optional external Postgres; the Docker stack ships its own database)."
