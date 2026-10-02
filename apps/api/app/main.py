@@ -22,6 +22,7 @@ from app.modules.blueprint_core.routes import billing_router, lead_router, speci
 from app.modules.clinical.routes import prescription_router, router as clinical_router
 from app.modules.packages.routes import router as packages_router
 from app.modules.inventory.routes import router as inventory_router
+from app.modules.website_library.routes import router as website_library_router
 from app.modules.finance.routes import receipt_router, router as finance_router
 from app.modules.upgrades.routes import admin_router as upgrade_admin_router, router as upgrade_router
 from app.modules.clinical_media.routes import router as clinical_media_router
@@ -71,6 +72,7 @@ app.include_router(inventory_router)
 app.include_router(receipt_router)
 app.include_router(finance_router)
 app.include_router(upgrade_router)
+app.include_router(website_library_router)
 app.include_router(upgrade_admin_router)
 app.include_router(clinical_media_router)
 app.include_router(clinical_forms_router)
