@@ -50,11 +50,11 @@ test.describe("platform admin access", () => {
   test("platform admin confirms and submits a clinic suspension", async ({ page }) => {
     await installAdminApi(page, true);
     await page.goto("/admin");
-    await page.getByRole("button", { name: "Suspend" }).click({ force: true });
+    await page.getByRole("button", { name: "Turn off access" }).click({ force: true });
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.getByRole("dialog").getByLabel("Reason").fill("Suspicious activity review");
     await page.getByRole("dialog").getByRole("button", { name: /confirm suspend/i }).click({ force: true });
-    await expect(page.getByText("suspended", { exact: true })).toBeVisible();
+    await expect(page.getByText("OFF · suspended", { exact: true })).toBeVisible();
   });
 
   test("platform admin shows a support session expiring live", async ({ page }) => {

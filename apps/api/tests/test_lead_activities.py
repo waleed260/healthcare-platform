@@ -149,7 +149,7 @@ def test_activity_pagination_and_cursor_are_bound_to_tenant_and_lead(context, mo
 
 def test_invalid_activity_cursor_does_not_read_history(context, monkeypatch):
     _, request, _ = context
-    monkeypatch.setattr(routes, "decode_cursor", lambda *args: None)
+    monkeypatch.setattr(routes, "cursor_payload", lambda *args, **kwargs: None)
     db = Mock()
     db.execute.return_value.scalar_one_or_none.return_value = uuid4()
     with pytest.raises(HTTPException) as error:
@@ -165,7 +165,10 @@ def test_invalid_activity_cursor_does_not_read_history(context, monkeypatch):
 def test_converted_lead_cannot_reenter_pipeline(context, lead):
     _, request, audit = context
     db = Mock()
-    db.execute.return_value.mappings.return_value.one_or_none.return_value = lead
+    db.execute.side_effect = [
+        Mock(scalar_one_or_none=lambda: uuid4()),  # _require_lead scope check passes
+        Mock(mappings=lambda: Mock(one_or_none=lambda: lead)),  # FOR UPDATE select
+    ]
     with pytest.raises(HTTPException) as error:
         routes.lead_update(
             uuid4(), LeadUpdate(expected_version=1, status="contacted"),
@@ -174,15 +177,18 @@ def test_converted_lead_cannot_reenter_pipeline(context, lead):
     assert error.value.status_code == 409
     assert error.value.detail["error"]["code"] == "LEAD_CONVERTED"
     audit.assert_not_called()
-    assert db.execute.call_count == 1
+    assert db.execute.call_count == 2
 
 
 def test_stale_pipeline_update_cannot_overwrite_conversion(context):
     _, request, audit = context
     db = Mock()
-    db.execute.return_value.mappings.return_value.one_or_none.return_value = {
-        "status": "converted", "converted_to_patient_id": uuid4(), "version": 2,
-    }
+    db.execute.side_effect = [
+        Mock(scalar_one_or_none=lambda: uuid4()),  # _require_lead scope check passes
+        Mock(mappings=lambda: Mock(one_or_none=lambda: {
+            "status": "converted", "converted_to_patient_id": uuid4(), "version": 2,
+        })),
+    ]
     with pytest.raises(HTTPException) as error:
         routes.lead_update(
             uuid4(), LeadUpdate(expected_version=1, status="contacted"),
@@ -192,10 +198,34 @@ def test_stale_pipeline_update_cannot_overwrite_conversion(context):
     audit.assert_not_called()
 
 
+@pytest.mark.parametrize("operation", ["update", "convert"])
+def test_convert_and_update_reject_out_of_scope_lead_before_mutation(context, operation):
+    """M3: convert/update share _require_lead, so an out-of-specialty/branch lead
+    is 404 and nothing is written or audited before the scope check."""
+    from app.modules.blueprint_core.schemas import LeadConvert
+
+    _, request, audit = context
+    db = Mock()
+    db.execute.return_value.scalar_one_or_none.return_value = None  # _require_lead miss
+    with pytest.raises(HTTPException) as error:
+        if operation == "update":
+            routes.lead_update(
+                uuid4(), LeadUpdate(expected_version=1, status="contacted"),
+                request, db, "session", "csrf",
+            )
+        else:
+            routes.lead_convert(uuid4(), LeadConvert(), request, db, "session", "csrf")
+    assert error.value.status_code == 404
+    assert db.execute.call_count == 1  # only the scope check ran; no mutation
+    audit.assert_not_called()
+    db.commit.assert_not_called()
+
+
 def test_converted_lead_retains_editable_notes(context):
     _, request, audit = context
     db = Mock()
     db.execute.side_effect = [
+        Mock(scalar_one_or_none=lambda: uuid4()),  # _require_lead scope check passes
         Mock(mappings=lambda: Mock(one_or_none=lambda: {
             "status": "converted", "converted_to_patient_id": uuid4(), "version": 2,
         })),
@@ -205,6 +235,6 @@ def test_converted_lead_retains_editable_notes(context):
         uuid4(), LeadUpdate(expected_version=2, notes=None), request, db, "session", "csrf",
     )
     assert result["data"]["version"] == 3
-    assert db.execute.call_args_list[1].args[1]["notes"] is None
+    assert db.execute.call_args_list[2].args[1]["notes"] is None
     audit.assert_called_once()
     db.commit.assert_called_once()

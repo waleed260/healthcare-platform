@@ -20,6 +20,10 @@ class PatientUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
+    # DOB is captured at create and scored by the duplicate matcher; allow it to be
+    # corrected. The change is a PHI mutation audited by patient.update (field name
+    # only — the value is never logged).
+    date_of_birth: date | None = None
 
 
 class ContactCreate(BaseModel):

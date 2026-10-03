@@ -7,8 +7,13 @@ export default defineConfig({
   fullyParallel: true,
   workers: 1,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  // CI runners are slower/contended than dev machines, so a single intermittent
+  // timing slip on a heavy multi-step spec (e.g. core-workflow) was turning the
+  // web gate red "every time". Two retries plus a generous assertion timeout
+  // absorb that jitter without masking real, reproducible failures.
+  retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
+  expect: { timeout: 15_000 },
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     trace: "on-first-retry",

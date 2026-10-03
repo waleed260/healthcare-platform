@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
@@ -11,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
-from app.core.security import decode_cursor, encode_cursor
+from app.core.security import cursor_payload, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.crm.merge import merge_patients
 from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
@@ -38,6 +37,21 @@ def _like_contains(value: str) -> str:
     ``ILIKE :pattern ESCAPE '\\'`` in the query."""
     escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
+
+
+def _raise_write_integrity(exc: IntegrityError, *, duplicate_message: str) -> None:
+    """Translate a write IntegrityError to a precise status by SQLSTATE rather
+    than a blanket 404. A foreign-key miss (23503) means the patient or a linked
+    row is gone → 404; a unique violation (23505) is a genuine duplicate → 409
+    (as ``tag_create`` already does); any other constraint is unexpected and is
+    re-raised so it surfaces as a 500 instead of being mislabelled as a missing
+    patient."""
+    sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+    if sqlstate == "23503":
+        raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
+    if sqlstate == "23505":
+        raise _error("DUPLICATE", duplicate_message, status.HTTP_409_CONFLICT) from exc
+    raise exc
 
 
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
@@ -183,7 +197,7 @@ def _authoring_doctor(db: Session, session: dict, patient_id: UUID, *, require_c
 @tags_router.get("")
 def tag_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.read")
-    values = decode_cursor(cursor, "tags") if cursor else {}
+    values = cursor_payload(cursor, "tags", uuid_keys=("id",))
     if cursor and values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
@@ -191,9 +205,9 @@ def tag_list(request: Request, cursor: str | None = Query(default=None, max_leng
         SELECT id, name, created_at, normalized_name
         FROM tags
         WHERE clinic_id = :clinic_id
-          AND (:after_name IS NULL OR normalized_name > :after_name OR (normalized_name = :after_name AND id > :after_id))
+          AND (CAST(:after_name AS text) IS NULL OR normalized_name > CAST(:after_name AS text) OR (normalized_name = CAST(:after_name AS text) AND id > CAST(:after_id AS uuid)))
         ORDER BY normalized_name, id LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "after_name": values.get("name"), "after_id": UUID(values["id"]) if values.get("id") else None, "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "after_name": values.get("name"), "after_id": values.get("id"), "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = encode_cursor("tags", {"name": rows[-1]["normalized_name"], "id": str(rows[-1]["id"])}) if has_next and rows else None
@@ -218,18 +232,19 @@ def tag_create(payload: TagCreate, request: Request, db: Session = Depends(get_d
 def patient_list(request: Request, search: str | None = Query(default=None, max_length=200), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.read")
     term = (search or "").strip()
-    cursor_values = decode_cursor(cursor, "patients") if cursor else None
+    cursor_values = cursor_payload(cursor, "patients", uuid_keys=("id",))
     if cursor and cursor_values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid or expired.", status.HTTP_400_BAD_REQUEST)
+    cursor_values = cursor_values or {}
     rows = db.execute(text(f"""
         SELECT id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth, status, duplicate_of, version, created_at, updated_at
         FROM patients p
         WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL AND p.duplicate_of IS NULL
           {_patient_scope_sql('p')}
-          AND (:after_name IS NULL OR p.full_name > :after_name OR (p.full_name = :after_name AND p.id > :after_id))
+          AND (CAST(:after_name AS text) IS NULL OR p.full_name > CAST(:after_name AS text) OR (p.full_name = CAST(:after_name AS text) AND p.id > CAST(:after_id AS uuid)))
           AND (:term = '' OR p.full_name ILIKE :like_term ESCAPE '\\' OR p.normalized_email = :email OR p.normalized_phone = :phone)
         ORDER BY p.full_name, p.id LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_name": cursor_values.get("full_name") if cursor_values else None, "after_id": UUID(cursor_values["id"]) if cursor_values else None, "term": term, "like_term": _like_contains(term), "email": _normalize_email(term), "phone": _normalize_phone(term), "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_name": cursor_values.get("full_name"), "after_id": cursor_values.get("id"), "term": term, "like_term": _like_contains(term), "email": _normalize_email(term), "phone": _normalize_phone(term), "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = None
@@ -301,12 +316,19 @@ def care_team_policy_update(payload: CareTeamPolicyUpdate, request: Request, db:
     if current is None:
         if payload.expected_version != 0:
             raise _error("VERSION_CONFLICT", "The care-team policy changed before update.", status.HTTP_409_CONFLICT)
-        policy = db.execute(text("""
-            INSERT INTO clinic_care_policies
-                (clinic_id, allow_manager_care_team_notes, updated_by_user_id)
-            VALUES (:clinic_id, :allow, :actor)
-            RETURNING allow_manager_care_team_notes, version, updated_at
-        """), {"clinic_id": session["clinic_id"], "allow": payload.allow_manager_care_team_notes, "actor": session["user_id"]}).mappings().one()
+        # First-write race: two version-0 writers both read no row and both INSERT.
+        # The loser hits the clinic_id PK; map it to the same fail-closed 409 as a
+        # stale version instead of surfacing an unhandled 500.
+        try:
+            policy = db.execute(text("""
+                INSERT INTO clinic_care_policies
+                    (clinic_id, allow_manager_care_team_notes, updated_by_user_id)
+                VALUES (:clinic_id, :allow, :actor)
+                RETURNING allow_manager_care_team_notes, version, updated_at
+            """), {"clinic_id": session["clinic_id"], "allow": payload.allow_manager_care_team_notes, "actor": session["user_id"]}).mappings().one()
+        except IntegrityError as exc:
+            db.rollback()
+            raise _error("VERSION_CONFLICT", "The care-team policy changed before update.", status.HTTP_409_CONFLICT) from exc
     else:
         if current != payload.expected_version:
             raise _error("VERSION_CONFLICT", "The care-team policy changed before update.", status.HTTP_409_CONFLICT)
@@ -433,19 +455,29 @@ def patient_update(patient_id: UUID, payload: PatientUpdate, request: Request, d
         raise _error("VERSION_CONFLICT", "The patient changed before update.", status.HTTP_409_CONFLICT)
     values = payload.model_dump(exclude_unset=True)
     updates = []
+    changed_fields: list[str] = []
     params: dict[str, object] = {"clinic_id": session["clinic_id"], "id": patient_id}
     if values.get("full_name") is not None:
         updates.append("full_name = :full_name")
         params["full_name"] = values["full_name"].strip()
+        changed_fields.append("full_name")
     if "email" in values:
         updates.append("normalized_email = :email")
         params["email"] = _normalize_email(values["email"])
+        changed_fields.append("email")
     if "phone" in values:
         updates.append("normalized_phone = :phone")
         params["phone"] = _normalize_phone(values["phone"])
+        changed_fields.append("phone")
+    if "date_of_birth" in values:
+        updates.append("date_of_birth = :date_of_birth")
+        params["date_of_birth"] = values["date_of_birth"]
+        changed_fields.append("date_of_birth")
     if not updates:
         raise _error("INVALID_INPUT", "At least one patient field is required.", status.HTTP_400_BAD_REQUEST)
-    result = db.execute(text(f"UPDATE patients SET {', '.join(updates)}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, full_name, normalized_email, normalized_phone, version, updated_at"), params).mappings().one()
+    result = db.execute(text(f"UPDATE patients SET {', '.join(updates)}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, full_name, normalized_email, normalized_phone, date_of_birth, version, updated_at"), params).mappings().one()
+    # Audit the mutation with field *names* only — never PHI values (DOB, name, contacts).
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.update", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(changed_fields)})
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 
@@ -455,6 +487,12 @@ def patient_create(payload: PatientCreate, request: Request, db: Session = Depen
     session = _write_authorized(db, request, session_token, "patient.create", csrf_token)
     normalized_email = _normalize_email(payload.email)
     normalized_phone = _normalize_phone(payload.phone)
+    # Soft duplicate gate (intentional trade-off): there is deliberately NO unique
+    # index on normalized email/phone, because family members legitimately share a
+    # phone or email. This pre-check is best-effort and two concurrent creates can
+    # both pass it; the compensating control is the duplicate_candidates ranking
+    # (surfaced before create) plus the patient-merge workflow. See
+    # docs/blueprint/adr/0001-soft-duplicate-gate.md.
     duplicate = db.execute(text("""
         SELECT id FROM patients WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone))
@@ -481,6 +519,8 @@ def patient_create(payload: PatientCreate, request: Request, db: Session = Depen
             continue
     if patient is None:
         raise _error("CONFLICT", "Could not allocate a unique patient number; please retry.", status.HTTP_409_CONFLICT)
+    # Metadata carries only the non-PHI patient number — never name, contacts, or DOB.
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.create", entity_type="patient", entity_id=patient["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_number": patient["patient_number"]})
     db.commit()
     return {"data": dict(patient), "meta": {"request_id": request.state.request_id}}
 
@@ -492,6 +532,7 @@ def patient_archive(patient_id: UUID, request: Request, db: Session = Depends(ge
     result = db.execute(text("UPDATE patients SET archived_at = now(), status = 'archived', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL RETURNING id, archived_at, version"), {"clinic_id": session["clinic_id"], "id": patient_id}).mappings().one_or_none()
     if result is None:
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.archive", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 
@@ -529,7 +570,7 @@ def contact_create(patient_id: UUID, payload: ContactCreate, request: Request, d
         row = db.execute(text("INSERT INTO patient_contacts (clinic_id, patient_id, contact_type, value, normalized_value, is_primary) VALUES (:clinic_id, :patient_id, :contact_type, :value, :normalized_value, :is_primary) RETURNING id, contact_type, value, is_primary, created_at"), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "normalized_value": value.casefold(), **payload.model_dump(exclude={"value"}), "value": value}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
-        raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
+        _raise_write_integrity(exc, duplicate_message="This contact already exists for the patient.")
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -538,9 +579,10 @@ def contact_create(patient_id: UUID, payload: ContactCreate, request: Request, d
 def note_list(patient_id: UUID, request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.note.read")
     _require_patient(db, session, patient_id)
-    cursor_values = decode_cursor(cursor, "patient_notes") if cursor else None
+    cursor_values = cursor_payload(cursor, "patient_notes", uuid_keys=("id",), datetime_keys=("created_at",))
     if cursor and cursor_values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid or expired.", status.HTTP_400_BAD_REQUEST)
+    cursor_values = cursor_values or {}
     private_filter = " OR (note.visibility = 'private_doctor' AND note.author_user_id = :user_id)"
     try:
         require_permission(db, session["user_id"], session["clinic_id"], "patient.private_note.read")
@@ -595,12 +637,12 @@ def note_list(patient_id: UUID, request: Request, cursor: str | None = Query(def
             )
             {private_filter}
           )
-          AND (:after_id IS NULL OR note.created_at < :after_created OR (note.created_at = :after_created AND note.id < :after_id))
+          AND (CAST(:after_id AS uuid) IS NULL OR note.created_at < CAST(:after_created AS timestamptz) OR (note.created_at = CAST(:after_created AS timestamptz) AND note.id < CAST(:after_id AS uuid)))
         ORDER BY note.created_at DESC, note.id DESC
         LIMIT :page_size
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"],
-           "after_created": datetime.fromisoformat(cursor_values["created_at"]) if cursor_values else None,
-           "after_id": UUID(cursor_values["id"]) if cursor_values else None,
+           "after_created": cursor_values.get("created_at"),
+           "after_id": cursor_values.get("id"),
            "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = list(rows[:limit])
@@ -629,7 +671,7 @@ def note_create(patient_id: UUID, payload: PatientNoteCreate, request: Request, 
         """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "author": session["user_id"], **payload.model_dump()}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
-        raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
+        _raise_write_integrity(exc, duplicate_message="This note already exists.")
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_note.create", entity_type="patient_note", entity_id=note["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"visibility": payload.visibility})
     db.commit()
     return {"data": dict(note), "meta": {"request_id": request.state.request_id}}
@@ -688,7 +730,8 @@ def consent_create(patient_id: UUID, payload: ConsentCreate, request: Request, d
         """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "actor": session["user_id"], **payload.model_dump()}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
-        raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
+        _raise_write_integrity(exc, duplicate_message="This consent record already exists.")
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="consent.create", entity_type="consent_record", entity_id=consent["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"consent_type": consent["consent_type"], "status": consent["status"]})
     db.commit()
     return {"data": dict(consent), "meta": {"request_id": request.state.request_id}}
 

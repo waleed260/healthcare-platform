@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
@@ -7,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.security import decode_cursor, encode_cursor
+from app.core.security import cursor_payload, encode_cursor
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
@@ -104,7 +105,7 @@ def specialty_enable(payload: SpecialtyEnable, request: Request, db: Session = D
 @lead_router.get("")
 def lead_list(request: Request, status_filter: str | None = Query(default=None, alias="status", max_length=40), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "lead.read")
-    values = decode_cursor(cursor, "leads") if cursor else {}
+    values = cursor_payload(cursor, "leads", uuid_keys=("id",), datetime_keys=("created_at",))
     if cursor and values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
@@ -115,7 +116,7 @@ def lead_list(request: Request, status_filter: str | None = Query(default=None, 
         FROM leads l
         WHERE l.clinic_id = :clinic_id AND l.archived_at IS NULL
           AND (:status IS NULL OR l.status = :status)
-          AND (:after_created_at IS NULL OR l.created_at < :after_created_at OR (l.created_at = :after_created_at AND l.id < :after_id))
+          AND (CAST(:after_created_at AS timestamptz) IS NULL OR l.created_at < CAST(:after_created_at AS timestamptz) OR (l.created_at = CAST(:after_created_at AS timestamptz) AND l.id < CAST(:after_id AS uuid)))
         ORDER BY l.created_at DESC, l.id DESC LIMIT :page_size
     """), {"clinic_id": session["clinic_id"], "status": status_filter, "after_created_at": values.get("created_at"), "after_id": values.get("id"), "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
@@ -141,6 +142,7 @@ def lead_create(payload: LeadCreate, request: Request, db: Session = Depends(get
 @lead_router.patch("/{lead_id}")
 def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_lead(db, session, lead_id)
     lead = db.execute(text("""
         SELECT status, converted_to_patient_id, version FROM leads
         WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL
@@ -166,7 +168,14 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
-def _require_activity_lead(db: Session, session: dict, lead_id: UUID) -> None:
+def _require_lead(db: Session, session: dict, lead_id: UUID) -> None:
+    """Enforce clinic + specialty + branch object scope on a single lead.
+
+    Shared by the activity timeline and the convert/update paths so every lead
+    mutation applies the same scoping discipline: a lead outside the actor's
+    specialty or branch scope is reported as 404, and the row is locked
+    ``FOR SHARE`` so a concurrent archive cannot slip past the check.
+    """
     lead = db.execute(text("""
         SELECT l.id FROM leads l
         WHERE l.clinic_id = :clinic_id AND l.id = :lead_id AND l.archived_at IS NULL
@@ -205,9 +214,9 @@ def lead_activity_list(
     session_token: str | None = Cookie(default=None, alias="healthcare_session"),
 ) -> dict:
     session = _authorized(db, session_token, "lead.read")
-    _require_activity_lead(db, session, lead_id)
+    _require_lead(db, session, lead_id)
     namespace = f"lead-activities:{session['clinic_id']}:{lead_id}"
-    values = decode_cursor(cursor, namespace) if cursor else {}
+    values = cursor_payload(cursor, namespace, uuid_keys=("id",), datetime_keys=("created_at",))
     if cursor and values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
@@ -246,7 +255,7 @@ def lead_activity_create(
     csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
-    _require_activity_lead(db, session, lead_id)
+    _require_lead(db, session, lead_id)
     row = db.execute(text("""
         INSERT INTO lead_activities (clinic_id, lead_id, actor_user_id, kind, body, due_at)
         VALUES (:clinic_id, :lead_id, :actor_user_id, :kind, :body, :due_at)
@@ -268,6 +277,7 @@ def lead_activity_create(
 @lead_router.post("/{lead_id}/convert")
 def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_lead(db, session, lead_id)
     lead = db.execute(text("SELECT * FROM leads WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().one_or_none()
     if lead is None:
         raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
@@ -308,7 +318,7 @@ def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Sess
 @billing_router.get("")
 def invoice_list(request: Request, patient_id: UUID | None = None, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "billing.read")
-    values = decode_cursor(cursor, "invoices") if cursor else {}
+    values = cursor_payload(cursor, "invoices", uuid_keys=("id",), datetime_keys=("issued_at",))
     if cursor and values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
@@ -318,7 +328,7 @@ def invoice_list(request: Request, patient_id: UUID | None = None, cursor: str |
                i.status, i.issued_at, i.notes, i.version
         FROM invoices i
         WHERE i.clinic_id = :clinic_id AND (:patient_id IS NULL OR i.patient_id = :patient_id)
-          AND (:after_issued_at IS NULL OR i.issued_at < :after_issued_at OR (i.issued_at = :after_issued_at AND i.id < :after_id))
+          AND (CAST(:after_issued_at AS timestamptz) IS NULL OR i.issued_at < CAST(:after_issued_at AS timestamptz) OR (i.issued_at = CAST(:after_issued_at AS timestamptz) AND i.id < CAST(:after_id AS uuid)))
         ORDER BY i.issued_at DESC, i.id DESC LIMIT :page_size
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "after_issued_at": values.get("issued_at"), "after_id": values.get("id"), "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
@@ -340,7 +350,7 @@ def invoice_create(payload: InvoiceCreate, request: Request, db: Session = Depen
     total = subtotal - payload.discount_minor + tax
     if total < 0:
         raise _error("INVALID_INPUT", "Discount cannot exceed the line subtotal plus tax.", status.HTTP_400_BAD_REQUEST)
-    sequence_year = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).year
+    sequence_year = datetime.now(timezone.utc).year
     db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:sequence_key AS text), 0))"), {"sequence_key": f"invoice-sequence:{session['clinic_id']}:{sequence_year}"})
     sequence = db.execute(text("""
         INSERT INTO invoice_number_sequences (clinic_id, sequence_year, next_value)

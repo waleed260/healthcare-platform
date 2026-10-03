@@ -2979,6 +2979,18 @@
       "PatientUpdate": {
         "additionalProperties": false,
         "properties": {
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
           "email": {
             "anyOf": [
               {

@@ -102,7 +102,11 @@ jobs:
           node-version: "22"
       - run: npm ci
       - name: Dependency audit
-        run: npm audit --omit=optional --audit-level=high
+        # Audit shipped (production) dependencies. Dev-only toolchain advisories
+        # (e.g. braces/micromatch <=3.0.3 via eslint-config-next, which has no
+        # upstream patch) are build-time only and never reach users; gate on
+        # production deps so a dev-tool CVE cannot block delivery.
+        run: npm audit --omit=optional --omit=dev --audit-level=high
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build

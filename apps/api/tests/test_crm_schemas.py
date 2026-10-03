@@ -46,3 +46,13 @@ def test_contact_tag_and_update_contracts_are_strict() -> None:
     assert ContactCreate(contact_type="phone", value="+10000000000").is_primary is False
     assert TagCreate(name="Synthetic").name == "Synthetic"
     assert PatientUpdate(expected_version=1, full_name="Updated Synthetic").expected_version == 1
+
+
+def test_patient_update_accepts_date_of_birth_correction() -> None:
+    # L5: a wrong DOB must be correctable via PatientUpdate (field name audited,
+    # value never logged — see test_crm_audit_integration).
+    update = PatientUpdate(expected_version=2, date_of_birth=date(1991, 3, 4))
+    assert update.date_of_birth == date(1991, 3, 4)
+    assert "date_of_birth" in update.model_dump(exclude_unset=True)
+    with pytest.raises(ValidationError):
+        PatientUpdate(expected_version=1, date_of_birth="not-a-date")

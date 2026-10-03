@@ -6,6 +6,7 @@ import hmac
 import json
 import secrets
 from datetime import datetime, timezone
+from uuid import UUID
 
 import pyotp
 from argon2 import PasswordHasher
@@ -60,6 +61,41 @@ def decode_cursor(cursor: str, namespace: str) -> dict[str, str] | None:
         return values
     except (ValueError, TypeError, KeyError, UnicodeDecodeError, json.JSONDecodeError):
         return None
+
+
+def cursor_payload(
+    cursor: str | None,
+    namespace: str,
+    *,
+    uuid_keys: tuple[str, ...] = (),
+    datetime_keys: tuple[str, ...] = (),
+) -> dict[str, str] | None:
+    """Decode a signed cursor and format-validate its typed components.
+
+    Returns the values dict (all strings) when the cursor is valid, or ``None``
+    when it is absent, tampered, from another collection, or carries a value
+    that is not a well-formed UUID / ISO-8601 timestamp. List endpoints map a
+    ``None`` for a non-empty cursor to a 400, so a malformed-but-validly-signed
+    cursor can never reach the query and raise a 500 at ``CAST`` time. Keeping
+    the parse here lets every keyset query bind its cursor as strings wrapped in
+    explicit ``CAST(... AS uuid/timestamptz)``, which is safe under server-side
+    binding instead of relying on ClientCursor literal coercion.
+    """
+    if not cursor:
+        return None
+    values = decode_cursor(cursor, namespace)
+    if values is None:
+        return None
+    try:
+        for key in uuid_keys:
+            if values.get(key) is not None:
+                UUID(values[key])
+        for key in datetime_keys:
+            if values.get(key) is not None:
+                datetime.fromisoformat(values[key])
+    except (ValueError, TypeError):
+        return None
+    return values
 
 
 def hash_ip(ip_address: str) -> str:

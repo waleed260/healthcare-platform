@@ -448,11 +448,25 @@ def clinics_list(request: Request, cursor: str | None = Query(default=None, max_
         after_id = UUID(cursor_values["id"]) if cursor_values else None
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
+    # Surface each client's current billing/subscription state alongside the
+    # clinic so the control room shows who has (or has not) paid next to the
+    # access on/off control. Platform admins can read clinic_subscriptions via
+    # its platform-read RLS policy; the lateral picks the latest subscription.
     rows = db.execute(text("""
-        SELECT id, name, slug, status, timezone, locale, version, created_at, updated_at
-        FROM clinics
-        WHERE (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
-        ORDER BY created_at DESC, id DESC
+        SELECT c.id, c.name, c.slug, c.status, c.timezone, c.locale, c.version, c.created_at, c.updated_at,
+               sub.status AS subscription_status, sub.renewal_at, sub.ends_at AS subscription_ends_at,
+               sub.plan_name, sub.plan_code
+        FROM clinics c
+        LEFT JOIN LATERAL (
+            SELECT s.status, s.renewal_at, s.ends_at, p.name AS plan_name, p.code AS plan_code
+            FROM clinic_subscriptions s
+            LEFT JOIN plans p ON p.id = s.plan_id
+            WHERE s.clinic_id = c.id
+            ORDER BY s.starts_at DESC, s.created_at DESC
+            LIMIT 1
+        ) sub ON true
+        WHERE (:after_created_at IS NULL OR c.created_at < :after_created_at OR (c.created_at = :after_created_at AND c.id < :after_id))
+        ORDER BY c.created_at DESC, c.id DESC
         LIMIT :page_size
     """), {"after_created_at": after_created_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
@@ -503,6 +517,14 @@ def metrics(request: Request, db: Session = Depends(get_db), session_token: str 
         "publish_failures": 0,
     }
     clinic_ids = db.execute(text("SELECT id FROM clinics WHERE archived_at IS NULL")).scalars().all()
+    # Billing health at a glance: how many clients are paid (active/trialing),
+    # overdue (past_due), cancelled, or have no subscription yet. Computed under
+    # platform context before the per-clinic loop re-scopes the tenant.
+    billing = {"active": 0, "trialing": 0, "past_due": 0, "cancelled": 0, "none": 0}
+    for subscription_row in db.execute(text("SELECT status, COUNT(*) AS total FROM clinic_subscriptions GROUP BY status")).mappings().all():
+        if subscription_row["status"] in billing:
+            billing[subscription_row["status"]] = subscription_row["total"]
+    billing["none"] = db.execute(text("SELECT COUNT(*) FROM clinics WHERE archived_at IS NULL AND id NOT IN (SELECT clinic_id FROM clinic_subscriptions)")).scalar_one()
     for clinic_id in clinic_ids:
         set_tenant_context(db, clinic_id)
         counts = db.execute(text("""
@@ -563,4 +585,4 @@ def metrics(request: Request, db: Session = Depends(get_db), session_token: str 
         telemetry["storage_failures"] += failure_counts["storage_failures"]
         telemetry["publish_failures"] += failure_counts["publish_failures"]
     db.commit()
-    return {"data": {"http": request_metrics.snapshot(), "database_pool": {"size": pool_size, "checked_out": checked_out, "overflow": getattr(pool, "overflow", lambda: 0)()}, "background_jobs": job_metrics, "telemetry": telemetry}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"http": request_metrics.snapshot(), "database_pool": {"size": pool_size, "checked_out": checked_out, "overflow": getattr(pool, "overflow", lambda: 0)()}, "background_jobs": job_metrics, "telemetry": telemetry, "billing": billing}, "meta": {"request_id": request.state.request_id}}
