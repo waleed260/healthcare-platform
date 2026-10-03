@@ -1,4 +1,5 @@
 from app.core.security import (
+    cursor_payload,
     decrypt_field,
     decode_cursor,
     encrypt_field,
@@ -40,6 +41,24 @@ def test_collection_cursor_is_signed_and_namespace_bound() -> None:
     assert decode_cursor(cursor, "patients") == {"full_name": "Synthetic Patient", "id": "00000000-0000-0000-0000-000000000001"}
     assert decode_cursor(cursor + "x", "patients") is None
     assert decode_cursor(cursor, "appointments") is None
+
+
+def test_cursor_payload_rejects_malformed_signed_values() -> None:
+    """L3: a validly-signed cursor whose typed components are malformed is treated
+    as invalid (None → 400), so it never reaches a query and raises a 500 at CAST."""
+    # Absent / tampered / wrong-namespace all return None.
+    assert cursor_payload(None, "leads", uuid_keys=("id",)) is None
+    good = encode_cursor("leads", {"created_at": "2026-10-03T00:00:00+00:00", "id": "00000000-0000-0000-0000-000000000001"})
+    assert cursor_payload(good, "leads", uuid_keys=("id",), datetime_keys=("created_at",)) == {
+        "created_at": "2026-10-03T00:00:00+00:00", "id": "00000000-0000-0000-0000-000000000001",
+    }
+    assert cursor_payload(good + "x", "leads", uuid_keys=("id",)) is None
+    assert cursor_payload(good, "invoices", uuid_keys=("id",)) is None
+    # Validly signed but the id is not a UUID / the timestamp is not ISO-8601.
+    bad_uuid = encode_cursor("leads", {"created_at": "2026-10-03T00:00:00+00:00", "id": "not-a-uuid"})
+    assert cursor_payload(bad_uuid, "leads", uuid_keys=("id",), datetime_keys=("created_at",)) is None
+    bad_time = encode_cursor("leads", {"created_at": "yesterday", "id": "00000000-0000-0000-0000-000000000001"})
+    assert cursor_payload(bad_time, "leads", uuid_keys=("id",), datetime_keys=("created_at",)) is None
 
 
 def test_field_encryption_supports_staged_key_rotation(monkeypatch) -> None:

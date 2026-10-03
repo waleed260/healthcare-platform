@@ -149,7 +149,7 @@ def test_activity_pagination_and_cursor_are_bound_to_tenant_and_lead(context, mo
 
 def test_invalid_activity_cursor_does_not_read_history(context, monkeypatch):
     _, request, _ = context
-    monkeypatch.setattr(routes, "decode_cursor", lambda *args: None)
+    monkeypatch.setattr(routes, "cursor_payload", lambda *args, **kwargs: None)
     db = Mock()
     db.execute.return_value.scalar_one_or_none.return_value = uuid4()
     with pytest.raises(HTTPException) as error:
