@@ -141,6 +141,7 @@ def lead_create(payload: LeadCreate, request: Request, db: Session = Depends(get
 @lead_router.patch("/{lead_id}")
 def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_lead(db, session, lead_id)
     lead = db.execute(text("""
         SELECT status, converted_to_patient_id, version FROM leads
         WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL
@@ -166,7 +167,14 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
-def _require_activity_lead(db: Session, session: dict, lead_id: UUID) -> None:
+def _require_lead(db: Session, session: dict, lead_id: UUID) -> None:
+    """Enforce clinic + specialty + branch object scope on a single lead.
+
+    Shared by the activity timeline and the convert/update paths so every lead
+    mutation applies the same scoping discipline: a lead outside the actor's
+    specialty or branch scope is reported as 404, and the row is locked
+    ``FOR SHARE`` so a concurrent archive cannot slip past the check.
+    """
     lead = db.execute(text("""
         SELECT l.id FROM leads l
         WHERE l.clinic_id = :clinic_id AND l.id = :lead_id AND l.archived_at IS NULL
@@ -205,7 +213,7 @@ def lead_activity_list(
     session_token: str | None = Cookie(default=None, alias="healthcare_session"),
 ) -> dict:
     session = _authorized(db, session_token, "lead.read")
-    _require_activity_lead(db, session, lead_id)
+    _require_lead(db, session, lead_id)
     namespace = f"lead-activities:{session['clinic_id']}:{lead_id}"
     values = decode_cursor(cursor, namespace) if cursor else {}
     if cursor and values is None:
@@ -246,7 +254,7 @@ def lead_activity_create(
     csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
-    _require_activity_lead(db, session, lead_id)
+    _require_lead(db, session, lead_id)
     row = db.execute(text("""
         INSERT INTO lead_activities (clinic_id, lead_id, actor_user_id, kind, body, due_at)
         VALUES (:clinic_id, :lead_id, :actor_user_id, :kind, :body, :due_at)
@@ -268,6 +276,7 @@ def lead_activity_create(
 @lead_router.post("/{lead_id}/convert")
 def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_lead(db, session, lead_id)
     lead = db.execute(text("SELECT * FROM leads WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().one_or_none()
     if lead is None:
         raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
