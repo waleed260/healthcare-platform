@@ -433,19 +433,29 @@ def patient_update(patient_id: UUID, payload: PatientUpdate, request: Request, d
         raise _error("VERSION_CONFLICT", "The patient changed before update.", status.HTTP_409_CONFLICT)
     values = payload.model_dump(exclude_unset=True)
     updates = []
+    changed_fields: list[str] = []
     params: dict[str, object] = {"clinic_id": session["clinic_id"], "id": patient_id}
     if values.get("full_name") is not None:
         updates.append("full_name = :full_name")
         params["full_name"] = values["full_name"].strip()
+        changed_fields.append("full_name")
     if "email" in values:
         updates.append("normalized_email = :email")
         params["email"] = _normalize_email(values["email"])
+        changed_fields.append("email")
     if "phone" in values:
         updates.append("normalized_phone = :phone")
         params["phone"] = _normalize_phone(values["phone"])
+        changed_fields.append("phone")
+    if "date_of_birth" in values:
+        updates.append("date_of_birth = :date_of_birth")
+        params["date_of_birth"] = values["date_of_birth"]
+        changed_fields.append("date_of_birth")
     if not updates:
         raise _error("INVALID_INPUT", "At least one patient field is required.", status.HTTP_400_BAD_REQUEST)
-    result = db.execute(text(f"UPDATE patients SET {', '.join(updates)}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, full_name, normalized_email, normalized_phone, version, updated_at"), params).mappings().one()
+    result = db.execute(text(f"UPDATE patients SET {', '.join(updates)}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, full_name, normalized_email, normalized_phone, date_of_birth, version, updated_at"), params).mappings().one()
+    # Audit the mutation with field *names* only — never PHI values (DOB, name, contacts).
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.update", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(changed_fields)})
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 
@@ -481,6 +491,8 @@ def patient_create(payload: PatientCreate, request: Request, db: Session = Depen
             continue
     if patient is None:
         raise _error("CONFLICT", "Could not allocate a unique patient number; please retry.", status.HTTP_409_CONFLICT)
+    # Metadata carries only the non-PHI patient number — never name, contacts, or DOB.
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.create", entity_type="patient", entity_id=patient["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_number": patient["patient_number"]})
     db.commit()
     return {"data": dict(patient), "meta": {"request_id": request.state.request_id}}
 
@@ -492,6 +504,7 @@ def patient_archive(patient_id: UUID, request: Request, db: Session = Depends(ge
     result = db.execute(text("UPDATE patients SET archived_at = now(), status = 'archived', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL RETURNING id, archived_at, version"), {"clinic_id": session["clinic_id"], "id": patient_id}).mappings().one_or_none()
     if result is None:
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.archive", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 
@@ -689,6 +702,7 @@ def consent_create(patient_id: UUID, payload: ConsentCreate, request: Request, d
     except IntegrityError as exc:
         db.rollback()
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND) from exc
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="consent.create", entity_type="consent_record", entity_id=consent["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"consent_type": consent["consent_type"], "status": consent["status"]})
     db.commit()
     return {"data": dict(consent), "meta": {"request_id": request.state.request_id}}
 
