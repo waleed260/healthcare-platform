@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.db.tenant import set_tenant_context
-from app.modules.blueprint_core.routes import _require_activity_lead
+from app.modules.blueprint_core.routes import _require_lead
 
 
 pytestmark = pytest.mark.integration
@@ -61,9 +61,9 @@ def test_lead_activity_rls_relationships_and_immutable_runtime_history():
         with runtime.begin() as connection:
             set_tenant_context(connection, clinic_a, user_a)
             session = {"clinic_id": clinic_a, "user_id": user_a}
-            _require_activity_lead(connection, session, lead_a)
+            _require_lead(connection, session, lead_a)
             with pytest.raises(HTTPException) as missing:
-                _require_activity_lead(connection, session, lead_b)
+                _require_lead(connection, session, lead_b)
             assert missing.value.status_code == 404
             # Deliberately omit clinic filtering to prove database RLS, not application SQL.
             assert connection.execute(text(
@@ -111,12 +111,12 @@ def test_lead_activity_rls_relationships_and_immutable_runtime_history():
                 VALUES (:clinic_a, :user_a, :specialty_id)
             """), scope_values)
             with pytest.raises(HTTPException) as wrong_specialty:
-                _require_activity_lead(connection, session, lead_a)
+                _require_lead(connection, session, lead_a)
             assert wrong_specialty.value.status_code == 404
             connection.execute(text("""
                 UPDATE leads SET specialty_id = :specialty_id WHERE id = :lead_a
             """), scope_values)
-            _require_activity_lead(connection, session, lead_a)
+            _require_lead(connection, session, lead_a)
             branch_id = connection.execute(text("""
                 INSERT INTO branches (clinic_id, code, name)
                 VALUES (:clinic_a, 'ACTIVITY-TEST', 'Synthetic activity branch') RETURNING id
@@ -127,7 +127,7 @@ def test_lead_activity_rls_relationships_and_immutable_runtime_history():
             """), {**values, "branch_id": branch_id})
             # No linked appointment establishes a permitted branch for this lead.
             with pytest.raises(HTTPException) as wrong_branch:
-                _require_activity_lead(connection, session, lead_a)
+                _require_lead(connection, session, lead_a)
             assert wrong_branch.value.status_code == 404
     finally:
         with admin.begin() as connection:
