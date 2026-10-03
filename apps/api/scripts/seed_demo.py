@@ -150,16 +150,23 @@ def main() -> None:
                     '{"key":"consent_confirmed","label":"Consent discussed","type":"checkbox","required":false,"options":[]},' 
                     '{"key":"clinical_notes","label":"Clinical notes","type":"textarea","required":false,"options":[]}]}'
                 )
-                cur.execute("""
-                    INSERT INTO clinical_form_templates (id, clinic_id, specialty_id, form_key, name, field_schema, created_by_user_id)
-                    VALUES (%s, %s, NULL, 'hair_assessment', 'Hair transplant assessment', CAST(%s AS jsonb), %s)
-                    ON CONFLICT (id) DO UPDATE SET field_schema = EXCLUDED.field_schema, status = 'active', archived_at = NULL
-                """, (form_id, clinic_id, field_schema, user_ids["doctor"]))
-                cur.execute("""
-                    INSERT INTO clinical_form_responses (id, clinic_id, patient_id, template_id, response_data)
-                    VALUES (%s, %s, %s, %s, CAST(%s AS jsonb))
-                    ON CONFLICT (id) DO UPDATE SET response_data = EXCLUDED.response_data, status = 'draft'
-                """, (ident(f"form-response-{clinic_number}"), clinic_id, patient_ids[0], form_id, '{"graft_count": 2500, "donor_area": "Occipital"}'))
+                # Clinical-forms tables may be absent on a dev DB that predates that
+                # migration; seed them best-effort inside a savepoint so their absence
+                # never discards the core demo data the dashboard needs.
+                try:
+                    with db.transaction():
+                        cur.execute("""
+                            INSERT INTO clinical_form_templates (id, clinic_id, specialty_id, form_key, name, field_schema, created_by_user_id)
+                            VALUES (%s, %s, NULL, 'hair_assessment', 'Hair transplant assessment', CAST(%s AS jsonb), %s)
+                            ON CONFLICT (id) DO UPDATE SET field_schema = EXCLUDED.field_schema, status = 'active', archived_at = NULL
+                        """, (form_id, clinic_id, field_schema, user_ids["doctor"]))
+                        cur.execute("""
+                            INSERT INTO clinical_form_responses (id, clinic_id, patient_id, template_id, response_data)
+                            VALUES (%s, %s, %s, %s, CAST(%s AS jsonb))
+                            ON CONFLICT (id) DO UPDATE SET response_data = EXCLUDED.response_data, status = 'draft'
+                        """, (ident(f"form-response-{clinic_number}"), clinic_id, patient_ids[0], form_id, '{"graft_count": 2500, "donor_area": "Occipital"}'))
+                except psycopg.errors.UndefinedTable:
+                    pass
         db.commit()
     print("Seeded two synthetic clinics: demo-collision-a and demo-collision-b")
     print(f"Synthetic login password: {PASSWORD}")
