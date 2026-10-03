@@ -61,6 +61,12 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
   expect(bookingCreated).toBe(true);
 
   await page.goto("/schedule");
+  // The calendar opens on the current week, but the booking is up to 2 days out and
+  // can fall into the next week near a week boundary. Advance the view until the card
+  // is on screen so this does not fail on certain weekdays (a long-standing flake).
+  for (let attempt = 0; attempt < 3 && !(await page.getByText("SYN-BOOK-001").isVisible().catch(() => false)); attempt += 1) {
+    await page.getByRole("button", { name: "Next period" }).click();
+  }
   await expect(page.getByText("SYN-BOOK-001")).toBeVisible();
   await page.locator(".calendar-appointment").first().click({ force: true });
   await page.getByRole("button", { name: "Approve" }).click({ force: true });
