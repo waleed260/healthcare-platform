@@ -1,65 +1,117 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Summary = { today_appointments: number; pending_approvals: number; followups_due: number; waiting_patients: number; no_shows: number };
 type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string };
-type ApiState = { summary: Summary | null; appointments: Appointment[]; loading: boolean; error: string | null; refreshedAt: Date | null };
-const initialState: ApiState = { summary: null, appointments: [], loading: true, error: null, refreshedAt: null };
+type QueueEntry = { id: string; appointment_id: string; status: string; checked_in_at: string | null; priority: number; full_name: string; reference: string; starts_at: string };
+type FollowUp = { id: string; patient_id: string; reason: string; due_at: string; priority: number; status: string };
+type Me = { display_name?: string };
 
-function responseMessage(response: Response, payload: unknown): string {
+function msg(response: Response, payload: unknown): string {
   if (payload && typeof payload === "object" && "error" in payload) {
-    const message = (payload as { error?: { message?: string } }).error?.message;
-    if (message) return message;
+    const m = (payload as { error?: { message?: string } }).error?.message;
+    if (m) return m;
   }
   if (response.status === 401) return "Your clinic session has expired. Sign in again to continue.";
   return "The workspace could not be loaded. Try again shortly.";
 }
-
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(value));
+const time = (v: string) => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(v));
+const dayShort = (v: string) => new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(v));
+async function getData<T>(url: string): Promise<T | null> {
+  try {
+    const r = await fetch(url, { credentials: "include", cache: "no-store" });
+    if (!r.ok) return null;
+    const p = (await r.json().catch(() => null)) as { data?: T } | null;
+    return (p?.data ?? null) as T | null;
+  } catch { return null; }
 }
-
-async function jsonOrNull(response: Response): Promise<unknown> {
-  return response.json().catch(() => null);
-}
+const statusClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 
 export default function DashboardPage() {
-  const [state, setState] = useState<ApiState>(initialState);
-  const loadWorkspace = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: null }));
-    try {
-      const [summaryResponse, appointmentsResponse] = await Promise.all([
-        fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" }),
-        fetch("/api/v1/appointments", { credentials: "include", cache: "no-store" }),
-      ]);
-      const summaryPayload = await jsonOrNull(summaryResponse) as { data?: Summary } | null;
-      const appointmentsPayload = await jsonOrNull(appointmentsResponse) as { data?: Appointment[] } | null;
-      if (!summaryResponse.ok) throw new Error(responseMessage(summaryResponse, summaryPayload));
-      if (!appointmentsResponse.ok) throw new Error(responseMessage(appointmentsResponse, appointmentsPayload));
-      setState({ summary: summaryPayload?.data as Summary, appointments: (appointmentsPayload?.data ?? []) as Appointment[], loading: false, error: null, refreshedAt: new Date() });
-    } catch (error) {
-      setState((current) => ({ ...current, loading: false, error: error instanceof Error ? error.message : "The workspace could not be loaded." }));
-    }
-  }, []);
-  useEffect(() => { void loadWorkspace(); }, [loadWorkspace]);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [queue, setQueue] = useState<QueueEntry[]>([]);
+  const [followups, setFollowups] = useState<FollowUp[]>([]);
+  const [name, setName] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
 
-  const summary = state.summary;
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const summaryResponse = await fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" });
+      const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
+      if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
+      setSummary(summaryPayload?.data ?? null);
+      const [appts, q, f, me] = await Promise.all([
+        getData<Appointment[]>("/api/v1/appointments"),
+        getData<QueueEntry[]>("/api/v1/operations/queue"),
+        getData<FollowUp[]>("/api/v1/operations/follow-ups"),
+        getData<Me>("/api/v1/auth/me"),
+      ]);
+      setAppointments(appts ?? []); setQueue(q ?? []); setFollowups(f ?? []);
+      setName((me?.display_name ?? "").split(" ")[0] ?? "");
+      setRefreshedAt(new Date());
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "The workspace could not be loaded."); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const requests = useMemo(() => appointments.filter((a) => a.status === "requested"), [appointments]);
+  const schedule = useMemo(() => [...appointments].sort((a, b) => a.starts_at.localeCompare(b.starts_at)), [appointments]);
+  const weekBars = useMemo(() => {
+    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const counts = new Map<string, number>(labels.map((l) => [l, 0]));
+    for (const a of appointments) { const d = dayShort(a.starts_at); if (counts.has(d)) counts.set(d, (counts.get(d) ?? 0) + 1); }
+    const values = labels.map((l) => counts.get(l) ?? 0);
+    const max = Math.max(1, ...values);
+    return labels.map((l, i) => ({ label: l, value: values[i], pct: Math.round((values[i] / max) * 100) }));
+  }, [appointments]);
+
+  const kpi = (value: number | undefined) => (loading && summary === null ? "…" : value ?? "—");
+
   return <main className="dashboard-page">
     <header className="dash-header shell"><Link className="wordmark" href="/">care<span>/</span>fully</Link><div className="clinic-chip" aria-label="Clinic workspace session"><span className="clinic-avatar">VC</span><span>Clinic workspace</span><span className="chip-caret">⌄</span></div></header>
     <div className="dashboard shell">
-      <aside className="sidebar"><p className="eyebrow">WORKSPACE</p><nav aria-label="Workspace navigation"><a className="side-link active" href="#overview" aria-current="page">◈ <span>Overview</span></a><Link className="side-link" href="/schedule">◷ <span>Schedule</span></Link><Link className="side-link" href="/patients">○ <span>Patients</span></Link><Link className="side-link" href="/queue">▣ <span>Queue</span></Link><Link className="side-link" href="/operations">↗ <span>Follow-ups</span></Link><Link className="side-link" href="/privacy">◇ <span>Privacy</span></Link><Link className="side-link" href="/website">✦ <span>Website</span></Link></nav><div className="sidebar-bottom"><a className="side-link" href="#settings">⚙ <span>Settings</span></a><p className="build-label">Operations workspace<br /><span>Live clinic data</span><i /></p></div></aside>
-      <section className="dash-content" id="overview" aria-busy={state.loading}>
-        <div className="dash-topline"><div><p className="eyebrow">TODAY · CLINIC TIMEZONE</p><h1>Good morning, <em>team.</em></h1></div><button className="button button-primary" type="button" onClick={() => void loadWorkspace()}>Refresh <span>↻</span></button></div>
-        {state.error && <div className="workspace-alert" role="alert"><strong>{state.error}</strong><button className="ghost-button" type="button" onClick={() => void loadWorkspace()}>Try again <span>→</span></button></div>}
-        <div className="metric-grid" aria-live="polite"><Link className="metric-card" href="/schedule"><span>Today</span><strong>{state.loading && !summary ? "…" : summary?.today_appointments ?? "—"}</strong><small>appointments</small></Link><Link className="metric-card metric-warm" href="/schedule?status=requested"><span>Needs attention</span><strong>{state.loading && !summary ? "…" : summary?.pending_approvals ?? "—"}</strong><small>pending approvals</small></Link><Link className="metric-card metric-dark" href="/operations"><span>Follow-ups</span><strong>{state.loading && !summary ? "…" : summary?.followups_due ?? "—"}</strong><small>due now</small></Link><Link className="metric-card metric-soft" href="/queue"><span>Waiting room</span><strong>{state.loading && !summary ? "…" : summary?.waiting_patients ?? "—"}</strong><small>patients waiting</small></Link><Link className="metric-card metric-alert" href="/schedule?status=no_show"><span>Watch</span><strong>{state.loading && !summary ? "…" : summary?.no_shows ?? "—"}</strong><small>no-shows</small></Link></div>
-        <div className="schedule-card" id="schedule"><div className="card-heading"><div><p className="eyebrow">YOUR DAY</p><h2>Today&apos;s schedule</h2></div><button className="ghost-button" type="button" onClick={() => void loadWorkspace()}>Refresh list <span>↻</span></button></div>
-          {state.loading && state.appointments.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading today&apos;s schedule</strong><span>Checking the clinic workspace…</span></div>}
-          {!state.loading && !state.error && state.appointments.length === 0 && <div className="dashboard-empty"><strong>No appointments found</strong><span>Your scoped schedule is clear for now.</span></div>}
-          {state.appointments.length > 0 && <div className="schedule-list">{state.appointments.slice(0, 20).map((appointment) => <div className="schedule-row" key={appointment.id}><time dateTime={appointment.starts_at}>{formatTime(appointment.starts_at)}</time><span className="appointment-dot" aria-hidden="true" /><div className="appointment-info"><strong>{appointment.reference}</strong><span>{appointment.status.replaceAll("_", " ")}</span></div><span className="appointment-status">{formatTime(appointment.ends_at)}</span><span className="row-arrow" aria-hidden="true">→</span></div>)}</div>}
-          {state.refreshedAt && <p className="stale-note">Updated {state.refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
+      <aside className="sidebar"><p className="eyebrow">WORKSPACE</p><nav aria-label="Workspace navigation"><a className="side-link active" href="#overview" aria-current="page">◈ <span>Overview</span></a><Link className="side-link" href="/schedule">◷ <span>Schedule</span></Link><Link className="side-link" href="/patients">○ <span>Patients</span></Link><Link className="side-link" href="/queue">▣ <span>Queue</span></Link><Link className="side-link" href="/operations">↗ <span>Follow-ups</span></Link><Link className="side-link" href="/leads">◐ <span>Leads</span></Link><Link className="side-link" href="/billing">▦ <span>Billing</span></Link><Link className="side-link" href="/website">✦ <span>Website</span></Link></nav><div className="sidebar-bottom"><Link className="side-link" href="/security">⚙ <span>Settings</span></Link><p className="build-label">Operations workspace<br /><span>Live clinic data</span><i /></p></div></aside>
+      <section className="dash-content" id="overview" aria-busy={loading}>
+        <div className="dash-topline"><div><p className="eyebrow">TODAY · CLINIC TIMEZONE</p><h1>{greeting()}{name ? <>, <em>{name}.</em></> : <>, <em>team.</em></>}</h1></div><button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
+        {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
+
+        <div className="kpi-grid" aria-live="polite">
+          <Link className="kpi-card" href="/schedule"><span className="kpi-ico kpi-ico-blue" aria-hidden="true">📅</span><div><small>Today&apos;s appointments</small><strong>{kpi(summary?.today_appointments)}</strong></div></Link>
+          <Link className="kpi-card" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true">👥</span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
+          <Link className="kpi-card" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true">🗎</span><div><small>Pending approval</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
+          <Link className="kpi-card" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true">✓</span><div><small>Follow-ups due</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
         </div>
+
+        <div className="dash-main-grid">
+          <section className="panel-card" id="schedule"><div className="card-heading"><div><p className="eyebrow">YOUR DAY</p><h2>Today&apos;s schedule</h2></div><Link className="text-link" href="/schedule">View full calendar <span>→</span></Link></div>
+            {loading && schedule.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading schedule…</strong></div> : schedule.length === 0 ? <div className="dashboard-empty"><strong>No appointments</strong><span>Your scoped schedule is clear for now.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head"><span>Time</span><span>Appointment</span><span>Status</span></div>{schedule.slice(0, 9).map((a) => <div className="dash-table-row" key={a.id}><time dateTime={a.starts_at}>{time(a.starts_at)}</time><span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span><span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span></div>)}</div>}
+          </section>
+
+          <div className="dash-side-col">
+            <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">NOW</p><h2>Live patient queue</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
+              {loading && queue.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading…</strong></div> : queue.length === 0 ? <div className="dashboard-empty"><strong>Queue is empty</strong><span>No one is waiting right now.</span></div> : <div className="queue-list">{queue.slice(0, 5).map((e, i) => <div className="queue-row" key={e.id}><span className="queue-num">{String(i + 1).padStart(2, "0")}</span><div className="queue-main"><strong>{e.full_name}</strong><small>{e.checked_in_at ? `in ${time(e.checked_in_at)}` : e.reference}</small></div><span className={`queue-state state-${e.status.replaceAll("_", "-")}`}>{e.status.replaceAll("_", " ")}</span><Link className="queue-action" href="/queue">Start →</Link></div>)}</div>}
+            </section>
+            <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">⚡ QUICK ACTIONS</p><h2>Do it now</h2></div></div><div className="quick-grid"><Link className="quick-btn" href="/schedule">＋ Add appointment <span>→</span></Link><Link className="quick-btn" href="/patients">👤 Add patient <span>→</span></Link><Link className="quick-btn" href="/schedule">⏱ Block time <span>→</span></Link><Link className="quick-btn" href="/operations">🗎 Create follow-up <span>→</span></Link></div></section>
+          </div>
+        </div>
+
+        <div className="dash-bottom-grid">
+          <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">INBOX</p><h2>Appointment requests</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
+            {requests.length === 0 ? <div className="dashboard-empty"><strong>No pending requests</strong><span>New booking requests will appear here.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head req-row"><span>Reference</span><span>Requested</span><span>Action</span></div>{requests.slice(0, 5).map((a) => <div className="dash-table-row req-row" key={a.id}><strong>{a.reference}</strong><small>{dayShort(a.starts_at)} {time(a.starts_at)}</small><Link className="text-control" href="/schedule?status=requested">Review</Link></div>)}</div>}
+          </section>
+          <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">DUE</p><h2>Follow-ups due</h2></div><Link className="text-link" href="/operations">View all <span>→</span></Link></div>
+            {followups.length === 0 ? <div className="dashboard-empty"><strong>Nothing due</strong><span>Follow-up tasks will appear here.</span></div> : <div className="followup-list">{followups.slice(0, 5).map((f) => <div className="followup-row" key={f.id}><div><strong>{f.reason || "Follow-up"}</strong><small>due {dayShort(f.due_at)} {time(f.due_at)}</small></div><span className={`pipeline-status status-${f.status === "overdue" ? "lost" : "qualified"}`}>{f.status}</span></div>)}</div>}
+          </section>
+          <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">📊 TREND</p><h2>Appointments this week</h2></div></div><div className="bar-chart" role="img" aria-label="Appointments by weekday">{weekBars.map((b) => <div className="bar-col" key={b.label}><div className="bar-track"><div className="bar-fill" style={{ height: `${b.pct}%` }} title={`${b.label}: ${b.value}`} /></div><small>{b.label}</small><b>{b.value}</b></div>)}</div></section>
+        </div>
+        {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
       </section>
     </div>
   </main>;
