@@ -123,3 +123,54 @@ def test_patient_lifecycle_and_consent_create_are_audited_without_phi(monkeypatc
             connection.execute(text("DELETE FROM patients WHERE clinic_id = :clinic_id"), {"clinic_id": clinic_id})
             connection.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
             connection.execute(text("DELETE FROM clinics WHERE id = :clinic_id"), {"clinic_id": clinic_id})
+
+
+def test_date_of_birth_correction_persists_bumps_version_and_is_audited(monkeypatch) -> None:
+    """L5: a wrong DOB can be corrected; the change persists, bumps the version,
+    and is audited as a patient.update listing date_of_birth (value not logged)."""
+    admin_url, runtime_url = _database_urls()
+    admin = create_engine(admin_url)
+    runtime = create_engine(runtime_url, connect_args={"cursor_factory": psycopg.ClientCursor})
+    runtime_session = sessionmaker(bind=runtime, autoflush=False, autocommit=False, expire_on_commit=False)
+    clinic_id, user_id = uuid4(), uuid4()
+    original_dob = date(1980, 1, 1)
+    corrected_dob = date(1980, 12, 31)
+
+    def _fake_auth(db, *args, **kwargs):
+        set_tenant_context(db, clinic_id, user_id)
+        return {"clinic_id": clinic_id, "user_id": user_id}
+
+    monkeypatch.setattr(routes, "_write_authorized", _fake_auth)
+    monkeypatch.setattr(routes, "_authorized", _fake_auth)
+
+    session = runtime_session()
+    try:
+        with admin.begin() as connection:
+            connection.execute(text("INSERT INTO clinics (id, name, slug) VALUES (:id, 'Synthetic DOB', :slug)"), {"id": clinic_id, "slug": f"dob-{clinic_id}"})
+            connection.execute(text("INSERT INTO users (id, clinic_id, normalized_email, display_name, password_hash, status) VALUES (:id, :clinic_id, :email, 'Synthetic DOB', 'unused', 'active')"), {"id": user_id, "clinic_id": clinic_id, "email": f"dob-{user_id}@example.test"})
+
+        created = routes.patient_create(PatientCreate(full_name="Synthetic DOB", date_of_birth=original_dob), _request(), session, "session", "csrf")["data"]
+        patient_id = created["id"]
+        assert created["date_of_birth"] == original_dob
+        assert created["version"] == 1
+
+        updated = routes.patient_update(patient_id, PatientUpdate(expected_version=1, date_of_birth=corrected_dob), _request(), session, "session", "csrf")["data"]
+        assert updated["date_of_birth"] == corrected_dob
+        assert updated["version"] == 2
+
+        with runtime.begin() as connection:
+            set_tenant_context(connection, clinic_id, user_id)
+            persisted = connection.execute(text("SELECT date_of_birth, version FROM patients WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": clinic_id, "id": patient_id}).mappings().one()
+            assert persisted["date_of_birth"] == corrected_dob
+            assert persisted["version"] == 2
+            audit = connection.execute(text("SELECT metadata FROM audit_events WHERE clinic_id = :clinic_id AND action = 'patient.update' AND entity_id = :id"), {"clinic_id": clinic_id, "id": patient_id}).mappings().all()
+        assert len(audit) == 1
+        assert audit[0]["metadata"] == {"fields": ["date_of_birth"]}
+        # The DOB value itself is never logged.
+        assert corrected_dob.isoformat() not in json.dumps(audit[0]["metadata"], default=str)
+    finally:
+        session.close()
+        with admin.begin() as connection:
+            connection.execute(text("DELETE FROM patients WHERE clinic_id = :clinic_id"), {"clinic_id": clinic_id})
+            connection.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
+            connection.execute(text("DELETE FROM clinics WHERE id = :clinic_id"), {"clinic_id": clinic_id})
