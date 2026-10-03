@@ -16,6 +16,9 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL: `http://127.0.0.1:${port}`,
+    // Entrance/scroll animations are enhancement only; run tests with reduced
+    // motion so reveals are instant and never introduce timing flakiness.
+    reducedMotion: "reduce",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

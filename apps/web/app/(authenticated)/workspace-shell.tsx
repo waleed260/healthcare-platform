@@ -29,6 +29,8 @@ const navItems: NavItem[] = [
   { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read" },
 ];
 
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
+
 async function readJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, { credentials: "include", cache: "no-store" });
@@ -76,7 +78,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
       <div className="workspace-sidebar-foot"><span className="workspace-status-dot" />Live clinic data</div>
     </aside>
     <div className="workspace-stage">
-      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "AUTHENTICATED WORKSPACE" : "CHECKING WORKSPACE ACCESS"}</p><span className="workspace-greeting">Good morning, <em>{session?.display_name?.split(" ")[0] ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><button className="workspace-avatar" type="button" aria-label="Open account menu">{initials}</button></div></header>
+      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "AUTHENTICATED WORKSPACE" : "CHECKING WORKSPACE ACCESS"}</p><span className="workspace-greeting">{greeting()}, <em>{session?.display_name ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><button className="workspace-avatar" type="button" aria-label="Open account menu">{initials}</button></div></header>
       {connectionIssue && <div className="workspace-connection-alert" role="status">Your workspace connection could not be checked. Protected pages will explain how to retry.</div>}
       <div className="workspace-body">{children}</div>
     </div>

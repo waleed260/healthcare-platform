@@ -201,3 +201,25 @@
 .status-confirmed{background:#d5e7dc;color:#25603c}.status-requested{background:#f2e3d4;color:#875b3b}.status-arrived{background:#dce8ed;color:#366379}.status-waiting{background:#f0e1bd;color:#80622d}.status-in-consultation{background:#e5e0ef;color:#66507c}.status-completed{background:#e6eadf;color:var(--leaf)}.status-no-show,.status-cancelled{background:#edd8d5;color:#8c3933}
 @media(max-width:980px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.dash-main-grid{grid-template-columns:1fr}.dash-bottom-grid{grid-template-columns:1fr}}
 @media(max-width:560px){.kpi-grid{grid-template-columns:1fr}.quick-grid{grid-template-columns:1fr}}
+
+/* ===== Premium motion (anime.js) — progressive enhancement + reduced-motion safe ===== */
+.js-anim [data-anim]:not([data-anim="stagger"]){opacity:0;will-change:opacity,transform}
+.js-anim [data-anim="stagger"]>*{opacity:0;will-change:opacity,transform}
+.js-anim [data-anim].anim-done{opacity:1}
+.js-anim [data-anim="stagger"].anim-done>*{opacity:1}
+@media(prefers-reduced-motion:reduce){.js-anim [data-anim],.js-anim [data-anim]>*{opacity:1 !important}}
+/* premium micro-interactions */
+.button{transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s ease,background .18s ease}
+.button-primary:hover{transform:translateY(-2px);box-shadow:0 14px 30px -14px rgba(39,76,66,.75)}
+.button-primary span{transition:transform .18s ease}.button-primary:hover span{transform:translate(3px,-1px)}
+.text-link span,.text-control span{transition:transform .18s ease;display:inline-block}
+.text-link:hover span,.text-control:hover span{transform:translateX(4px)}
+.kpi-card,.feature-tile,.panel-card,.metric-card{transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s ease,border-color .2s ease}
+.feature-tile:hover{transform:translateY(-3px);box-shadow:0 22px 44px -28px rgba(28,41,40,.6)}
+.quick-btn span{transition:transform .18s ease}.quick-btn:hover span{transform:translateX(3px)}
+
+/* Dashboard overview content (rendered inside WorkspaceShell's body). */
+.dashboard-overview{display:block;width:100%}
+.dashboard-overview .dash-topline{margin-bottom:6px}
+.dashboard-overview h1{font:500 clamp(32px,4vw,46px)/1 Fraunces,serif;letter-spacing:-.04em;margin:8px 0 0}
+.dashboard-overview h1 em{font-style:italic;color:var(--leaf)}
