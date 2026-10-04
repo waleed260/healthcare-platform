@@ -72,7 +72,7 @@ export default function DashboardPage() {
 
   return <main className="dashboard-overview" id="overview" aria-busy={loading}>
     <PremiumMotion />
-    <div className="dash-topline"><div><p className="eyebrow">TODAY · CLINIC TIMEZONE</p><h1>Today at a <em>glance.</em></h1></div><button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
+    <div className="dash-topline"><div><p className="eyebrow">Today</p><h1>Today at a <em>glance.</em></h1></div><button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
     <div className="kpi-grid" aria-live="polite" data-anim="stagger">
