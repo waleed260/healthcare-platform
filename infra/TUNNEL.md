@@ -38,19 +38,23 @@ dies, and it burns a redeploy each time.
 
 Give the tunnel a **stable hostname** so `API_URL` is set once and never again.
 
-**B1. ngrok free static domain** (simplest):
+**B1. ngrok free static domain** (recommended — the `tunnel-ngrok` service is
+already wired up in `docker-compose.yml`):
 1. Sign up at https://ngrok.com (free), copy your authtoken.
-2. Claim your one free static domain (e.g. `your-clinic.ngrok-free.app`).
-3. Replace the `tunnel` service in `docker-compose.yml` with ngrok:
-   ```yaml
-   tunnel:
-     image: ngrok/ngrok:latest
-     command: ["http", "--domain=your-clinic.ngrok-free.app", "api:8000"]
-     environment: { NGROK_AUTHTOKEN: "${NGROK_AUTHTOKEN}" }
-     depends_on: [api]
+2. Claim your one free static domain (Dashboard → Domains), e.g.
+   `your-clinic.ngrok-free.app`.
+3. Add to `docker.env`:
    ```
-4. Set Vercel `API_URL=https://your-clinic.ngrok-free.app` **once** and redeploy.
-   The URL never changes again — no watchdog, no redeploys.
+   NGROK_AUTHTOKEN=2abc...your-token
+   NGROK_DOMAIN=your-clinic.ngrok-free.app
+   ```
+4. Start it (and stop the old quick tunnel):
+   ```
+   docker compose stop tunnel
+   docker compose --profile ngrok up -d tunnel-ngrok
+   ```
+5. Set Vercel `API_URL=https://your-clinic.ngrok-free.app` **once** and redeploy.
+   The URL never changes again — no watchdog, no redeploys, no breakage.
 
 **B2. Cloudflare *named* tunnel** (free, needs a domain on Cloudflare):
 `cloudflared tunnel login` → `cloudflared tunnel create clinic` → route a

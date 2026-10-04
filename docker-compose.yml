@@ -95,6 +95,25 @@ services:
       api:
         condition: service_healthy
 
+  # Stable alternative to the ephemeral cloudflared quick tunnel: ngrok with a
+  # reserved (free) static domain. The URL NEVER changes, so Vercel's API_URL is
+  # set once and the site never breaks on restart/revocation.
+  #   1. Free signup at https://ngrok.com → copy your authtoken.
+  #   2. Claim your free static domain (Dashboard → Domains) e.g. foo.ngrok-free.app
+  #   3. Put NGROK_AUTHTOKEN and NGROK_DOMAIN in docker.env
+  #   4. Run:  docker compose --profile ngrok up -d tunnel-ngrok
+  #   5. Set Vercel API_URL=https://<NGROK_DOMAIN> once, redeploy. Done forever.
+  tunnel-ngrok:
+    profiles: ["ngrok"]
+    image: ngrok/ngrok:latest
+    restart: unless-stopped
+    command: ["http", "--url=https://${NGROK_DOMAIN}", "api:8000"]
+    environment:
+      NGROK_AUTHTOKEN: "${NGROK_AUTHTOKEN}"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   pgdata:
   privatedata:
