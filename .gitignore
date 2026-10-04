@@ -34,3 +34,6 @@ neon_*.url
 
 # Claude Code local settings (personal, not committed)
 .claude/settings.local.json
+
+# tunnel watchdog secrets
+infra/tunnel-guard.env

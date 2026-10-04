@@ -1,0 +1,14 @@
+[Unit]
+Description=Self-healing Cloudflare quick-tunnel watchdog for the clinic API
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/waleed/Downloads/health care
+ExecStart=/usr/bin/env bash /home/waleed/Downloads/health care/infra/tunnel-guard.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
