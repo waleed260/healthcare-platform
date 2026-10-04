@@ -378,3 +378,23 @@ legend{font-size:var(--text-xs)}
 .route-error h1 em{font-style:italic;color:var(--leaf)}
 .route-error-copy{color:var(--muted);font-size:var(--text-base);line-height:1.6;max-width:440px;margin:0 0 28px}
 .route-error-actions{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+
+/* ============================================================
+   Website builder — button-style consolidation (fix/website-audit-2)
+   Collapse the many quiet/segmented button variants into 3 families:
+   primary · quiet(bordered) · segmented(tabs+device toggle).
+   ============================================================ */
+/* one quiet family: same transparent + 1px border + 8px radius */
+.website-editor .text-control,.website-editor .button-secondary,.website-editor .icon-button{border:1px solid var(--line);border-radius:8px;background:transparent}
+.website-editor .button-secondary{padding:10px 14px}
+/* device toggle reads as the SAME segmented control as the builder tabs */
+.theme-preview-bar{gap:6px;padding:6px;background:var(--cream);border:1px solid var(--line);border-radius:12px;width:fit-content}
+.theme-preview-bar .text-control{border:0!important;border-radius:0!important;padding:8px 12px;background:transparent!important;color:var(--muted)!important}
+.theme-preview-bar .text-control.is-active{background:var(--leaf)!important;color:#fff!important}
+/* tabs share the brand's sharp shape so the active tab == the primary family */
+.wb-tab{border-radius:0}
+/* primary family: one shape (match the builder's sharp primary) */
+.website-editor .button-primary{border-radius:0}
+.wb-canvas .button-primary,.theme-preview-frame .button-primary{border-radius:0}
+/* remaining sub-12px: a stray preview/library h4 */
+.website-editor h4,.theme-preview-frame h4,.website-preview h4{font-size:var(--text-xs)}
