@@ -369,3 +369,12 @@ legend{font-size:var(--text-xs)}
 /* merge the builder heading sizes so the type scale stays tight */
 .website-editor .detail-card h2,.website-editor .card-heading h2,.website-editor .preview-heading h2{font-size:28px}
 .website-editor .button-primary span,.website-editor .button-secondary span,.wb-canvas .button span{font-size:14px}
+
+/* ============================================================
+   Error / not-found boundaries (fix/error-boundaries)
+   ============================================================ */
+.route-error{min-height:68vh;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;max-width:600px;margin:0 auto;padding:clamp(40px,8vw,90px) clamp(20px,5vw,24px)}
+.route-error h1{font:500 clamp(34px,5vw,52px)/1.03 Fraunces,serif;letter-spacing:-.04em;margin:8px 0 12px}
+.route-error h1 em{font-style:italic;color:var(--leaf)}
+.route-error-copy{color:var(--muted);font-size:var(--text-base);line-height:1.6;max-width:440px;margin:0 0 28px}
+.route-error-actions{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
