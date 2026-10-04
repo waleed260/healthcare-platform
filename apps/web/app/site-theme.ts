@@ -18,12 +18,15 @@ export type SiteBrand = {
   theme?: ThemeSettings; header?: HeaderSettings; footer?: FooterSettings; seo?: SeoSettings; tablet?: DeviceOverrides; mobile?: DeviceOverrides;
 };
 
+// Curated to the three loaded brand faces only (Fraunces, DM Sans, DM Mono) so
+// the builder + preview never render cheap system fonts (Optima/Candara/Times)
+// and the page stays under ~4 distinct families. Legacy keys fall back to sans.
 export const FONT_STACKS: Record<string, string> = {
-  system: "system-ui, -apple-system, 'Segoe UI', sans-serif",
-  serif: "Fraunces, Georgia, 'Times New Roman', serif",
-  sans: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
-  humanist: "'Segoe UI', Optima, Candara, 'Trebuchet MS', sans-serif",
+  serif: "Fraunces, Georgia, serif",
+  sans: "'DM Sans', system-ui, sans-serif",
   mono: "'DM Mono', ui-monospace, monospace",
+  system: "'DM Sans', system-ui, sans-serif",
+  humanist: "'DM Sans', system-ui, sans-serif",
 };
 const SHADOWS = { none: "none", soft: "0 8px 24px rgba(0,0,0,.08)", strong: "0 16px 44px rgba(0,0,0,.2)" } as const;
 const isHex = (value?: string) => /^#[0-9a-f]{6}$/i.test(value ?? "");

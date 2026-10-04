@@ -9,7 +9,7 @@ type Draft = Pick<SiteBrand, "theme" | "header" | "footer" | "tablet" | "mobile"
 type Device = "desktop" | "tablet" | "mobile";
 const COLOR_KEYS = ["primary", "secondary", "accent", "background", "text", "muted", "border", "success", "error"] as const;
 const COLOR_DEFAULTS: Record<(typeof COLOR_KEYS)[number], string> = { primary: "#274c42", secondary: "#5b7a6f", accent: "#e77b5c", background: "#f5f4ee", text: "#1c2928", muted: "#6b7573", border: "#d9d6cc", success: "#2f7d4f", error: "#a8392f" };
-const FONTS = ["system", "serif", "sans", "humanist", "mono"];
+const FONTS = ["serif", "sans", "mono"];
 const FOOTER_KINDS = ["about", "services", "quick_links", "branches", "hours", "contact", "social", "legal", "custom"];
 const WIDTH: Record<Device, string> = { desktop: "100%", tablet: "768px", mobile: "375px" };
 
@@ -66,7 +66,7 @@ export default function ThemePanel({ brand, disabled, onSave }: { brand: SiteBra
   const num = (value: string, fallback: number) => (Number.isFinite(Number(value)) && value !== "" ? Number(value) : fallback);
 
   return <section className="detail-card theme-panel" aria-label="Theme, header and footer">
-    <div className="card-heading"><div><p className="eyebrow">THEME · HEADER · FOOTER</p><h2>Design system</h2></div><div className="theme-actions"><button className="text-control" onClick={undo} disabled={past.length === 0 || disabled}>↶ Undo</button><button className="text-control" onClick={redo} disabled={future.length === 0 || disabled}>↷ Redo</button><span className={`draft-status theme-state-${state}`} aria-live="polite">{state === "saved" ? "All changes saved" : state === "saving" ? "Saving…" : state === "error" ? "Save failed — keep editing to retry" : "Unsaved changes"}</span></div></div>
+    <div className="card-heading"><div><p className="eyebrow">Theme</p><h2>Design system</h2></div><div className="theme-actions"><button className="text-control" onClick={undo} disabled={past.length === 0 || disabled}>↶ Undo</button><button className="text-control" onClick={redo} disabled={future.length === 0 || disabled}>↷ Redo</button><span className={`draft-status theme-state-${state}`} aria-live="polite">{state === "saved" ? "All changes saved" : state === "saving" ? "Saving…" : state === "error" ? "Save failed — keep editing to retry" : "Unsaved changes"}</span></div></div>
 
     <div className="theme-controls">
     <fieldset className="theme-group" disabled={disabled}><legend>Colors</legend><div className="brand-fields">{COLOR_KEYS.map((key) => <label key={key}>{key}<input type="color" value={theme.colors?.[key] ?? COLOR_DEFAULTS[key]} onChange={(event) => setTheme("colors", key, event.target.value)} /></label>)}</div></fieldset>
@@ -138,7 +138,7 @@ export default function ThemePanel({ brand, disabled, onSave }: { brand: SiteBra
 
     <aside className="theme-preview">
     <div className="theme-preview-bar"><p className="eyebrow">PREVIEW</p>{(["desktop", "tablet", "mobile"] as const).map((item) => <button key={item} className={`text-control ${device === item ? "is-active" : ""}`} onClick={() => setDevice(item)} aria-pressed={device === item}>{item}</button>)}</div>
-    <div className="theme-preview-frame" style={{ width: WIDTH[device] }}><div className="public-site has-theme" style={themeStyle(previewBrand, device)}><SiteHeader brand={previewBrand} clinicSlug="preview" /><div className="public-shell"><h1>Your clinic headline</h1><h2>Section heading</h2><p>Body copy shows your typography and spacing choices.</p><a className={`button button-primary ${previewBrand.theme?.buttons?.style === "outline" ? "site-btn-outline" : ""}`} href="#preview">Primary action</a></div><SiteFooter brand={previewBrand} title="Your clinic" clinicSlug="preview" /></div></div>
+    <div className="theme-preview-frame" style={{ width: WIDTH[device] }}><div className="public-site has-theme" style={themeStyle(previewBrand, device)}><SiteHeader brand={previewBrand} clinicSlug="preview" /><div className="public-shell"><div className="preview-headline">Your clinic headline</div><h2>Section heading</h2><p>Body copy shows your typography and spacing choices.</p><a className={`button button-primary ${previewBrand.theme?.buttons?.style === "outline" ? "site-btn-outline" : ""}`} href="#preview">Primary action</a></div><SiteFooter brand={previewBrand} title="Your clinic" clinicSlug="preview" /></div></div>
     </aside>
   </section>;
 }
