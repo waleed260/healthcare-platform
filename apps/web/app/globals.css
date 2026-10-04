@@ -223,3 +223,75 @@
 .dashboard-overview .dash-topline{margin-bottom:6px}
 .dashboard-overview h1{font:500 clamp(32px,4vw,46px)/1 Fraunces,serif;letter-spacing:-.04em;margin:8px 0 0}
 .dashboard-overview h1 em{font-style:italic;color:var(--leaf)}
+
+/* ============================================================
+   UI overhaul (fix/dashboard-ui-overhaul)
+   1) Type-scale enforcement — 12px (--text-xs) floor, fewer sizes
+   2) Dashboard width / proportions — stop the full-width stretch
+   3) Text-colour consolidation
+   4) Shopify-style two-pane theme editor
+   ============================================================ */
+:root{
+  --nav-ink:#aecabb;         /* one muted green: sidebar body, nav, icons */
+  --nav-ink-strong:#f5f4ee;  /* sidebar active + brand */
+  --badge-amber-bg:#f3e2c2;--badge-amber-ink:#8a6326;
+  --badge-blue-bg:#dce8ed;--badge-blue-ink:#365f73;
+}
+
+/* 1 + 2 — centre the overview instead of stretching edge-to-edge */
+.workspace-body{padding:0}
+.dashboard-overview{width:min(1200px,100%);margin:0 auto;padding:clamp(28px,4vw,44px) clamp(20px,4vw,56px) 88px}
+.dashboard-overview .dash-topline{margin-bottom:22px}
+.kpi-grid{margin:22px 0 18px}
+.panel-card{border-radius:16px}
+.kpi-card strong{font-size:clamp(26px,3vw,32px)}
+
+/* 1 — no text below 12px; map stragglers onto the shared scale */
+.workspace-label{font-size:var(--text-xs);letter-spacing:.1em}
+.workspace-context{font-size:var(--text-xs);letter-spacing:.08em;text-transform:none}
+.workspace-avatar{font-size:var(--text-xs)}
+.workspace-notifications b{font-size:11px;width:18px;height:18px}
+.stale-note{font-size:var(--text-xs)}
+.bar-col small{font-size:var(--text-xs)}
+.queue-action{font-size:var(--text-xs)}
+.queue-state,.pipeline-status{font-size:var(--text-xs);padding:4px 8px;letter-spacing:.05em}
+.theme-panel legend{font-size:var(--text-xs)}
+.brand-fields label,.brand-fields small,.draft-status,.detail-card dt,.text-control,.icon-button{font-size:var(--text-xs)}
+.workspace-sidebar-foot{font-size:var(--text-xs)}
+.dashboard-overview small{font-size:var(--text-xs)}
+/* fold decorative-icon glyph sizes onto existing text sizes (fewer distinct sizes) */
+.workspace-notifications{font-size:24px}
+.kpi-ico{font-size:18px}
+
+/* 3 — consolidate the dark-sidebar greens to two tokens + coral accent */
+.workspace-sidebar,.workspace-sidebar-foot{color:var(--nav-ink)}
+.workspace-brand{color:var(--nav-ink-strong)}
+.workspace-label{color:var(--nav-ink)}
+.workspace-nav-link,.workspace-nav-link span{color:var(--nav-ink)}
+.workspace-nav-link:hover,.workspace-nav-link.active{color:var(--nav-ink-strong)}
+.workspace-nav-link.active span{color:var(--coral)}
+.workspace-context{color:var(--muted)}            /* topbar is a light bar */
+/* status badges → three shared families, not many one-off hexes */
+.pipeline-status{background:#e6eadf;color:var(--leaf)}
+.queue-state{background:var(--badge-amber-bg);color:var(--badge-amber-ink)}
+.queue-state.state-in-consultation{background:var(--badge-blue-bg);color:var(--badge-blue-ink)}
+.status-confirmed{background:#d5e7dc;color:var(--leaf)}
+
+/* mobile: keep the 12px floor, tighten gutters */
+@media(max-width:760px){
+  .workspace-context{font-size:var(--text-xs)}
+  .workspace-nav-link{font-size:var(--text-xs)!important}
+  .dashboard-overview{padding:24px 18px 64px}
+}
+
+/* 4 — Shopify-style two-pane theme editor (controls | live preview) */
+.theme-panel{display:grid;grid-template-columns:clamp(300px,32%,400px) minmax(0,1fr);gap:28px;align-items:start}
+.theme-panel>.card-heading{grid-column:1/-1}
+.theme-controls{min-width:0;display:flex;flex-direction:column}
+.theme-preview{position:sticky;top:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.theme-preview-bar{justify-content:flex-start}
+.theme-preview-bar .text-control{border:1px solid var(--line);padding:6px 12px;border-radius:999px}
+.theme-preview-bar .text-control.is-active{background:var(--leaf);color:#fff;border-color:var(--leaf);text-decoration:none}
+.theme-preview-frame{margin:0 auto;max-width:100%;border-radius:12px;box-shadow:0 18px 40px -28px rgba(28,41,40,.5)}
+.theme-group{border-radius:12px}
+@media(max-width:980px){.theme-panel{grid-template-columns:1fr}.theme-preview{position:static}}

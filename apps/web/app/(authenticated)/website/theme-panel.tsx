@@ -68,6 +68,7 @@ export default function ThemePanel({ brand, disabled, onSave }: { brand: SiteBra
   return <section className="detail-card theme-panel" aria-label="Theme, header and footer">
     <div className="card-heading"><div><p className="eyebrow">THEME · HEADER · FOOTER</p><h2>Design system</h2></div><div className="theme-actions"><button className="text-control" onClick={undo} disabled={past.length === 0 || disabled}>↶ Undo</button><button className="text-control" onClick={redo} disabled={future.length === 0 || disabled}>↷ Redo</button><span className={`draft-status theme-state-${state}`} aria-live="polite">{state === "saved" ? "All changes saved" : state === "saving" ? "Saving…" : state === "error" ? "Save failed — keep editing to retry" : "Unsaved changes"}</span></div></div>
 
+    <div className="theme-controls">
     <fieldset className="theme-group" disabled={disabled}><legend>Colors</legend><div className="brand-fields">{COLOR_KEYS.map((key) => <label key={key}>{key}<input type="color" value={theme.colors?.[key] ?? COLOR_DEFAULTS[key]} onChange={(event) => setTheme("colors", key, event.target.value)} /></label>)}</div></fieldset>
 
     <fieldset className="theme-group" disabled={disabled}><legend>Typography</legend><div className="brand-fields">
@@ -133,8 +134,11 @@ export default function ThemePanel({ brand, disabled, onSave }: { brand: SiteBra
       {(["tablet", "mobile"] as const).map((target) => <label key={`${target}-f`}>{target} font scale<input type="number" min={0.7} max={1.4} step={0.05} value={draft[target]?.font_scale ?? 1} onChange={(event) => setDevice_(target, "font_scale", num(event.target.value, 1))} /></label>)}
       {(["tablet", "mobile"] as const).map((target) => <label key={`${target}-s`}>{target} spacing scale<input type="number" min={0.5} max={1.5} step={0.05} value={draft[target]?.spacing_scale ?? 1} onChange={(event) => setDevice_(target, "spacing_scale", num(event.target.value, 1))} /></label>)}
     </div></fieldset>
+    </div>
 
+    <aside className="theme-preview">
     <div className="theme-preview-bar"><p className="eyebrow">PREVIEW</p>{(["desktop", "tablet", "mobile"] as const).map((item) => <button key={item} className={`text-control ${device === item ? "is-active" : ""}`} onClick={() => setDevice(item)} aria-pressed={device === item}>{item}</button>)}</div>
     <div className="theme-preview-frame" style={{ width: WIDTH[device] }}><div className="public-site has-theme" style={themeStyle(previewBrand, device)}><SiteHeader brand={previewBrand} clinicSlug="preview" /><div className="public-shell"><h1>Your clinic headline</h1><h2>Section heading</h2><p>Body copy shows your typography and spacing choices.</p><a className={`button button-primary ${previewBrand.theme?.buttons?.style === "outline" ? "site-btn-outline" : ""}`} href="#preview">Primary action</a></div><SiteFooter brand={previewBrand} title="Your clinic" clinicSlug="preview" /></div></div>
+    </aside>
   </section>;
 }

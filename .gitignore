@@ -31,3 +31,6 @@ docker.env
 *.pem
 *.key
 neon_*.url
+
+# Claude Code local settings (personal, not committed)
+.claude/settings.local.json
