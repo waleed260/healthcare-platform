@@ -108,7 +108,7 @@ def website_list(request: Request, cursor: str | None = Query(default=None, max_
     session = _authorized(db, session_token, "website.read")
     after = _collection_cursor(cursor, "websites")
     rows = db.execute(text("""
-        SELECT id, name, template_key, status, draft_version_id, live_version_id, version, created_at, updated_at
+        SELECT id, name, template_key, status, brand, draft_version_id, live_version_id, version, created_at, updated_at
         FROM websites
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
