@@ -295,3 +295,77 @@
 .theme-preview-frame{margin:0 auto;max-width:100%;border-radius:12px;box-shadow:0 18px 40px -28px rgba(28,41,40,.5)}
 .theme-group{border-radius:12px}
 @media(max-width:980px){.theme-panel{grid-template-columns:1fr}.theme-preview{position:static}}
+
+/* ============================================================
+   Website builder — Shopify-style editor (feat/website-builder-shopify)
+   Shopify-like tabs + big canvas, preset themes, audit fixes
+   (fonts/sizes/buttons/tiny-text/single-h1)
+   ============================================================ */
+.website-editor{width:min(1520px,100%);margin:0 auto;padding:clamp(24px,4vw,40px) clamp(20px,4vw,48px) 80px}
+.website-editor .dash-topline{margin-bottom:18px}
+.website-editor h1{font:500 clamp(30px,3.4vw,42px)/1 Fraunces,serif;letter-spacing:-.04em;margin:8px 0 0}
+.website-editor h1 em{font-style:italic;color:var(--leaf)}
+
+/* toolbar */
+.website-toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--cream);border:1px solid var(--line);border-radius:14px;margin-bottom:16px}
+.website-toolbar label{display:flex;gap:8px;align-items:center;font:var(--text-xs) 'DM Mono',monospace;color:var(--muted)}
+.website-toolbar select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;font-size:var(--text-sm)}
+
+/* two-pane shell: left settings rail + big sticky canvas */
+.wb-shell{display:grid;grid-template-columns:clamp(320px,34%,420px) minmax(0,1fr);gap:22px;align-items:start}
+.wb-rail{min-width:0;display:flex;flex-direction:column;gap:14px}
+.wb-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:6px;background:var(--cream);border:1px solid var(--line);border-radius:12px;position:sticky;top:12px;z-index:2}
+.wb-tab{display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:var(--muted);font:var(--text-sm) 'DM Sans',sans-serif;padding:9px 12px;border-radius:9px;cursor:pointer;transition:background .12s ease,color .12s ease}
+.wb-tab span{font-size:14px}
+.wb-tab:hover{color:var(--ink)}
+.wb-tab.is-active{background:var(--leaf);color:#fff}
+.wb-rail-body{display:flex;flex-direction:column;gap:16px;min-width:0}
+.wb-canvas{position:sticky;top:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.wb-canvas .website-preview{margin:0}
+
+/* preset theme gallery */
+.preset-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.preset-tile{display:flex;flex-direction:column;gap:6px;align-items:flex-start;text-align:left;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);cursor:pointer;transition:border-color .12s ease,transform .12s ease,box-shadow .12s ease}
+.preset-tile:hover{border-color:var(--leaf);transform:translateY(-2px);box-shadow:0 10px 24px -18px rgba(28,41,40,.5)}
+.preset-tile:disabled{opacity:.5;cursor:not-allowed}
+.preset-swatch{display:flex;width:100%;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.preset-swatch i{flex:1}
+.preset-tile strong{font-size:var(--text-sm);font-weight:600}
+.preset-tile small{color:var(--muted);font:var(--text-xs) 'DM Mono',monospace}
+
+/* preview headline sample (demoted from <h1> → single-h1 fix) */
+.theme-preview-frame .preview-headline,.public-site.has-theme .preview-headline{font-family:var(--site-heading-font,Fraunces,serif);font-size:var(--site-h1,40px);font-weight:600;line-height:1.05;margin:0 0 .35em}
+
+/* audit: no text below 12px */
+.field-note,.permission-strip span,.permission-ok,.permission-muted,.muted-mono{font-size:var(--text-xs)}
+legend{font-size:var(--text-xs)}
+.website-preview a,.theme-preview-frame a,.preview-button,.preview-body a{font-size:var(--text-xs)}
+.library-card small,.managed-section-header small,.setup-card small{font-size:var(--text-xs)}
+
+/* audit: fewer button styles — make text/ghost read as one family */
+.text-control{color:var(--muted)}
+.text-control.danger-control,.ghost-button.danger-control{color:var(--coral)}
+
+@media(max-width:980px){.wb-shell{grid-template-columns:1fr}.wb-canvas{position:static}.wb-tabs{position:static}}
+@media(max-width:760px){.website-editor{padding:20px 16px 56px}.preset-grid{grid-template-columns:1fr}}
+
+/* audit pass 2: remaining sub-12px in the builder + live preview */
+.website-editor .directory-count{font-size:var(--text-xs)}
+.website-editor label,.managed-section label,.setup-card label{font-size:var(--text-xs)}
+.preview-browser small{font-size:var(--text-xs)}
+.website-preview .public-eyebrow,.website-preview small,.website-preview span,.website-preview strong,.website-preview a,.website-preview p{font-size:var(--text-xs)}
+.theme-preview-frame .public-eyebrow,.theme-preview-frame small,.theme-preview-frame span,.theme-preview-frame a{font-size:var(--text-xs)}
+/* keep the preview's own headline/heading scale readable (not forced to 12) */
+.website-preview h2,.website-preview .preview-headline{font-size:28px}
+
+/* audit: collapse the button family — action buttons read as one of
+   primary / secondary(outline) / quiet(text+icon+ghost). tabs & preset
+   tiles are deliberately distinct navigation/card affordances. */
+.text-control,.ghost-button,.icon-button{background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--muted);font:var(--text-xs) 'DM Mono',monospace;padding:7px 10px}
+.icon-button{padding:7px 9px}
+.text-control:hover,.ghost-button:hover,.icon-button:hover{border-color:var(--leaf);color:var(--leaf)}
+.text-control.danger-control,.ghost-button.danger-control{color:var(--coral)}
+.ghost-button span,.text-control span{color:var(--coral)}
+/* merge the builder heading sizes so the type scale stays tight */
+.website-editor .detail-card h2,.website-editor .card-heading h2,.website-editor .preview-heading h2{font-size:28px}
+.website-editor .button-primary span,.website-editor .button-secondary span,.wb-canvas .button span{font-size:14px}

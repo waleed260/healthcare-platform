@@ -70,17 +70,17 @@ export default function LibraryPanel({ website, pageId, sections, disabled, onCh
   };
 
   return <section className="detail-card library-panel" aria-label="Templates and reusable sections">
-    <div className="card-heading"><div><p className="eyebrow">TEMPLATES · REUSABLE SECTIONS</p><h2>Start fast, stay consistent</h2></div></div>
+    <div className="card-heading"><div><p className="eyebrow">Library</p><h2>Start fast, stay consistent</h2></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
     {notice && <div className="permission-strip" aria-live="polite"><span className="permission-ok">{notice}</span></div>}
 
-    <p className="eyebrow">SPECIALTY SITE TEMPLATES</p>
-    <div className="library-grid">{library?.site_templates?.map((template) => <article className="library-card" key={template.key}><h3>{template.name}</h3><p>{template.description}</p><small>{template.page_count} pages · {template.specialty}</small>{template.locked ? <span className="pipeline-status status-void">Specialty locked</span> : <button className="button button-secondary" disabled={disabled || busy !== null} onClick={() => applySite(template)}>{busy === template.key ? "Applying…" : "Apply template"}</button>}</article>)}</div>
+    <p className="eyebrow">Site templates</p>
+    <div className="library-grid">{library?.site_templates?.map((template) => <article className="library-card" key={template.key}><h3>{template.name}</h3><p>{template.description}</p><small>{template.page_count} pages · {template.specialty}</small>{template.locked ? <span className="pipeline-status status-void" title="Specialty locked">Locked</span> : <button className="button button-secondary" disabled={disabled || busy !== null} onClick={() => applySite(template)}>{busy === template.key ? "Applying…" : "Apply template"}</button>}</article>)}</div>
 
-    <p className="eyebrow">PAGE TEMPLATES</p>
+    <p className="eyebrow">Page templates</p>
     <div className="library-grid">{library?.page_templates?.map((template) => <form className="library-card" key={template.key} onSubmit={(event) => addPage(event, template)}><h3>{template.name}</h3><p>{template.description}</p><input name="title" required maxLength={160} placeholder="Page title" disabled={disabled} /><input name="slug" required maxLength={120} pattern="[a-z0-9][a-z0-9_\-]*" placeholder="url-slug" disabled={disabled} /><button className="button button-secondary" type="submit" disabled={disabled || busy !== null}>Create page</button></form>)}</div>
 
-    <p className="eyebrow">REUSABLE SECTIONS</p>
+    <p className="eyebrow">Reusable sections</p>
     <form className="theme-row" onSubmit={saveReusable}><select aria-label="Section to save" value={sourceId} onChange={(event) => setSourceId(event.target.value)} required disabled={disabled}><option value="">Choose a section on this page…</option>{sections.map((section) => <option key={section.id} value={section.id}>{section.section_type} · {section.content.heading ?? ""}</option>)}</select><input aria-label="Reusable name" value={newName} onChange={(event) => setNewName(event.target.value)} required maxLength={120} placeholder="Name, e.g. Booking banner" disabled={disabled} /><button className="button button-primary" type="submit" disabled={disabled || busy !== null || !sourceId}>Save for reuse</button></form>
     <div className="invoice-list">{reusable.length === 0 && <div className="dashboard-empty"><strong>No reusable sections yet</strong><span>Save a section above to reuse it on other pages.</span></div>}{reusable.map((item) => <article className="invoice-row" key={item.id}><div className="invoice-mark">{item.section_type.slice(0, 3).toUpperCase()}</div><div className="invoice-main"><h3>{item.name}</h3><p>{item.content.heading ?? item.section_type}</p><small>{item.synced_uses} synced use(s)</small></div><div className="invoice-actions"><span className="receipt-links"><button className="text-control" disabled={disabled || !pageId || busy !== null} onClick={() => insert(item, "copy")}>Insert copy</button><button className="text-control" disabled={disabled || !pageId || busy !== null} onClick={() => insert(item, "synced")}>Insert synced</button></span><span className="receipt-links"><button className="text-control" disabled={disabled} onClick={() => rename(item)}>Rename</button><button className="text-control" disabled={disabled} onClick={() => removeReusable(item)}>Delete</button></span></div></article>)}</div>
   </section>;
