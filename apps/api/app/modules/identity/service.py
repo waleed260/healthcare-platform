@@ -243,7 +243,7 @@ def get_session(db: Session, session_token: str) -> dict:
         SELECT set_config('app.support_access_id', :support_access_id, true),
                set_config('app.clinic_id', :clinic_id, true)
     """), {"support_access_id": str(session["support_access_id"] or ""), "clinic_id": str(session["clinic_id"] or "")})
-    idle_duration = timedelta(minutes=30) if session["is_platform_admin"] else timedelta(hours=8)
+    idle_duration = timedelta(minutes=30) if session["clinic_id"] is None else timedelta(hours=8)
     db.execute(text("UPDATE sessions SET last_seen_at = :now, idle_expires_at = :idle_expires_at WHERE id = :id"), {"id": session["id"], "now": now, "idle_expires_at": min(now + idle_duration, session["absolute_expires_at"])})
     return dict(session)
 
@@ -261,7 +261,7 @@ def rotate_session(db: Session, session: dict, *, mfa_verified: bool | None = No
     csrf_token = new_csrf_token()
     absolute_expires_at = session["absolute_expires_at"]
     active_support_access_id = None if clear_support_context else (support_access_id or session.get("support_access_id"))
-    idle_duration = timedelta(minutes=30) if session.get("is_platform_admin") else timedelta(hours=8)
+    idle_duration = timedelta(minutes=30) if session.get("clinic_id") is None else timedelta(hours=8)
     idle_expires_at = min(now + idle_duration, absolute_expires_at)
     db.execute(text("""
         INSERT INTO sessions
