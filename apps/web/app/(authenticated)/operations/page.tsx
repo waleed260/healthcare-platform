@@ -2,13 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { csrfToken } from "../_lib/client";
 
 type FollowUp = { id: string; reason: string; due_at: string; priority: string; status: string; version: number };
 type Notification = { id: string; kind: string; title: string; body: string; read_at: string | null; created_at: string };
-
-function csrf(): string {
-  return document.cookie.split("; ").find((item) => item.startsWith("csrf_token="))?.split("=")[1] ?? "";
-}
 
 function message(response: Response, payload: unknown): string {
   if (payload && typeof payload === "object" && "error" in payload) {
@@ -81,7 +78,7 @@ export default function OperationsPage() {
     setError(null); setNotice(null);
     try {
       const response = await fetch(`/api/v1/operations/follow-ups/${item.id}/complete`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ expected_version: item.version }),
       });
       const payload = await response.json();
@@ -99,7 +96,7 @@ export default function OperationsPage() {
     setWorking(item.id);
     try {
       const response = await fetch("/api/v1/operations/notifications/read", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ notification_ids: [item.id] }),
       });
       const payload = await response.json();
@@ -153,7 +150,7 @@ export default function OperationsPage() {
       });
       const json = subscription.toJSON();
       const response = await fetch("/api/v1/operations/notifications/push-subscriptions", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth }),
       });
       const payload = await response.json();
