@@ -501,7 +501,8 @@ export default function WebsiteEditorPage() {
       {/* ═══ TOP BAR ═══ */}
       <header className="wb-topbar">
         <div className="wb-topbar-left">
-          <button className="wb-back" onClick={() => { setWebsite(null); void load(); }} title="Exit editor">←</button>
+          <h1 className="sr-only">{website.name} — Website editor</h1>
+          <button className="wb-icon-btn" onClick={() => { setWebsite(null); void load(); }} title="Exit editor">←</button>
           <div className="wb-topbar-context">
             <select className="wb-website-select" value={website.id} onChange={(e) => { const next = websites.find((w) => w.id === e.target.value); if (next) void loadWebsite(next); }}>
               {websites.map((w) => <option value={w.id} key={w.id}>{w.name}</option>)}
@@ -522,7 +523,7 @@ export default function WebsiteEditorPage() {
           <span className="wb-topbar-hint">{warning ? `⚠ ${warning}` : `v${website.version} · ${templateLabel(website.template_key)}`}</span>
           <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const token = await request<{ token: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/api/v1/public/sites/preview?token=${token.token}`, "_blank"); } catch { setError("Preview could not be opened."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
           <button className="wb-btn wb-btn-secondary" onClick={() => void load()} disabled={busy !== null}>Refresh</button>
-          <button className="wb-btn wb-btn-publish" onClick={() => void publish()} disabled={!canPublish || !validation?.valid || busy !== null} title={!canPublish ? "Ask an owner to publish" : warning ?? "Publish this draft"}>
+          <button className="wb-btn wb-btn-primary" style={{ fontWeight: 600 }} onClick={() => void publish()} disabled={!canPublish || !validation?.valid || busy !== null} title={!canPublish ? "Ask an owner to publish" : warning ?? "Publish this draft"}>
             {busy === "publish" ? "Publishing…" : "Publish"} <span>↑</span>
           </button>
         </div>
@@ -538,14 +539,14 @@ export default function WebsiteEditorPage() {
         <aside className="wb-left">
           <div className="wb-left-section">
             <div className="wb-left-header">
-              <h3>Pages</h3>
+              <h3><span className="wb-label-caps">Pages</span></h3>
               <button className="wb-add-btn" onClick={() => void createPageAction()} disabled={controlsDisabled} title="Add page">+</button>
             </div>
             <div className="wb-page-list">
               {pages.map((p) => (
                 <button key={p.id} className={`wb-page-item${p.id === page?.id ? " is-active" : ""}`} onClick={() => void selectPage(p.id)} disabled={busy !== null}>
                   <span className="wb-page-icon">{p.slug === "home" ? "⌂" : "❏"}</span>
-                  <span className="wb-page-label">{p.title}</span>
+                  <span className="wb-page-label" title={p.title}>{p.title}</span>
                   <span className="wb-page-slug">/{p.slug}</span>
                 </button>
               ))}
@@ -554,7 +555,7 @@ export default function WebsiteEditorPage() {
 
           <div className="wb-left-section">
             <div className="wb-left-header">
-              <h3>Sections{page ? ` · ${page.title}` : ""}</h3>
+              <h3><span className="wb-label-caps">Sections</span>{page ? ` · ${page.title}` : ""}</h3>
               <button className="wb-add-btn" onClick={() => setShowSectionLibrary(true)} disabled={controlsDisabled || !page} title="Add section">+</button>
             </div>
             <div className="wb-section-tree">
@@ -825,7 +826,7 @@ export default function WebsiteEditorPage() {
           <div className="wb-modal wb-section-library-modal" onClick={(e) => e.stopPropagation()}>
             <div className="wb-modal-header">
               <h2>Add a section</h2>
-              <button className="wb-modal-close" onClick={() => setShowSectionLibrary(false)}>✕</button>
+              <button className="wb-icon-btn wb-modal-close" onClick={() => setShowSectionLibrary(false)}>✕</button>
             </div>
             <div className="wb-lib-grid">
               {SECTION_LIBRARY.map((category) => (
