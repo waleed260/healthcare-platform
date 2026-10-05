@@ -364,7 +364,8 @@ body.wb-editor-active .workspace-layout{grid-template-columns:1fr}
 .wb-page-item:hover{background:var(--cream);color:var(--ink)}
 .wb-page-item.is-active{background:var(--cream);color:var(--ink);border-left-color:var(--leaf);font-weight:600}
 .wb-page-icon{font-size:14px;flex-shrink:0}
-.wb-page-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.wb-page-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;font-size:13px}
+@media(min-width:801px){.wb-page-label{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}}
 .wb-page-slug{font:12px 'DM Mono',monospace;color:var(--muted);flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70px}
 
 /* section tree */
@@ -498,6 +499,8 @@ legend{font-size:var(--text-xs)}
 .library-card small,.managed-section-header small,.setup-card small{font-size:var(--text-xs)}
 .site-footer-base,.site-footer-base a{font-size:var(--text-xs)}
 .wb-right .site-footer-base,.wb-right .site-footer-base a{font-size:var(--text-xs)}
+.wb-preview-site .site-footer-base,.wb-preview-site .site-footer-base a{font-size:max(var(--text-xs),12px)}
+.wb-preview-site .public-footer{font-size:max(12px,var(--text-xs))}
 
 /* audit: fewer button styles */
 .text-control,.ghost-button,.icon-button{background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--muted);font:var(--text-xs) 'DM Mono',monospace;padding:7px 10px}
