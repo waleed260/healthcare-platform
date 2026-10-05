@@ -121,7 +121,7 @@ def user_list(request: Request, cursor: str | None = Query(default=None, max_len
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT id, normalized_email, display_name, status, failed_login_count, last_login_at, version, created_at, updated_at
+        SELECT id, normalized_email, display_name, status, last_login_at, version, created_at, updated_at
         FROM users
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (:after_name IS NULL OR display_name > :after_name OR (display_name = :after_name AND id > :after_id))
@@ -139,7 +139,7 @@ def user_list(request: Request, cursor: str | None = Query(default=None, max_len
 def user_detail(user_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "staff.read")
     user = db.execute(text("""
-        SELECT id, normalized_email, display_name, status, failed_login_count, last_login_at, version, created_at, updated_at
+        SELECT id, normalized_email, display_name, status, last_login_at, version, created_at, updated_at
         FROM users WHERE clinic_id = :clinic_id AND id = :user_id AND archived_at IS NULL
     """), {"clinic_id": session["clinic_id"], "user_id": user_id}).mappings().one_or_none()
     if user is None:

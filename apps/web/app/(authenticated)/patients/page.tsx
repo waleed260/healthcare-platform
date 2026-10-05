@@ -8,8 +8,9 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 type Patient = { id: string; patient_number: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; status: string; version: number };
 type PatientPage = { data?: Patient[]; meta?: { next_cursor?: string | null } };
 
-function responseMessage(response: Response, payload: any): string {
-  if (payload?.error?.message) return payload.error.message;
+function responseMessage(response: Response, payload: unknown): string {
+  const error = (payload as { error?: { message?: string } } | undefined)?.error;
+  if (error?.message) return error.message;
   if (response.status === 401) return "Your session has expired. Sign in again to continue.";
   if (response.status === 403) return "Your role does not include patient access.";
   return "The patient list could not be loaded.";
