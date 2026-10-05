@@ -21,8 +21,8 @@ const formatDay = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.
 const formatTime = (value: string) => formatDay(new Date(value), { hour: "numeric", minute: "2-digit" });
 const errorMessage = async (response: Response, fallback: string) => { const payload = await response.json().catch(() => null) as { error?: { message?: string }; detail?: { error?: { message?: string } } } | null; return payload?.error?.message ?? payload?.detail?.error?.message ?? fallback; };
 async function api<T>(url: string, init?: RequestOptions): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (!response.ok) throw new Error(await errorMessage(response, "The schedule request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
-function csrf() { return document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrf_token="))?.slice("csrf_token=".length) ?? ""; }
-function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrf() }; }
+import { csrfToken } from "../_lib/client";
+function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
 
 function AppointmentCard({ appointment, doctorName, serviceName, onOpen, onDragStart }: { appointment: Appointment; doctorName: string; serviceName: string; onOpen: () => void; onDragStart: DragEventHandler<HTMLButtonElement> }) { return <button className={`calendar-appointment ${statusClass(appointment.status)}`} draggable onDragStart={onDragStart} onClick={onOpen} type="button"><strong>{formatTime(appointment.starts_at)}</strong><span>{appointment.reference}</span><small>{doctorName || serviceName || statusLabels[appointment.status]}</small></button>; }
 

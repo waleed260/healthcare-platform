@@ -9,8 +9,8 @@ type Session = { permissions?: string[] };
 const statusLabel = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const errorMessage = async (response: Response, fallback: string) => { const payload = await response.json().catch(() => null) as { error?: { message?: string }; detail?: { error?: { message?: string } } } | null; return payload?.error?.message ?? payload?.detail?.error?.message ?? fallback; };
 async function api<T>(url: string, init?: globalThis.RequestInit): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (!response.ok) throw new Error(await errorMessage(response, "The billing request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
-function csrf() { return document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrf_token="))?.slice("csrf_token=".length) ?? ""; }
-function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrf() }; }
+import { csrfToken } from "../_lib/client";
+function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
 const money = (minor: number, currency: string) => `${currency} ${(minor / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function BillingPage() {

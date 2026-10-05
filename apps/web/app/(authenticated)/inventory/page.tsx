@@ -7,8 +7,8 @@ type Stock = { id: string; branch_id: string; branch_name: string; product_id: s
 type Branch = { id: string; name: string };
 type Session = { permissions?: string[] };
 async function api<T>(url: string, init?: globalThis.RequestInit): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); const payload = await response.json().catch(() => null) as { data?: T; error?: { message?: string } } | null; if (!response.ok) throw new Error(payload?.error?.message ?? "The inventory request could not be completed."); return payload?.data as T; }
-function csrf() { return document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrf_token="))?.slice(11) ?? ""; }
-function headers() { return { "Content-Type": "application/json", "X-CSRF-Token": csrf() }; }
+import { csrfToken } from "../_lib/client";
+function headers() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]); const [stock, setStock] = useState<Stock[]>([]); const [branches, setBranches] = useState<Branch[]>([]); const [permissions, setPermissions] = useState<string[]>([]); const [showProduct, setShowProduct] = useState(false); const [showAdjustment, setShowAdjustment] = useState(false); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const [name, setName] = useState(""); const [type, setType] = useState("consumable"); const [sku, setSku] = useState(""); const [minimum, setMinimum] = useState("0"); const [productId, setProductId] = useState(""); const [branchId, setBranchId] = useState(""); const [delta, setDelta] = useState(""); const [reason, setReason] = useState("");

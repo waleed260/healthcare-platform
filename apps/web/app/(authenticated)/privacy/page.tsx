@@ -7,7 +7,7 @@ type PrivacyRequestType = "access" | "correction" | "deletion" | "restriction";
 type RequestRow = { id: string; patient_id: string; request_type: string; status: string; reason: string; requested_at: string; identity_verified_at: string | null };
 type ExportRow = { id: string; export_type: string; status: string; patient_id: string | null; created_at: string; expires_at: string | null };
 
-function csrf(): string { return document.cookie.split("; ").find((item) => item.startsWith("csrf_token="))?.split("=")[1] ?? ""; }
+import { csrfToken } from "../_lib/client";
 function date(value: string): string { return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
 async function read(response: Response): Promise<any> { const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(payload?.error?.message ?? "The privacy workspace could not complete that action."); return payload.data; }
 
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
   async function createRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setWorking("create"); setError(null); setNotice(null);
     try {
-      await read(await fetch(`/api/v1/governance/patients/${patientId.trim()}/privacy-requests`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() }, body: JSON.stringify({ request_type: requestType, reason: reason.trim() }) }));
+      await read(await fetch(`/api/v1/governance/patients/${patientId.trim()}/privacy-requests`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }, body: JSON.stringify({ request_type: requestType, reason: reason.trim() }) }));
       setPatientId(""); setReason(""); setNotice("Privacy request recorded for review."); await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The privacy request could not be created."); }
     finally { setWorking(null); }
@@ -48,7 +48,7 @@ export default function PrivacyPage() {
 
   async function command(id: string, path: string, body?: unknown) {
     setWorking(id); setError(null); setNotice(null);
-    try { await read(await fetch(`/api/v1/governance/privacy-requests/${id}/${path}`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() }, body: body === undefined ? undefined : JSON.stringify(body) })); setNotice("Privacy workflow updated and audited."); await load(); }
+    try { await read(await fetch(`/api/v1/governance/privacy-requests/${id}/${path}`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }, body: body === undefined ? undefined : JSON.stringify(body) })); setNotice("Privacy workflow updated and audited."); await load(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The privacy workflow could not be updated."); }
     finally { setWorking(null); }
   }
@@ -56,7 +56,7 @@ export default function PrivacyPage() {
   async function downloadExport(item: ExportRow) {
     setWorking(item.id); setError(null);
     try {
-      const access = await read(await fetch(`/api/v1/governance/exports/${item.id}/signed-access`, { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrf() } })) as { access_token: string };
+      const access = await read(await fetch(`/api/v1/governance/exports/${item.id}/signed-access`, { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrfToken() } })) as { access_token: string };
       const response = await fetch(`/api/v1/governance/exports/${item.id}/download`, { credentials: "include", headers: { "X-Export-Access-Token": access.access_token } });
       if (!response.ok) throw new Error("The export is not currently available.");
       const link = window.document.createElement("a"); link.href = URL.createObjectURL(await response.blob()); link.download = `export-${item.id}.json`; link.click(); URL.revokeObjectURL(link.href);
