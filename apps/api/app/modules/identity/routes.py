@@ -143,7 +143,7 @@ def csrf_refresh(response: Response, request: Request, db: Session = Depends(get
     secure = settings.app_env in {"staging", "production"}
     max_age = 60 * 60 * 24 if session["clinic_id"] is None else 60 * 60 * 24 * 7
     response.set_cookie("csrf_token", csrf_token, secure=secure, httponly=False, samesite="lax", path="/", max_age=max_age, domain=settings.cookie_domain or None)
-    return {"data": {"refreshed": True}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"refreshed": True, "csrf_token": csrf_token}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/sessions/revoke")
