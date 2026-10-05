@@ -11,6 +11,14 @@ export function proxy(request: NextRequest) {
   const development = process.env.NODE_ENV === "development";
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", requestNonce);
+  // Browser API calls hit `/api/*` on this origin and are rewritten (next.config.ts)
+  // to the API behind an ngrok free-tier tunnel, which serves an HTML "browser warning"
+  // interstitial (ERR_NGROK_6024) to any browser User-Agent and breaks JSON fetches.
+  // The `ngrok-skip-browser-warning` request header (any value) bypasses it; inject it
+  // on proxied API requests so the forwarded request reaches the API directly.
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    requestHeaders.set("ngrok-skip-browser-warning", "true");
+  }
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   const csp = [
     "default-src 'self'",
