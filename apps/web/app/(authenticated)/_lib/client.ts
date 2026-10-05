@@ -1,9 +1,23 @@
-export type ApiEnvelope<T> = { data?: T; error?: { message?: string } };
+export type ApiEnvelope<T> = { data?: T; error?: { code?: string; message?: string } };
+
+async function refreshCsrf(): Promise<void> {
+  await fetch("/api/v1/auth/csrf", { method: "POST", credentials: "include" }).catch(() => undefined);
+}
 
 export async function api<T>(url: string, init?: globalThis.RequestInit, fallback = "The request could not be completed."): Promise<T> {
   const response = await fetch(url, { credentials: "include", cache: "no-store", ...init });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
-  if (!response.ok) throw new Error(payload?.error?.message ?? fallback);
+  if (!response.ok) {
+    if (payload?.error?.code === "CSRF_INVALID" && init?.method && init.method !== "GET") {
+      await refreshCsrf();
+      const headers = { ...Object.fromEntries(new Headers(init.headers).entries()), "X-CSRF-Token": csrfToken() };
+      const retry = await fetch(url, { ...init, headers, credentials: "include", cache: "no-store" });
+      const retryPayload = await retry.json().catch(() => null) as ApiEnvelope<T> | null;
+      if (!retry.ok) throw new Error(retryPayload?.error?.message ?? fallback);
+      return retryPayload?.data as T;
+    }
+    throw new Error(payload?.error?.message ?? fallback);
+  }
   return payload?.data as T;
 }
 

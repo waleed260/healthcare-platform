@@ -26,6 +26,7 @@ from app.modules.identity.service import (
     revoke_session,
     verify_csrf,
 )
+from app.core.security import hash_token, new_csrf_token
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -128,6 +129,21 @@ def me(request: Request, db: Session = Depends(get_db), session_token: str | Non
         """), {"clinic_id": session["clinic_id"]}).scalars().all()
         permissions = sorted(set(permissions).union(support_permissions))
     return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "display_name": session["display_name"], "email": session["normalized_email"], "is_platform_admin": bool(session.get("is_platform_admin", False)), "permissions": permissions}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/csrf")
+def csrf_refresh(response: Response, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    """Re-issue the CSRF cookie to match the current session, fixing desync."""
+    _validate_origin(request)
+    session = _session_or_401(db, session_token)
+    csrf_token = new_csrf_token()
+    db.execute(text("UPDATE sessions SET csrf_token_hash = :csrf_hash WHERE id = :id"), {"csrf_hash": hash_token(csrf_token), "id": session["id"]})
+    db.commit()
+    settings = get_settings()
+    secure = settings.app_env in {"staging", "production"}
+    max_age = 60 * 60 * 24 if session["clinic_id"] is None else 60 * 60 * 24 * 7
+    response.set_cookie("csrf_token", csrf_token, secure=secure, httponly=False, samesite="lax", path="/", max_age=max_age, domain=settings.cookie_domain or None)
+    return {"data": {"refreshed": True}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/sessions/revoke")

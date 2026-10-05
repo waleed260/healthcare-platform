@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["platform-admin"])
 
 def _platform(db: Session, session_token: str | None) -> dict:
     session = _session_or_401(db, session_token)
-    if session["clinic_id"] is not None or not db.execute(text("SELECT is_platform_admin FROM users WHERE id = :id AND status = 'active'"), {"id": session["user_id"]}).scalar_one_or_none():
+    if not db.execute(text("SELECT is_platform_admin FROM users WHERE id = :id AND status = 'active'"), {"id": session["user_id"]}).scalar_one_or_none():
         raise _error("FORBIDDEN", "Platform administrator access is required.", status.HTTP_403_FORBIDDEN)
     set_platform_context(db, session["user_id"])
     return session
