@@ -8,6 +8,7 @@ import SeoPanel from "./seo-panel";
 import { SiteHeader, SiteFooter } from "../../[clinicSlug]/site-chrome";
 import { themeStyle, buttonClass } from "../../site-theme";
 import type { SiteBrand } from "../../site-theme";
+import { api, csrfToken } from "../_lib/client";
 
 /* ────────────────────────────────────────────────────
    Types
@@ -108,13 +109,9 @@ type RightTab = "design" | "content" | "page" | "seo" | "library" | "history";
    Helpers
    ──────────────────────────────────────────────────── */
 async function request<T>(url: string, init?: RequestOptions): Promise<T> {
-  const response = await fetch(url, { credentials: "include", cache: "no-store", ...init });
-  const payload = await response.json().catch(() => null) as { data?: T; error?: { message?: string }; detail?: { error?: { message?: string } } } | null;
-  if (!response.ok) throw new Error(payload?.error?.message ?? payload?.detail?.error?.message ?? "The request could not be completed.");
-  return payload?.data as T;
+  return api<T>(url, init);
 }
-function csrf() { return document.cookie.split(";").map((p) => p.trim()).find((p) => p.startsWith("csrf_token="))?.slice("csrf_token=".length) ?? ""; }
-function writeHeaders(extra?: Record<string, string>) { return { "Content-Type": "application/json", "X-CSRF-Token": csrf(), ...extra }; }
+function writeHeaders(extra?: Record<string, string>) { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken(), ...extra }; }
 function hex(value: string | undefined, fallback: string) { return /^#[0-9a-f]{6}$/i.test(value ?? "") ? value! : fallback; }
 
 /* ────────────────────────────────────────────────────
