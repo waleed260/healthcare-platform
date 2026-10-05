@@ -540,7 +540,7 @@ export default function WebsiteEditorPage() {
         <aside className="wb-left">
           <div className="wb-left-section">
             <div className="wb-left-header">
-              <h3><span className="wb-label-caps">Pages</span></h3>
+              <h3>Pages</h3>
               <button className="wb-add-btn" onClick={() => void createPageAction()} disabled={controlsDisabled} title="Add page">+</button>
             </div>
             <div className="wb-page-list">
