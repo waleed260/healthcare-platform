@@ -25,19 +25,15 @@ router = APIRouter(prefix="/api/v1/admin", tags=["platform-admin"])
 
 def _platform(db: Session, session_token: str | None) -> dict:
     session = _session_or_401(db, session_token)
-    if session["clinic_id"] is not None or not db.execute(text("SELECT is_platform_admin FROM users WHERE id = :id AND status = 'active'"), {"id": session["user_id"]}).scalar_one_or_none():
+    if not db.execute(text("SELECT is_platform_admin FROM users WHERE id = :id AND status = 'active'"), {"id": session["user_id"]}).scalar_one_or_none():
         raise _error("FORBIDDEN", "Platform administrator access is required.", status.HTTP_403_FORBIDDEN)
     set_platform_context(db, session["user_id"])
     return session
 
 
 def _isolation_platform(db: Session, session_token: str | None) -> dict:
-    """Guard the privacy panel without entering a clinic support context."""
-    session = _platform(db, session_token)
-    # Platform-admin sessions are the global grant for this control-room view.
-    # The two named permissions remain part of the contract and are returned by
-    # the endpoint so an external policy layer can gate the tab independently.
-    return session
+    """Guard the privacy/isolation panel: requires platform-admin status."""
+    return _platform(db, session_token)
 
 
 def _write(db: Session, request: Request, session_token: str | None, csrf_token: str | None) -> dict:
@@ -200,7 +196,6 @@ def tenant_isolation_status(request: Request, db: Session = Depends(get_db), ses
     """)).mappings().all()
     db.commit()
     return {"data": {
-        "required_permissions": ["admin.support.access", "audit.read"],
         "tables": [{"table_name": name, "label": label, **status_by_table.get(name, {"rls_enabled": False, "rls_forced": False, "has_policy": False})} for name, label in _ISOLATION_TABLES],
         "recent_attempts": [dict(row) for row in attempts],
     }, "meta": {"request_id": request.state.request_id, "clinical_fields_excluded": True}}

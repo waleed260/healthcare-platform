@@ -229,8 +229,10 @@ def public_post(clinic_slug: str, post_slug: str, request: Request, db: Session 
     row = db.execute(text("SELECT slug, title, excerpt, body, published_at, seo_title, seo_description FROM website_posts WHERE clinic_id = :c AND slug = :slug AND status = 'published'"), {"c": clinic_id, "slug": post_slug}).mappings().one_or_none() if clinic_id else None
     if row is None:
         raise _error("NOT_FOUND", "Post not found.", status.HTTP_404_NOT_FOUND)
+    data = dict(row)
+    data["body"] = sanitize_rich_text(data["body"])
     db.commit()
-    return {"data": dict(row), "meta": {"request_id": request.state.request_id, "cache_control": "public, max-age=60"}}
+    return {"data": data, "meta": {"request_id": request.state.request_id, "cache_control": "public, max-age=60"}}
 
 
 # ---------------------------------------------------------------- testimonials
