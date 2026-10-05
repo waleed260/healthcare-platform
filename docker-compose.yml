@@ -78,7 +78,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-local}
       DATABASE_URL: postgresql+psycopg://healthcare_runtime:${HEALTHCARE_RUNTIME_PASSWORD:-healthcare_runtime_dev}@db:5432/healthcare
-      FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-dev-only-change-me-not-a-real-fernet-key}
+      FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:-l9E3deCfohbclkEMS8_mxCcgi-71x5H_f1f8sOmr1Jo=}
     volumes:
       - privatedata:/tmp/healthcare-private
       - publicdata:/tmp/healthcare-public
