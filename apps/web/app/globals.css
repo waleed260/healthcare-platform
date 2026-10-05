@@ -321,6 +321,7 @@ body.wb-editor-active .workspace-layout{grid-template-columns:1fr}
 .wb-topbar-left{display:flex;align-items:center;gap:10px;min-width:0}
 .wb-icon-btn{border:0;background:transparent;font-size:20px;padding:6px 10px;cursor:pointer;color:var(--muted);border-radius:6px}
 .wb-icon-btn:hover{background:var(--cream);color:var(--ink)}
+.wb-topbar-title{font:600 15px/1.2 'DM Sans',sans-serif;margin:0;letter-spacing:-.02em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
 .wb-topbar-context{display:flex;align-items:center;gap:8px;min-width:0}
 .wb-website-select{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 10px;font:14px/1.3 'DM Sans',sans-serif;color:var(--ink);max-width:220px;text-overflow:ellipsis}
 .wb-status-badge{font:11px/1 'DM Mono',monospace;padding:4px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
@@ -352,7 +353,7 @@ body.wb-editor-active .workspace-layout{grid-template-columns:1fr}
 .wb-left{display:flex;flex-direction:column;background:#fff;border-right:1px solid var(--line);overflow-y:auto;min-height:0}
 .wb-left-section{border-bottom:1px solid var(--line)}
 .wb-left-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;gap:8px}
-.wb-left-header h3{font:600 13px/1.2 'DM Sans',sans-serif;color:var(--ink);letter-spacing:.03em;margin:0}
+.wb-left-header h3{font:600 13px/1.2 'DM Sans',sans-serif;color:var(--ink);letter-spacing:.03em;margin:0;text-transform:none}
 .wb-label-caps{text-transform:uppercase}
 .wb-add-btn{border:0;background:var(--leaf);color:#fff;width:26px;height:26px;border-radius:6px;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .wb-add-btn:hover:not(:disabled){background:#1e3e35}
@@ -499,8 +500,9 @@ legend{font-size:var(--text-xs)}
 .library-card small,.managed-section-header small,.setup-card small{font-size:var(--text-xs)}
 .site-footer-base,.site-footer-base a{font-size:var(--text-xs)}
 .wb-right .site-footer-base,.wb-right .site-footer-base a{font-size:var(--text-xs)}
+.wb-preview-site .public-footer,.wb-preview-site .public-footer a{font-size:max(12px,var(--text-xs))}
 .wb-preview-site .site-footer-base,.wb-preview-site .site-footer-base a{font-size:max(var(--text-xs),12px)}
-.wb-preview-site .public-footer{font-size:max(12px,var(--text-xs))}
+.wb-right .public-footer,.wb-right .public-footer a{font-size:max(12px,var(--text-xs))}
 
 /* audit: fewer button styles */
 .text-control,.ghost-button,.icon-button{background:transparent;border:1px solid var(--line);border-radius:8px;color:var(--muted);font:var(--text-xs) 'DM Mono',monospace;padding:7px 10px}

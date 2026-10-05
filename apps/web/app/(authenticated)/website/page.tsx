@@ -502,8 +502,8 @@ export default function WebsiteEditorPage() {
       {/* ═══ TOP BAR ═══ */}
       <header className="wb-topbar">
         <div className="wb-topbar-left">
-          <h1 className="sr-only">{website.name} — Website editor</h1>
           <button className="wb-icon-btn" onClick={() => { setWebsite(null); void load(); }} title="Exit editor">←</button>
+          <h1 className="wb-topbar-title">{website.name}</h1>
           <div className="wb-topbar-context">
             <select className="wb-website-select" value={website.id} onChange={(e) => { const next = websites.find((w) => w.id === e.target.value); if (next) void loadWebsite(next); }}>
               {websites.map((w) => <option value={w.id} key={w.id}>{w.name}</option>)}
