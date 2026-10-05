@@ -277,6 +277,7 @@ export default function WebsiteEditorPage() {
       const [pageRows, versionRows] = await Promise.all([request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`)]);
       setVersions(versionRows ?? []);
       const allPages = Array.isArray(pageRows) ? pageRows : [];
+      allPages.sort((a, b) => a.slug === "home" ? -1 : b.slug === "home" ? 1 : a.title.localeCompare(b.title));
       setPages(allPages);
       const firstPage = allPages.find((p) => p.id === pageIdRef.current) ?? allPages[0] ?? null;
       pageIdRef.current = firstPage?.id ?? null;
@@ -521,7 +522,7 @@ export default function WebsiteEditorPage() {
         </div>
         <div className="wb-topbar-right">
           <span className="wb-topbar-hint">{warning ? `⚠ ${warning}` : `v${website.version} · ${templateLabel(website.template_key)}`}</span>
-          <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const token = await request<{ token: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/api/v1/public/sites/preview?token=${token.token}`, "_blank"); } catch { setError("Preview could not be opened."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
+          <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const token = await request<{ token: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/api/v1/public/sites/preview?token=${token.token}`, "_blank"); } catch { setError("Preview could not be opened — check that the API is reachable."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
           <button className="wb-btn wb-btn-secondary" onClick={() => void load()} disabled={busy !== null}>Refresh</button>
           <button className="wb-btn wb-btn-primary" style={{ fontWeight: 600 }} onClick={() => void publish()} disabled={!canPublish || !validation?.valid || busy !== null} title={!canPublish ? "Ask an owner to publish" : warning ?? "Publish this draft"}>
             {busy === "publish" ? "Publishing…" : "Publish"} <span>↑</span>
@@ -555,7 +556,7 @@ export default function WebsiteEditorPage() {
 
           <div className="wb-left-section">
             <div className="wb-left-header">
-              <h3><span className="wb-label-caps">Sections</span>{page ? ` · ${page.title}` : ""}</h3>
+              <h3>Sections{page ? ` · ${page.title}` : ""}</h3>
               <button className="wb-add-btn" onClick={() => setShowSectionLibrary(true)} disabled={controlsDisabled || !page} title="Add section">+</button>
             </div>
             <div className="wb-section-tree">
