@@ -42,6 +42,8 @@ export default function OperationsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
   const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [pushState, setPushState] = useState<PushState>("checking");
   const [pushKey, setPushKey] = useState<string | null>(null);
 
@@ -51,7 +53,7 @@ export default function OperationsPage() {
     try {
       const followCursor = append ? nextFollowUp : null;
       const notificationCursor = append ? nextNotification : null;
-      const followUrl = `/api/v1/operations/follow-ups?limit=25${followCursor ? `&cursor=${encodeURIComponent(followCursor)}` : ""}`;
+      const followUrl = `/api/v1/operations/follow-ups?limit=25${priorityFilter ? `&priority=${encodeURIComponent(priorityFilter)}` : ""}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ""}${followCursor ? `&cursor=${encodeURIComponent(followCursor)}` : ""}`;
       const notificationUrl = `/api/v1/operations/notifications?limit=25${notificationCursor ? `&cursor=${encodeURIComponent(notificationCursor)}` : ""}`;
       const [followResponse, notificationResponse] = await Promise.all([
         fetch(followUrl, { credentials: "include", cache: "no-store" }),
@@ -72,7 +74,7 @@ export default function OperationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [nextFollowUp, nextNotification]);
+  }, [nextFollowUp, nextNotification, priorityFilter, statusFilter]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -177,6 +179,10 @@ export default function OperationsPage() {
         <div className="dash-topline"><div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div><div style={{ display: "flex", gap: 10 }}><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button><button className="button button-primary" type="button" onClick={() => setAddFollowUpOpen(true)}>Create follow-up <span>+</span></button></div></div>
         <p className="queue-intro">A focused, permission-scoped handoff for tasks that need attention. Patient details stay in the protected patient workspace.</p>
         {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}{notice && <div className="success-alert" role="status">{notice}</div>}
+        <div className="operations-filters">
+          <label>Priority<select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="">All</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+          <label>Status<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">All open</option><option value="due">Due</option><option value="contacted">Contacted</option><option value="booked">Booked</option><option value="completed">Completed</option></select></label>
+        </div>
         <div className="operations-grid">
           <section className="detail-card operations-card" aria-labelledby="follow-up-heading"><div className="card-heading"><div><p className="eyebrow">ACTION QUEUE</p><h2 id="follow-up-heading">Follow-ups</h2></div><span className="directory-count">{followUps.length} shown</span></div>{loading && followUps.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading follow-ups</strong><span>Checking your scoped task list…</span></div>}{!loading && !error && followUps.length === 0 && <div className="dashboard-empty"><strong>No follow-ups need attention</strong><span>New tasks will appear here when they are assigned.</span></div>}{followUps.length > 0 && <div className="operations-list">{followUps.map((item) => <article className="operations-row" key={item.id}><div><strong>{item.reason}</strong><small>Due {formatDate(item.due_at)} · {item.priority} priority · {item.status}</small></div><button className="button button-secondary" type="button" onClick={() => void complete(item)} disabled={working === item.id || item.status === "completed"}>{working === item.id ? "Saving…" : "Complete"}</button></article>)}</div>}{nextFollowUp && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more follow-ups <span>↓</span></button>}</section>
           <section className="detail-card operations-card" aria-labelledby="notification-heading"><div className="card-heading"><div><p className="eyebrow">INBOX</p><h2 id="notification-heading">Notifications</h2></div><span className="directory-count">{notifications.filter((item) => !item.read_at).length} unread</span></div>{loading && notifications.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading notifications</strong><span>Checking your private inbox…</span></div>}{!loading && !error && notifications.length === 0 && <div className="dashboard-empty"><strong>Your inbox is clear</strong><span>Operational alerts will appear here.</span></div>}{notifications.length > 0 && <div className="operations-list">{notifications.map((item) => <article className={item.read_at ? "operations-row notification-read" : "operations-row notification-unread"} key={item.id}><div><strong>{item.title}</strong><small>{item.body} · {formatDate(item.created_at)}</small></div>{!item.read_at && <button className="ghost-button" type="button" onClick={() => void markRead(item)} disabled={working === item.id}>Mark read <span>✓</span></button>}</article>)}</div>}{nextNotification && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more notifications <span>↓</span></button>}</section>

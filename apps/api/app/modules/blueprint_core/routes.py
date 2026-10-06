@@ -126,6 +126,24 @@ def lead_list(request: Request, status_filter: str | None = Query(default=None, 
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
+@lead_router.get("/{lead_id}")
+def lead_detail(lead_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "lead.read")
+    _require_lead(db, session, lead_id)
+    row = db.execute(text("""
+        SELECT l.id, l.full_name, l.normalized_email, l.normalized_phone, l.source, l.campaign,
+               l.status, l.specialty_id, l.requested_service_id, l.assigned_to_user_id,
+               l.appointment_id, l.converted_to_patient_id, l.lost_reason, l.notes,
+               l.created_at, l.updated_at, l.version
+        FROM leads l
+        WHERE l.clinic_id = :clinic_id AND l.id = :lead_id AND l.archived_at IS NULL
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
 @lead_router.post("", status_code=status.HTTP_201_CREATED)
 def lead_create(payload: LeadCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)

@@ -229,9 +229,10 @@ def tag_create(payload: TagCreate, request: Request, db: Session = Depends(get_d
 
 
 @router.get("")
-def patient_list(request: Request, search: str | None = Query(default=None, max_length=200), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def patient_list(request: Request, search: str | None = Query(default=None, max_length=200), status_filter: str | None = Query(default=None, alias="status", max_length=40), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.read")
     term = (search or "").strip()
+    status_value = (status_filter or "").strip().lower() or None
     cursor_values = cursor_payload(cursor, "patients", uuid_keys=("id",))
     if cursor and cursor_values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid or expired.", status.HTTP_400_BAD_REQUEST)
@@ -243,8 +244,9 @@ def patient_list(request: Request, search: str | None = Query(default=None, max_
           {_patient_scope_sql('p')}
           AND (CAST(:after_name AS text) IS NULL OR p.full_name > CAST(:after_name AS text) OR (p.full_name = CAST(:after_name AS text) AND p.id > CAST(:after_id AS uuid)))
           AND (:term = '' OR p.full_name ILIKE :like_term ESCAPE '\\' OR p.normalized_email = :email OR p.normalized_phone = :phone)
+          AND (:status_value IS NULL OR p.status = :status_value)
         ORDER BY p.full_name, p.id LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_name": cursor_values.get("full_name"), "after_id": cursor_values.get("id"), "term": term, "like_term": _like_contains(term), "email": _normalize_email(term), "phone": _normalize_phone(term), "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_name": cursor_values.get("full_name"), "after_id": cursor_values.get("id"), "term": term, "like_term": _like_contains(term), "email": _normalize_email(term), "phone": _normalize_phone(term), "status_value": status_value, "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = None
