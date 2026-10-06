@@ -20,7 +20,7 @@ const startOfWeek = (date: Date) => addDays(date, -((date.getDay() + 6) % 7));
 const formatDay = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, options).format(date);
 const formatTime = (value: string) => formatDay(new Date(value), { hour: "numeric", minute: "2-digit" });
 const errorMessage = async (response: Response, fallback: string) => { const payload = await response.json().catch(() => null) as { error?: { message?: string }; detail?: { error?: { message?: string } } } | null; return payload?.error?.message ?? payload?.detail?.error?.message ?? fallback; };
-async function api<T>(url: string, init?: RequestOptions): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (!response.ok) throw new Error(await errorMessage(response, "The schedule request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
+async function api<T>(url: string, init?: RequestOptions): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (response.status === 401) { window.location.href = "/login"; throw new Error("Session expired."); } if (!response.ok) throw new Error(await errorMessage(response, "The schedule request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
 import { csrfToken } from "../_lib/client";
 function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
 

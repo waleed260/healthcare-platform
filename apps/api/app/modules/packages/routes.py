@@ -54,6 +54,7 @@ def package_list(request: Request, db: Session = Depends(get_db), session_token:
         WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL
         GROUP BY p.id ORDER BY p.name, p.id
     """), {"clinic_id": session["clinic_id"]}).mappings().all()
+    db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
 
@@ -125,6 +126,7 @@ def patient_package_list(patient_id: UUID, request: Request, db: Session = Depen
         FROM patient_packages pp JOIN package_definitions p ON p.clinic_id = pp.clinic_id AND p.id = pp.package_definition_id
         WHERE pp.clinic_id = :clinic_id AND pp.patient_id = :patient_id ORDER BY pp.purchased_at DESC, pp.id DESC
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+    db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
 

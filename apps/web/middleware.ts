@@ -6,7 +6,7 @@ function nonce(): string {
   return btoa(String.fromCharCode(...bytes));
 }
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const requestNonce = nonce();
   const development = process.env.NODE_ENV === "development";
   const requestHeaders = new Headers(request.headers);

@@ -12,6 +12,10 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
   const response = await fetch(url, { credentials: "include", cache: "no-store", ...init });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (!response.ok) {
+    if (response.status === 401 && payload?.error?.code === "SESSION_EXPIRED") {
+      window.location.href = "/login";
+      throw new Error("Session expired — redirecting to login.");
+    }
     if (payload?.error?.code === "CSRF_INVALID" && init?.method && init.method !== "GET") {
       const freshToken = await refreshCsrf();
       const token = freshToken ?? csrfToken();
@@ -19,7 +23,13 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
       h.set("X-CSRF-Token", token);
       const retry = await fetch(url, { ...init, headers: h, credentials: "include", cache: "no-store" });
       const retryPayload = await retry.json().catch(() => null) as ApiEnvelope<T> | null;
-      if (!retry.ok) throw new Error(retryPayload?.error?.message ?? fallback);
+      if (!retry.ok) {
+        if (retry.status === 401) {
+          window.location.href = "/login";
+          throw new Error("Session expired — redirecting to login.");
+        }
+        throw new Error(retryPayload?.error?.message ?? fallback);
+      }
       return retryPayload?.data as T;
     }
     throw new Error(payload?.error?.message ?? fallback);
@@ -33,7 +43,13 @@ export type Page<T> = { data: T[]; nextCursor: string | null };
 export async function apiPage<T>(url: string, fallback = "The request could not be completed."): Promise<Page<T>> {
   const response = await fetch(url, { credentials: "include", cache: "no-store" });
   const payload = await response.json().catch(() => null) as { data?: T[]; meta?: { next_cursor?: string | null }; error?: { message?: string } } | null;
-  if (!response.ok) throw new Error(payload?.error?.message ?? fallback);
+  if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/login";
+      throw new Error("Session expired — redirecting to login.");
+    }
+    throw new Error(payload?.error?.message ?? fallback);
+  }
   return { data: Array.isArray(payload?.data) ? (payload!.data as T[]) : [], nextCursor: payload?.meta?.next_cursor ?? null };
 }
 
