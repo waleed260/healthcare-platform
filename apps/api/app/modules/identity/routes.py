@@ -128,8 +128,11 @@ def me(request: Request, db: Session = Depends(get_db), session_token: str | Non
               AND s.id::text = NULLIF(current_setting('app.support_access_id', true), '')
         """), {"clinic_id": session["clinic_id"]}).scalars().all()
         permissions = sorted(set(permissions).union(support_permissions))
+    clinic_slug = None
+    if session["clinic_id"] is not None:
+        clinic_slug = db.execute(text("SELECT slug FROM clinics WHERE id = :id"), {"id": session["clinic_id"]}).scalar_one_or_none()
     db.commit()
-    return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "display_name": session["display_name"], "email": session["normalized_email"], "is_platform_admin": bool(session.get("is_platform_admin", False)), "permissions": permissions}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "clinic_slug": clinic_slug, "display_name": session["display_name"], "email": session["normalized_email"], "is_platform_admin": bool(session.get("is_platform_admin", False)), "permissions": permissions}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/csrf")

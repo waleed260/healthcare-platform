@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Session = { display_name?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
+type Session = { display_name?: string; email?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
 type Notification = { id: string; read_at: string | null };
 type NavItem = { href: string; label: string; icon: string; permission: string };
 
@@ -73,6 +73,22 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const visibleItems = useMemo(() => navItems.filter((item) => !session || !item.permission || permissions.includes(item.permission)), [permissions, session]);
   const unreadCount = notifications.filter((item) => !item.read_at).length;
   const initials = (session?.display_name ?? "Care team").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function close(e: MouseEvent) { if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false); }
+    function escape(e: KeyboardEvent) { if (e.key === "Escape") setAccountOpen(false); }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+  }, [accountOpen]);
+
+  const signOut = useCallback(async () => {
+    try { await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" }); } catch { /* continue */ }
+    window.location.href = "/login";
+  }, []);
 
   return <div className="workspace-layout">
     <aside className="workspace-sidebar" aria-label="Authenticated workspace navigation">
@@ -82,7 +98,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
       <div className="workspace-sidebar-foot"><span className="workspace-status-dot" />Live clinic data</div>
     </aside>
     <div className="workspace-stage">
-      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "Signed in" : "Checking access…"}</p><span className="workspace-greeting">{greeting()}, <em>{session?.display_name ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><button className="workspace-avatar" type="button" aria-label="Open account menu">{initials}</button></div></header>
+      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "Signed in" : "Checking access…"}</p><span className="workspace-greeting">{greeting()}, <em>{session?.display_name ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><div ref={accountRef} style={{ position: "relative" }}><button className="workspace-avatar" type="button" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((v) => !v)}>{initials}</button>{accountOpen && <div className="account-menu" role="menu"><div className="account-menu-header"><strong>{session?.display_name ?? "Team member"}</strong>{session?.email && <small>{session.email}</small>}{session?.is_platform_admin && <span className="account-menu-badge">Platform admin</span>}</div><hr /><Link className="account-menu-item" href="/security" role="menuitem" onClick={() => setAccountOpen(false)}>⚿ Security</Link><Link className="account-menu-item" href="/privacy" role="menuitem" onClick={() => setAccountOpen(false)}>◇ Privacy</Link><hr /><button className="account-menu-item account-menu-signout" role="menuitem" onClick={signOut}>Sign out</button></div>}</div></div></header>
       {connectionIssue && <div className="workspace-connection-alert" role="status">Your workspace connection could not be checked. Protected pages will explain how to retry.</div>}
       <div className="workspace-body">{children}</div>
     </div>

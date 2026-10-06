@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { SiteFooter, SiteHeader } from "./site-chrome";
 import FormEmbed from "./form-embed";
@@ -68,7 +68,9 @@ function LeadForm({ clinicSlug }: { clinicSlug: string }) {
 
 export default function PublicSite({ pageSlug }: { pageSlug?: string }) {
   const params = useParams<{ clinicSlug: string }>();
+  const searchParams = useSearchParams();
   const clinicSlug = decodeURIComponent(params.clinicSlug);
+  const previewToken = searchParams.get("preview_token");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [catalog, setCatalog] = useState<PublicCatalog | null>(null);
   const [testimonials, setTestimonials] = useState<Array<Record<string, unknown>>>([]);
@@ -76,7 +78,13 @@ export default function PublicSite({ pageSlug }: { pageSlug?: string }) {
   useEffect(() => { void fetch(`/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}/results`, { cache: "no-store" }).then((response) => response.ok ? response.json() : { data: [] }).then((payload) => setResults(Array.isArray(payload.data) ? payload.data as ResultMedia[] : [])).catch(() => undefined); }, [clinicSlug]);
   useEffect(() => { void fetch(`/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}/testimonials`, { cache: "no-store" }).then((response) => response.ok ? response.json() : { data: [] }).then((payload) => setTestimonials(Array.isArray(payload.data) ? payload.data : [])).catch(() => undefined); }, [clinicSlug]);
   const [missing, setMissing] = useState(false);
-  useEffect(() => { setSnapshot(null); setCatalog(null); setMissing(false); void fetch(`/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error("missing"); const payload = await response.json(); setSnapshot(payload.data.snapshot as Snapshot); const catalogResponse = await fetch(`/api/v1/public/catalog?clinic_slug=${encodeURIComponent(clinicSlug)}&limit=100`, { cache: "no-store" }); if (catalogResponse.ok) { const catalogPayload = await catalogResponse.json(); setCatalog(catalogPayload.data as PublicCatalog); } }).catch(() => setMissing(true)); }, [clinicSlug]);
+  useEffect(() => {
+    setSnapshot(null); setCatalog(null); setMissing(false);
+    const siteUrl = previewToken
+      ? `/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}/preview?preview_token=${encodeURIComponent(previewToken)}`
+      : `/api/v1/public/sites/slug/${encodeURIComponent(clinicSlug)}`;
+    void fetch(siteUrl, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error("missing"); const payload = await response.json(); setSnapshot(payload.data.snapshot as Snapshot); const catalogResponse = await fetch(`/api/v1/public/catalog?clinic_slug=${encodeURIComponent(clinicSlug)}&limit=100`, { cache: "no-store" }); if (catalogResponse.ok) { const catalogPayload = await catalogResponse.json(); setCatalog(catalogPayload.data as PublicCatalog); } }).catch(() => setMissing(true));
+  }, [clinicSlug, previewToken]);
   const page = useMemo(() => pageSlug ? snapshot?.pages.find((item) => item.slug === pageSlug) : snapshot?.pages.find((item) => item.slug === "home") ?? snapshot?.pages[0], [snapshot, pageSlug]);
   const redirect = useMemo(() => pageSlug ? snapshot?.redirects?.find((item) => item.from_path === `/${pageSlug}`) : undefined, [snapshot, pageSlug]);
   useEffect(() => {
@@ -120,5 +128,5 @@ export default function PublicSite({ pageSlug }: { pageSlug?: string }) {
   if (!snapshot || !page) return <main className="public-loading"><p className="public-eyebrow">LOADING CLINIC</p><p role="status">Preparing your visit…</p></main>;
   const brand = snapshot.brand ?? {};
   const template = templateKey(snapshot.template_key);
-  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}><SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => { const hiddenOn = [section.id && (brand.tablet?.hide_section_ids ?? []).includes(section.id) ? "hide-tablet" : "", section.id && (brand.mobile?.hide_section_ids ?? []).includes(section.id) ? "hide-mobile" : ""].filter(Boolean).join(" "); const block = <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} testimonials={testimonials} results={results} brand={brand} />; return hiddenOn ? <div key={`${section.section_type}-${index}`} className={hiddenOn}>{block}</div> : block; })}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
+  return <main className={`public-site public-site-${template}${brand.theme ? " has-theme" : ""}`} style={themeStyle(brand)}>{previewToken && <div style={{ background: "#274c42", color: "#fff", textAlign: "center", padding: "6px 16px", fontSize: "0.8rem", fontWeight: 600, letterSpacing: "0.04em" }}>DRAFT PREVIEW</div>}<SiteHeader brand={brand} clinicSlug={clinicSlug} /><div className="public-shell"><div className="public-clinic-mark"><span className="public-eyebrow">{template.replaceAll("_", " ")}</span><span>{page.title}</span></div>{page.sections.filter((section) => section.is_visible !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((section, index) => { const hiddenOn = [section.id && (brand.tablet?.hide_section_ids ?? []).includes(section.id) ? "hide-tablet" : "", section.id && (brand.mobile?.hide_section_ids ?? []).includes(section.id) ? "hide-mobile" : ""].filter(Boolean).join(" "); const block = <SectionBlock key={`${section.section_type}-${index}`} section={section} clinicSlug={clinicSlug} template={template} catalog={catalog} testimonials={testimonials} results={results} brand={brand} />; return hiddenOn ? <div key={`${section.section_type}-${index}`} className={hiddenOn}>{block}</div> : block; })}<LeadForm clinicSlug={clinicSlug} /></div><SiteFooter brand={brand} title={page.title} clinicSlug={clinicSlug} /></main>;
 }

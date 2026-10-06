@@ -249,8 +249,18 @@
 /* 1 — no text below 12px; map stragglers onto the shared scale */
 .workspace-label{font-size:var(--text-xs);letter-spacing:.1em}
 .workspace-context{font-size:var(--text-xs);letter-spacing:.08em;text-transform:none}
-.workspace-avatar{font-size:var(--text-xs)}
+.workspace-avatar{font-size:var(--text-xs);border-radius:6px}
 .workspace-notifications b{font-size:11px;width:18px;height:18px}
+.account-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:50;min-width:220px;background:var(--cream);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);padding:6px 0;font-size:13px}
+.account-menu-header{padding:12px 16px}
+.account-menu-header strong{display:block;font-size:13px;color:var(--ink)}
+.account-menu-header small{display:block;color:var(--stone);font-size:11px;margin-top:2px}
+.account-menu-badge{display:inline-block;margin-top:6px;padding:2px 8px;font-size:10px;font-weight:600;letter-spacing:.04em;background:var(--mint);color:var(--leaf);border-radius:4px}
+.account-menu hr{border:none;border-top:1px solid var(--line);margin:4px 0}
+.account-menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 16px;background:none;border:0;color:var(--ink);font-size:13px;cursor:pointer;text-decoration:none}
+.account-menu-item:hover{background:var(--mint)}
+.account-menu-signout{color:var(--coral);font-weight:500}
+.account-menu-signout:hover{background:#fbe4da}
 .stale-note{font-size:var(--text-xs)}
 .bar-col small{font-size:var(--text-xs)}
 .queue-action{font-size:var(--text-xs)}
