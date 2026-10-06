@@ -7,8 +7,17 @@ import { useRouter } from "next/navigation";
 type Phase = "login" | "mfa" | "enroll";
 
 function csrfToken(): string {
-  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : "";
+  const parts = document.cookie.split(";").map(c => c.trim()).filter(c => c.startsWith("csrf_token="));
+  const last = parts[parts.length - 1];
+  return last ? decodeURIComponent(last.slice(11)) : "";
+}
+
+async function freshCsrf(): Promise<string> {
+  try {
+    const r = await fetch("/api/v1/auth/csrf", { method: "POST", credentials: "include" });
+    const body = await r.json().catch(() => null) as { data?: { csrf_token?: string } } | null;
+    return body?.data?.csrf_token ?? csrfToken();
+  } catch { return csrfToken(); }
 }
 
 async function apiMessage(response: Response): Promise<string> {
@@ -29,7 +38,8 @@ export default function LoginPage() {
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
   async function beginEnrollment() {
-    const enrollmentResponse = await fetch("/api/v1/auth/mfa/enroll", { method: "POST", headers: { "X-CSRF-Token": csrfToken() }, credentials: "include" });
+    const token = await freshCsrf();
+    const enrollmentResponse = await fetch("/api/v1/auth/mfa/enroll", { method: "POST", headers: { "X-CSRF-Token": token }, credentials: "include" });
     if (!enrollmentResponse.ok) throw new Error(await apiMessage(enrollmentResponse));
     setEnrollment(await enrollmentResponse.json() as { secret: string; recovery_codes: string[] });
     setPhase("enroll");
@@ -54,7 +64,8 @@ export default function LoginPage() {
       if (!response.ok) throw new Error(await apiMessage(response));
       const payload = await response.json() as { data: { mfa_required: boolean; mfa_enrollment_required: boolean } };
       if (payload.data.mfa_enrollment_required) {
-        const enrollmentResponse = await fetch("/api/v1/auth/mfa/enroll", { method: "POST", headers: { "X-CSRF-Token": csrfToken() }, credentials: "include" });
+        const token = await freshCsrf();
+        const enrollmentResponse = await fetch("/api/v1/auth/mfa/enroll", { method: "POST", headers: { "X-CSRF-Token": token }, credentials: "include" });
         if (!enrollmentResponse.ok) throw new Error(await apiMessage(enrollmentResponse));
         const enrollmentPayload = await enrollmentResponse.json() as { secret: string; recovery_codes: string[] };
         setEnrollment(enrollmentPayload);
@@ -68,7 +79,8 @@ export default function LoginPage() {
     event.preventDefault();
     setBusy(true); setError(null);
     try {
-      const response = await fetch(`/api/v1/auth/mfa/${recovery ? "recover" : "verify"}`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }, credentials: "include", body: JSON.stringify({ code }) });
+      const token = await freshCsrf();
+      const response = await fetch(`/api/v1/auth/mfa/${recovery ? "recover" : "verify"}`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": token }, credentials: "include", body: JSON.stringify({ code }) });
       if (!response.ok) throw new Error(await apiMessage(response));
       router.push("/dashboard");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to verify this code."); }
