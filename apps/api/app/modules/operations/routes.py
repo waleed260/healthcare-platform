@@ -398,7 +398,7 @@ def queue_reorder(queue_id: str, payload: QueueReorder, request: Request, db: Se
 
 
 @router.get("/follow-ups")
-def follow_up_list(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def follow_up_list(request: Request, priority_filter: str | None = Query(default=None, alias="priority", max_length=20), status_filter: str | None = Query(default=None, alias="status", max_length=20), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "followup.read")
     cursor_values = decode_cursor(cursor, "follow-ups") if cursor else None
     if cursor and cursor_values is None:
@@ -423,13 +423,15 @@ def follow_up_list(request: Request, cursor: str | None = Query(default=None, ma
           AND (a.branch_id IS NULL
                OR NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
                OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
+          AND (:priority_filter IS NULL OR f.priority = :priority_filter)
+          AND (:status_filter IS NULL OR f.status = :status_filter)
           AND (:after_due_at IS NULL OR f.due_at > :after_due_at
                OR (f.due_at = :after_due_at AND f.priority < :after_priority)
                OR (f.due_at = :after_due_at AND f.priority = :after_priority AND f.created_at > :after_created_at)
                OR (f.due_at = :after_due_at AND f.priority = :after_priority AND f.created_at = :after_created_at AND f.id > :after_id))
         ORDER BY f.due_at, f.priority DESC, f.created_at, f.id
         LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "after_due_at": after_due_at, "after_priority": after_priority, "after_created_at": after_created_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "priority_filter": priority_filter, "status_filter": status_filter, "after_due_at": after_due_at, "after_priority": after_priority, "after_created_at": after_created_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = None
