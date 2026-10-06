@@ -35,6 +35,7 @@ def list_service_templates(request: Request, specialty_id: str | None = Query(de
           ))
         ORDER BY COALESCE(s.name, ''), t.name, t.id
     """), {"clinic_id": session["clinic_id"], "specialty_id": specialty_id}).mappings().all()
+    db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
 

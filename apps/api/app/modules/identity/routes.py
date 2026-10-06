@@ -128,6 +128,7 @@ def me(request: Request, db: Session = Depends(get_db), session_token: str | Non
               AND s.id::text = NULLIF(current_setting('app.support_access_id', true), '')
         """), {"clinic_id": session["clinic_id"]}).scalars().all()
         permissions = sorted(set(permissions).union(support_permissions))
+    db.commit()
     return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "display_name": session["display_name"], "email": session["normalized_email"], "is_platform_admin": bool(session.get("is_platform_admin", False)), "permissions": permissions}, "meta": {"request_id": request.state.request_id}}
 
 

@@ -32,6 +32,7 @@ export default function PatientsPage() {
       if (cursor) params.set("cursor", cursor);
       const query = params.toString();
       const response = await fetch(`/api/v1/patients${query ? `?${query}` : ""}`, { credentials: "include", cache: "no-store" });
+      if (response.status === 401) { window.location.href = "/login"; return; }
       const payload = (await response.json()) as PatientPage & { error?: { message?: string } };
       if (!response.ok) throw new Error(responseMessage(response, payload));
       setPatients((current) => append ? [...current, ...(payload.data ?? [])] : (payload.data ?? []));

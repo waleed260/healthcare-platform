@@ -34,6 +34,10 @@ const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good 
 async function readJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, { credentials: "include", cache: "no-store" });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return null;
+    }
     if (!response.ok) return null;
     const payload = await response.json() as { data?: T };
     return payload.data ?? null;

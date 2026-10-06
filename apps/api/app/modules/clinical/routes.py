@@ -60,6 +60,7 @@ def plan_list(patient_id: UUID | None = None, cursor: str | None = Query(default
         last = rows[limit - 1]
         next_cursor = encode_cursor("treatment-plans", {"created_at": last["created_at"].isoformat(), "id": str(last["id"])})
         rows = rows[:limit]
+    db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"next_cursor": next_cursor}}
 
 
@@ -95,6 +96,7 @@ def plan_update(plan_id: UUID, payload: TreatmentPlanUpdate, request: Request, d
 def item_list(plan_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "clinical.read")
     rows = db.execute(text("SELECT id, plan_id, service_id, appointment_id, assigned_doctor_id, title, instructions, status, sort_order, due_on, completed_at, version, created_at, updated_at FROM treatment_plan_items WHERE clinic_id = :clinic_id AND plan_id = :plan_id ORDER BY sort_order, created_at, id"), {"clinic_id": session["clinic_id"], "plan_id": plan_id}).mappings().all()
+    db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
 
@@ -136,6 +138,7 @@ def prescription_list(patient_id: UUID, request: Request, db: Session = Depends(
         FROM prescriptions WHERE clinic_id = :clinic_id AND patient_id = :patient_id
         ORDER BY prescribed_at DESC, id DESC
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).mappings().all()
+    db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
 

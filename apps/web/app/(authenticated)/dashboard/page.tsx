@@ -22,6 +22,7 @@ const dayShort = (v: string) => new Intl.DateTimeFormat(undefined, { weekday: "s
 async function getData<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url, { credentials: "include", cache: "no-store" });
+    if (r.status === 401) { window.location.href = "/login"; return null; }
     if (!r.ok) return null;
     const p = (await r.json().catch(() => null)) as { data?: T } | null;
     return (p?.data ?? null) as T | null;
@@ -42,6 +43,7 @@ export default function DashboardPage() {
     setLoading(true); setError(null);
     try {
       const summaryResponse = await fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" });
+      if (summaryResponse.status === 401) { window.location.href = "/login"; return; }
       const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
       if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
       setSummary(summaryPayload?.data ?? null);

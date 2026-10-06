@@ -55,6 +55,7 @@ export default function OperationsPage() {
         fetch(followUrl, { credentials: "include", cache: "no-store" }),
         fetch(notificationUrl, { credentials: "include", cache: "no-store" }),
       ]);
+      if (followResponse.status === 401 || notificationResponse.status === 401) { window.location.href = "/login"; return; }
       const followPayload = await followResponse.json();
       const notificationPayload = await notificationResponse.json();
       if (!followResponse.ok) throw new Error(message(followResponse, followPayload));
