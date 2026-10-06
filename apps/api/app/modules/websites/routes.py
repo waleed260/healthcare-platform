@@ -569,14 +569,17 @@ def domain_list(request: Request, cursor: str | None = Query(default=None, max_l
 def preview_token_create(website_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _authorized(db, session_token, "website.read")
     _csrf(request, session, csrf_token)
-    website = db.execute(text("SELECT id FROM websites WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": website_id}).scalar_one_or_none()
+    website = db.execute(text("SELECT id, draft_version_id FROM websites WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": website_id}).mappings().one_or_none()
     if website is None:
         raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    if website["draft_version_id"] is None:
+        refresh_draft_snapshot(db, session["clinic_id"], website_id, session["user_id"])
+    clinic_slug = db.execute(text("SELECT slug FROM clinics WHERE id = :id"), {"id": session["clinic_id"]}).scalar_one()
     token = secrets.token_urlsafe(32)
     row = db.execute(text("INSERT INTO website_preview_tokens (clinic_id, website_id, token_hash, expires_at, created_by) VALUES (:clinic_id, :website_id, :token_hash, now() + interval '15 minutes', :user_id) RETURNING id, expires_at"), {"clinic_id": session["clinic_id"], "website_id": website_id, "token_hash": hash_token(token), "user_id": session["user_id"]}).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.preview_token_create", entity_type="website", entity_id=website_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
-    return {"data": {"preview_token": token, "expires_at": row["expires_at"]}, "meta": {"request_id": request.state.request_id, "token_returned_once": True}}
+    return {"data": {"preview_token": token, "clinic_slug": clinic_slug, "expires_at": row["expires_at"]}, "meta": {"request_id": request.state.request_id, "token_returned_once": True}}
 
 
 @router.post("/domains", status_code=status.HTTP_201_CREATED)
@@ -711,6 +714,34 @@ def public_media(hostname: str, media_id: UUID, request: Request, db: Session = 
         raise _error("NOT_FOUND", "Website asset not found.", status.HTTP_404_NOT_FOUND) from exc
     db.commit()
     return Response(content=content, media_type=row["mime_type"], headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@public_router.get("/slug/{clinic_slug}/preview")
+def public_site_preview_by_slug(clinic_slug: str, response: Response, request: Request, preview_token: str = Query(min_length=20, max_length=200), db: Session = Depends(get_db)) -> dict:
+    """Return the draft snapshot for the frontend preview route (slug-based)."""
+    normalized = clinic_slug.strip().casefold()
+    if len(normalized) > 120 or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", normalized):
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    clinic_id = db.execute(
+        text("SELECT id FROM clinics WHERE slug = :slug AND status = 'active' AND archived_at IS NULL"),
+        {"slug": normalized},
+    ).scalar_one_or_none()
+    if clinic_id is None:
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    set_tenant_context(db, clinic_id)
+    row = db.execute(text("""
+        SELECT w.id, v.id AS version_id, v.snapshot
+        FROM website_preview_tokens p
+        JOIN websites w ON w.clinic_id = p.clinic_id AND w.id = p.website_id
+        JOIN website_versions v ON v.clinic_id = w.clinic_id AND v.id = w.draft_version_id
+        WHERE p.clinic_id = :clinic_id AND p.token_hash = :token_hash
+          AND p.revoked_at IS NULL AND p.expires_at > now() AND w.archived_at IS NULL
+    """), {"clinic_id": clinic_id, "token_hash": hash_token(preview_token)}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Website preview not found.", status.HTTP_404_NOT_FOUND)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    db.commit()
+    return {"data": {"website_id": row["id"], "version_id": row["version_id"], "snapshot": row["snapshot"]}, "meta": {"request_id": request.state.request_id, "preview": True}}
 
 
 @public_router.get("/slug/{clinic_slug}")

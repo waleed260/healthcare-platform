@@ -122,7 +122,7 @@ def dashboard_summary(request: Request, db: Session = Depends(get_db), session_t
     clinic_id = session["clinic_id"]
     counts = db.execute(text("""
         SELECT
-          COUNT(*) FILTER (WHERE a.starts_at::date = (now() AT TIME ZONE b.timezone)::date) AS today_appointments,
+          COUNT(*) FILTER (WHERE (a.starts_at AT TIME ZONE b.timezone)::date = (now() AT TIME ZONE b.timezone)::date) AS today_appointments,
           COUNT(*) FILTER (WHERE a.status = 'requested') AS pending_approvals,
           COUNT(*) FILTER (WHERE a.status = 'no_show') AS no_shows
         FROM appointments a JOIN branches b ON b.id = a.branch_id AND b.clinic_id = a.clinic_id

@@ -21,7 +21,7 @@ type Section = { id: string; section_type: string; layout_key: string; position:
 type Version = { id: string; version_number: number; published_at?: string | null; created_at: string };
 type Domain = { hostname: string; observed_status: string };
 type Validation = { valid: boolean; code: string | null; message: string | null };
-type Session = { permissions?: string[] };
+type Session = { permissions?: string[]; clinic_slug?: string | null };
 type RequestOptions = { method?: string; headers?: Record<string, string>; body?: string | Blob | null };
 
 /* ────────────────────────────────────────────────────
@@ -38,12 +38,12 @@ function templateLabel(value?: string) { return templates.find((t) => t.key === 
 
 type ThemePreset = { key: string; name: string; blurb: string; swatch: [string, string, string]; brand: Partial<Brand> };
 const themePresets: ThemePreset[] = [
-  { key: "calm_sage", name: "Calm Sage", blurb: "Quiet green & cream", swatch: ["#274c42", "#e77b5c", "#f5f4ee"], brand: { primary_color: "#274c42", accent_color: "#e77b5c", text_color: "#1c2928", background_color: "#f5f4ee", font_pairing: "dm-sans-fraunces" } },
-  { key: "editorial_ink", name: "Editorial Ink", blurb: "Confident monochrome", swatch: ["#1c2320", "#b07a4a", "#faf8f3"], brand: { primary_color: "#1c2320", accent_color: "#b07a4a", text_color: "#1c2320", background_color: "#faf8f3", font_pairing: "dm-sans-fraunces" } },
-  { key: "warm_clay", name: "Warm Clay", blurb: "Friendly terracotta", swatch: ["#a9512f", "#2f6b5e", "#fbf3ec"], brand: { primary_color: "#a9512f", accent_color: "#2f6b5e", text_color: "#2a1d17", background_color: "#fbf3ec", font_pairing: "dm-sans-fraunces" } },
-  { key: "ocean", name: "Ocean Clinic", blurb: "Deep teal & amber", swatch: ["#13424a", "#e0a458", "#f1f6f6"], brand: { primary_color: "#13424a", accent_color: "#e0a458", text_color: "#152a2d", background_color: "#f1f6f6", font_pairing: "dm-sans-fraunces" } },
-  { key: "rose_studio", name: "Rose Studio", blurb: "Soft rose & teal", swatch: ["#8d4a5c", "#3f7d74", "#fbf2f3"], brand: { primary_color: "#8d4a5c", accent_color: "#3f7d74", text_color: "#301d23", background_color: "#fbf2f3", font_pairing: "dm-sans-fraunces" } },
-  { key: "midnight", name: "Midnight", blurb: "Navy & warm gold", swatch: ["#1b2440", "#d8a657", "#f4f3f0"], brand: { primary_color: "#1b2440", accent_color: "#d8a657", text_color: "#171d33", background_color: "#f4f3f0", font_pairing: "dm-sans-fraunces" } },
+  { key: "calm_sage", name: "Calm Sage", blurb: "Quiet green & cream", swatch: ["#274c42", "#e77b5c", "#f5f4ee"], brand: { font_pairing: "dm-sans-fraunces", theme: { colors: { primary: "#274c42", accent: "#e77b5c", text: "#1c2928", background: "#f5f4ee" } } } },
+  { key: "editorial_ink", name: "Editorial Ink", blurb: "Confident monochrome", swatch: ["#1c2320", "#b07a4a", "#faf8f3"], brand: { font_pairing: "dm-sans-fraunces", theme: { colors: { primary: "#1c2320", accent: "#b07a4a", text: "#1c2320", background: "#faf8f3" } } } },
+  { key: "warm_clay", name: "Warm Clay", blurb: "Friendly terracotta", swatch: ["#a9512f", "#2f6b5e", "#fbf3ec"], brand: { font_pairing: "dm-sans-fraunces", theme: { colors: { primary: "#a9512f", accent: "#2f6b5e", text: "#2a1d17", background: "#fbf3ec" } } } },
+  { key: "ocean", name: "Ocean Clinic", blurb: "Deep teal & amber", swatch: ["#13424a", "#e0a458", "#f1f6f6"], brand: { font_pairing: "dm-sans-fraunces", theme: { colors: { primary: "#13424a", accent: "#e0a458", text: "#152a2d", background: "#f1f6f6" } } } },
+  { key: "rose_studio", name: "Rose Studio", blurb: "Soft rose & teal", swatch: ["#8d4a5c", "#3f7d74", "#fbf2f3"], brand: { font_pairing: "dm-sans-fraunces", theme: { colors: { primary: "#8d4a5c", accent: "#3f7d74", text: "#301d23", background: "#fbf2f3" } } } },
+  { key: "midnight", name: "Midnight", blurb: "Navy & warm gold", swatch: ["#1b2440", "#d8a657", "#f4f3f0"], brand: { font_pairing: "dm-sans-fraunces", theme: { colors: { primary: "#1b2440", accent: "#d8a657", text: "#171d33", background: "#f4f3f0" } } } },
 ];
 
 type SectionCategory = { label: string; icon: string; types: Array<{ type: string; layout: string; label: string; description: string }> };
@@ -101,7 +101,7 @@ const SECTION_LIBRARY: SectionCategory[] = [
 const defaultContent: Content = { heading: "", body: "", button_label: null, button_href: null };
 
 type Device = "desktop" | "tablet" | "mobile";
-const DEVICE_WIDTH: Record<Device, string> = { desktop: "100%", tablet: "768px", mobile: "375px" };
+const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 768, mobile: 375 };
 
 type RightTab = "design" | "content" | "page" | "seo" | "library" | "history";
 
@@ -223,6 +223,35 @@ function PreviewSection({ section, template, brand, selected, onSelect }: { sect
 }
 
 /* ────────────────────────────────────────────────────
+   Device preview — scales content to simulate device widths
+   ──────────────────────────────────────────────────── */
+function DevicePreview({ device, children }: { device: Device; children: (ref: React.RefObject<HTMLDivElement | null>) => React.ReactNode }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const targetWidth = DEVICE_WIDTH[device];
+
+  useEffect(() => {
+    if (!targetWidth || !containerRef.current) { setScale(1); return; }
+    const observer = new ResizeObserver(([entry]) => {
+      const available = entry.contentRect.width - 48;
+      setScale(available >= targetWidth ? 1 : available / targetWidth);
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [targetWidth]);
+
+  const isScaled = targetWidth !== null;
+  return (
+    <div className="wb-center" ref={containerRef}>
+      <div style={isScaled ? { width: `${targetWidth}px`, transform: `scale(${scale})`, transformOrigin: "top center", transition: "transform .3s ease, width .3s ease" } : undefined}>
+        {children(contentRef)}
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────
    Main editor component
    ──────────────────────────────────────────────────── */
 export default function WebsiteEditorPage() {
@@ -242,6 +271,7 @@ export default function WebsiteEditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [clinicSlug, setClinicSlug] = useState<string>("preview");
   const [validation, setValidation] = useState<Validation | null>(null);
   const [device, setDevice] = useState<Device>("desktop");
   const [rightTab, setRightTab] = useState<RightTab>("design");
@@ -290,7 +320,7 @@ export default function WebsiteEditorPage() {
     setLoading(true);
     try {
       const [session, rows, domainRows] = await Promise.all([request<Session>("/api/v1/auth/me"), request<Website[]>("/api/v1/websites"), request<Domain[]>("/api/v1/websites/domains")]);
-      setPermissions(session.permissions ?? []); setWebsites(rows ?? []); domainsRef.current = domainRows ?? [];
+      setPermissions(session.permissions ?? []); if (session.clinic_slug) setClinicSlug(session.clinic_slug); setWebsites(rows ?? []); domainsRef.current = domainRows ?? [];
       if ((rows ?? [])[0]) await loadWebsite((rows ?? [])[0]); else setLoading(false);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The website workspace could not be loaded."); setLoading(false); }
   }, [loadWebsite]);
@@ -310,7 +340,7 @@ export default function WebsiteEditorPage() {
     if (!website || !page || !canEdit) return;
     const candidate = { ...section, ...next }; setBusy(section.id);
     try {
-      const updated = await request<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ ...candidate, expected_version: section.version }) });
+      const updated = await request<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ section_type: candidate.section_type, layout_key: candidate.layout_key, position: candidate.position, content: candidate.content, is_visible: candidate.is_visible, expected_version: section.version }) });
       setSections((current) => current.map((s) => s.id === section.id ? updated : s));
       setNotice("Draft saved."); void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be saved."); }
@@ -519,7 +549,7 @@ export default function WebsiteEditorPage() {
         </div>
         <div className="wb-topbar-right">
           <span className="wb-topbar-hint">{warning ? `⚠ ${warning}` : `v${website.version} · ${templateLabel(website.template_key)}`}</span>
-          <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const token = await request<{ token: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/api/v1/public/sites/preview?token=${token.token}`, "_blank"); } catch { setError("Preview could not be opened — check that the API is reachable."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
+          <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const res = await request<{ preview_token: string; clinic_slug: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/${encodeURIComponent(res.clinic_slug)}?preview_token=${encodeURIComponent(res.preview_token)}`, "_blank"); } catch { setError("Preview could not be opened — check that the API is reachable."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
           <button className="wb-btn wb-btn-secondary" onClick={() => void load()} disabled={busy !== null}>Refresh</button>
           <button className="wb-btn wb-btn-primary" style={{ fontWeight: 600 }} onClick={() => void publish()} disabled={!canPublish || !validation?.valid || busy !== null} title={!canPublish ? "Ask an owner to publish" : warning ?? "Publish this draft"}>
             {busy === "publish" ? "Publishing…" : "Publish"} <span>↑</span>
@@ -586,36 +616,38 @@ export default function WebsiteEditorPage() {
         </aside>
 
         {/* ─── CENTER PREVIEW ─── */}
-        <div className="wb-center">
-          <div className="wb-preview-viewport" style={{ maxWidth: DEVICE_WIDTH[device] }}>
-            <div className="wb-preview-chrome">
-              <span /><span /><span />
-              <small>{page?.title ?? "Home"} · {templateLabel(website.template_key)}</small>
-            </div>
-            <div className="public-site has-theme wb-preview-site" style={themeStyle(brand, device) as CSSProperties}>
-              <SiteHeader brand={brand} clinicSlug="preview" />
-              <div className="public-shell">
-                {visibleSections.map((section) => (
-                  <PreviewSection
-                    key={section.id}
-                    section={section}
-                    template={template}
-                    brand={brand}
-                    selected={section.id === selectedSectionId}
-                    onSelect={() => { setSelectedSectionId(section.id); setRightTab("content"); }}
-                  />
-                ))}
-                {visibleSections.length === 0 && (
-                  <div className="wb-preview-empty">
-                    <p>This page has no visible sections.</p>
-                    <button className="wb-btn wb-btn-secondary" onClick={() => setShowSectionLibrary(true)} disabled={controlsDisabled}>Add a section</button>
-                  </div>
-                )}
+        <DevicePreview device={device}>
+          {(previewRef) => (
+            <div className="wb-preview-viewport" ref={previewRef}>
+              <div className="wb-preview-chrome">
+                <span /><span /><span />
+                <small>{page?.title ?? "Home"} · {templateLabel(website.template_key)} · {device}</small>
               </div>
-              <SiteFooter brand={brand} title={website.name} clinicSlug="preview" />
+              <div className="public-site has-theme wb-preview-site" style={themeStyle(brand, device) as CSSProperties}>
+                <SiteHeader brand={brand} clinicSlug={clinicSlug} />
+                <div className="public-shell">
+                  {visibleSections.map((section) => (
+                    <PreviewSection
+                      key={section.id}
+                      section={section}
+                      template={template}
+                      brand={brand}
+                      selected={section.id === selectedSectionId}
+                      onSelect={() => { setSelectedSectionId(section.id); setRightTab("content"); }}
+                    />
+                  ))}
+                  {visibleSections.length === 0 && (
+                    <div className="wb-preview-empty">
+                      <p>This page has no visible sections.</p>
+                      <button className="wb-btn wb-btn-secondary" onClick={() => setShowSectionLibrary(true)} disabled={controlsDisabled}>Add a section</button>
+                    </div>
+                  )}
+                </div>
+                <SiteFooter brand={brand} title={website.name} clinicSlug={clinicSlug} />
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </DevicePreview>
 
         {/* ─── RIGHT SIDEBAR ─── */}
         <aside className="wb-right">
@@ -651,10 +683,10 @@ export default function WebsiteEditorPage() {
               <section className="wb-panel">
                 <h3>Brand colors</h3>
                 <div className="wb-color-grid">
-                  <label>Primary<input type="color" value={hex(brand.primary_color, "#274c42")} onChange={(e) => void updateBrand({ primary_color: e.target.value })} disabled={controlsDisabled} /></label>
-                  <label>Accent<input type="color" value={hex(brand.accent_color, "#e77b5c")} onChange={(e) => void updateBrand({ accent_color: e.target.value })} disabled={controlsDisabled} /></label>
-                  <label>Text<input type="color" value={hex(brand.text_color, "#1c2928")} onChange={(e) => void updateBrand({ text_color: e.target.value })} disabled={controlsDisabled} /></label>
-                  <label>Background<input type="color" value={hex(brand.background_color, "#f5f4ee")} onChange={(e) => void updateBrand({ background_color: e.target.value })} disabled={controlsDisabled} /></label>
+                  <label>Primary<input type="color" value={hex(brand.theme?.colors?.primary ?? brand.primary_color, "#274c42")} onChange={(e) => void updateBrand({ theme: { ...brand.theme, colors: { ...brand.theme?.colors, primary: e.target.value } } })} disabled={controlsDisabled} /></label>
+                  <label>Accent<input type="color" value={hex(brand.theme?.colors?.accent ?? brand.accent_color, "#e77b5c")} onChange={(e) => void updateBrand({ theme: { ...brand.theme, colors: { ...brand.theme?.colors, accent: e.target.value } } })} disabled={controlsDisabled} /></label>
+                  <label>Text<input type="color" value={hex(brand.theme?.colors?.text ?? brand.text_color, "#1c2928")} onChange={(e) => void updateBrand({ theme: { ...brand.theme, colors: { ...brand.theme?.colors, text: e.target.value } } })} disabled={controlsDisabled} /></label>
+                  <label>Background<input type="color" value={hex(brand.theme?.colors?.background ?? brand.background_color, "#f5f4ee")} onChange={(e) => void updateBrand({ theme: { ...brand.theme, colors: { ...brand.theme?.colors, background: e.target.value } } })} disabled={controlsDisabled} /></label>
                 </div>
               </section>
               <section className="wb-panel">

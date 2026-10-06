@@ -2,31 +2,44 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type Session = { display_name?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
+type Session = { display_name?: string; email?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
 type Notification = { id: string; read_at: string | null };
 type NavItem = { href: string; label: string; icon: string; permission: string };
+type NavGroup = { key: string; label: string; items: NavItem[] };
 
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: "◈", permission: "appointment.read" },
-  { href: "/schedule", label: "Schedule", icon: "◷", permission: "appointment.read" },
-  { href: "/patients", label: "Patients", icon: "○", permission: "patient.read" },
-  { href: "/leads", label: "Leads", icon: "↳", permission: "lead.read" },
-  { href: "/clinical", label: "Clinical", icon: "✚", permission: "clinical.read" },
-  { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
-  { href: "/billing", label: "Billing", icon: "₿", permission: "billing.read" },
-  { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },
-  { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
-  { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
-  { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
-  { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
-  { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
-  { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
-  { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
-  { href: "/security", label: "Security", icon: "⚿", permission: "" },
-  { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
-  { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read" },
+const navGroups: NavGroup[] = [
+  { key: "home", label: "", items: [
+    { href: "/dashboard", label: "Overview", icon: "◈", permission: "appointment.read" },
+  ]},
+  { key: "crm", label: "CRM", items: [
+    { href: "/schedule", label: "Schedule", icon: "◷", permission: "appointment.read" },
+    { href: "/patients", label: "Patients", icon: "○", permission: "patient.read" },
+    { href: "/leads", label: "Leads", icon: "↳", permission: "lead.read" },
+    { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
+  ]},
+  { key: "clinical", label: "CLINICAL", items: [
+    { href: "/clinical", label: "Clinical", icon: "✚", permission: "clinical.read" },
+  ]},
+  { key: "business", label: "BUSINESS", items: [
+    { href: "/billing", label: "Billing", icon: "₿", permission: "billing.read" },
+    { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },
+    { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
+    { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
+    { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
+  ]},
+  { key: "website", label: "WEBSITE", items: [
+    { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
+    { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
+  ]},
+  { key: "manage", label: "MANAGEMENT", items: [
+    { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
+    { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
+    { href: "/security", label: "Security", icon: "⚿", permission: "" },
+    { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
+    { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read" },
+  ]},
 ];
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
@@ -51,6 +64,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [connectionIssue, setConnectionIssue] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -61,7 +75,6 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
         return;
       }
       setSession(nextSession);
-      // Platform administrators have no clinic context, so there is no clinic inbox to poll.
       if (!nextSession.clinic_id || nextSession.is_platform_admin) return;
       const nextNotifications = await readJson<Notification[]>("/api/v1/operations/notifications?limit=25");
       if (mounted) setNotifications(nextNotifications ?? []);
@@ -70,19 +83,115 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   }, []);
 
   const permissions = session?.permissions ?? [];
-  const visibleItems = useMemo(() => navItems.filter((item) => !session || !item.permission || permissions.includes(item.permission)), [permissions, session]);
+
+  const visibleGroups = useMemo(() => {
+    return navGroups.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !session || !item.permission || permissions.includes(item.permission)),
+    })).filter((group) => group.items.length > 0);
+  }, [permissions, session]);
+
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const activeGroup = useMemo(() => {
+    for (const group of navGroups) {
+      if (group.items.some((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))) return group.key;
+    }
+    return null;
+  }, [pathname]);
+
   const unreadCount = notifications.filter((item) => !item.read_at).length;
   const initials = (session?.display_name ?? "Care team").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function close(e: MouseEvent) { if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false); }
+    function escape(e: KeyboardEvent) { if (e.key === "Escape") setAccountOpen(false); }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+  }, [accountOpen]);
+
+  useEffect(() => { setMobileNavOpen(false); }, [pathname]);
+
+  const signOut = useCallback(async () => {
+    try { await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" }); } catch { /* continue */ }
+    window.location.href = "/login";
+  }, []);
 
   return <div className="workspace-layout">
-    <aside className="workspace-sidebar" aria-label="Authenticated workspace navigation">
+    <aside className={`workspace-sidebar ${mobileNavOpen ? "sidebar-open" : ""}`} aria-label="Authenticated workspace navigation">
       <Link className="workspace-brand" href="/">care<span>/</span>fully</Link>
-      <p className="workspace-label">WORKSPACE</p>
-      <nav>{visibleItems.map((item) => <Link className={`workspace-nav-link ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? "active" : ""}`} href={item.href} key={item.href} aria-current={pathname === item.href ? "page" : undefined}><span aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</nav>
+      <nav className="workspace-nav">
+        {visibleGroups.map((group) => {
+          const isCollapsed = collapsed.has(group.key);
+          const hasLabel = group.label.length > 0;
+          const isActive = activeGroup === group.key;
+          return (
+            <div key={group.key} className={`nav-group ${isActive ? "nav-group-active" : ""}`}>
+              {hasLabel && (
+                <button
+                  className="nav-group-toggle"
+                  type="button"
+                  onClick={() => toggleGroup(group.key)}
+                  aria-expanded={!isCollapsed}
+                >
+                  <span className="nav-group-label">{group.label}</span>
+                  <span className={`nav-group-chevron ${isCollapsed ? "collapsed" : ""}`} aria-hidden="true">›</span>
+                </button>
+              )}
+              {(!hasLabel || !isCollapsed) && group.items.map((item) => (
+                <Link
+                  className={`workspace-nav-link ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? "active" : ""}`}
+                  href={item.href}
+                  key={item.href}
+                  aria-current={pathname === item.href ? "page" : undefined}
+                >
+                  <span aria-hidden="true">{item.icon}</span>{item.label}
+                </Link>
+              ))}
+            </div>
+          );
+        })}
+      </nav>
       <div className="workspace-sidebar-foot"><span className="workspace-status-dot" />Live clinic data</div>
     </aside>
+    {mobileNavOpen && <div className="sidebar-scrim" onClick={() => setMobileNavOpen(false)} />}
     <div className="workspace-stage">
-      <header className="workspace-topbar"><div><p className="workspace-context">{session ? "Signed in" : "Checking access…"}</p><span className="workspace-greeting">{greeting()}, <em>{session?.display_name ?? "team"}.</em></span></div><div className="workspace-top-actions"><Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link><button className="workspace-avatar" type="button" aria-label="Open account menu">{initials}</button></div></header>
+      <header className="workspace-topbar">
+        <div>
+          <button className="mobile-nav-toggle" type="button" aria-label="Toggle navigation" onClick={() => setMobileNavOpen((v) => !v)}>☰</button>
+          <p className="workspace-context">{session ? "Signed in" : "Checking access…"}</p>
+          <span className="workspace-greeting">{greeting()}, <em>{session?.display_name ?? "team"}.</em></span>
+        </div>
+        <div className="workspace-top-actions">
+          <Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link>
+          <div ref={accountRef} style={{ position: "relative" }}>
+            <button className="workspace-avatar" type="button" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((v) => !v)}>{initials}</button>
+            {accountOpen && <div className="account-menu" role="menu">
+              <div className="account-menu-header">
+                <strong>{session?.display_name ?? "Team member"}</strong>
+                {session?.email && <small>{session.email}</small>}
+                {session?.is_platform_admin && <span className="account-menu-badge">Platform admin</span>}
+              </div>
+              <hr />
+              <Link className="account-menu-item" href="/security" role="menuitem" onClick={() => setAccountOpen(false)}>⚿ Security</Link>
+              <Link className="account-menu-item" href="/privacy" role="menuitem" onClick={() => setAccountOpen(false)}>◇ Privacy</Link>
+              <hr />
+              <button className="account-menu-item account-menu-signout" role="menuitem" onClick={signOut}>Sign out</button>
+            </div>}
+          </div>
+        </div>
+      </header>
       {connectionIssue && <div className="workspace-connection-alert" role="status">Your workspace connection could not be checked. Protected pages will explain how to retry.</div>}
       <div className="workspace-body">{children}</div>
     </div>

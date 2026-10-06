@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { csrfToken } from "../_lib/client";
+import FollowUpDrawer from "../_lib/follow-up-drawer";
 
 type FollowUp = { id: string; reason: string; due_at: string; priority: string; status: string; version: number };
 type Notification = { id: string; kind: string; title: string; body: string; read_at: string | null; created_at: string };
@@ -40,6 +41,7 @@ export default function OperationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+  const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
   const [pushState, setPushState] = useState<PushState>("checking");
   const [pushKey, setPushKey] = useState<string | null>(null);
 
@@ -172,7 +174,7 @@ export default function OperationsPage() {
     <div className="dashboard shell">
       <aside className="sidebar"><p className="eyebrow">WORKSPACE</p><nav aria-label="Workspace navigation"><Link className="side-link" href="/dashboard">◈ <span>Overview</span></Link><Link className="side-link" href="/schedule">◷ <span>Schedule</span></Link><Link className="side-link" href="/patients">○ <span>Patients</span></Link><Link className="side-link" href="/queue">▣ <span>Queue</span></Link><Link className="side-link active" href="/operations" aria-current="page">↗ <span>Operations</span></Link><Link className="side-link" href="/website">✦ <span>Website</span></Link></nav></aside>
       <section className="dash-content operations-content" aria-busy={loading}>
-        <div className="dash-topline"><div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div><button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
+        <div className="dash-topline"><div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div><div style={{ display: "flex", gap: 10 }}><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button><button className="button button-primary" type="button" onClick={() => setAddFollowUpOpen(true)}>Create follow-up <span>+</span></button></div></div>
         <p className="queue-intro">A focused, permission-scoped handoff for tasks that need attention. Patient details stay in the protected patient workspace.</p>
         {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}{notice && <div className="success-alert" role="status">{notice}</div>}
         <div className="operations-grid">
@@ -191,5 +193,6 @@ export default function OperationsPage() {
         {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · refresh if the clinic day has changed.</p>}
       </section>
     </div>
+    <FollowUpDrawer open={addFollowUpOpen} onClose={() => setAddFollowUpOpen(false)} onCreated={() => void load()} />
   </main>;
 }
