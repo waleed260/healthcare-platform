@@ -96,3 +96,19 @@ class PaymentCreate(BaseModel):
     amount_minor: int = Field(gt=0)
     method: Literal['cash', 'card', 'bank_transfer', 'online', 'other']
     reference: str | None = Field(default=None, max_length=160)
+
+
+class InvoiceVoid(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=500)
+    expected_version: int = Field(ge=0)
+
+
+class RefundCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount_minor: int = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=500)
+    method: Literal['cash', 'card', 'bank_transfer', 'online', 'other']
+    reference: str | None = Field(default=None, max_length=160)

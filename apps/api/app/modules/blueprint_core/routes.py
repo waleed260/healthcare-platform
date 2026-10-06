@@ -15,11 +15,13 @@ from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.blueprint_core.schemas import (
     InvoiceCreate,
+    InvoiceVoid,
     LeadActivityCreate,
     LeadConvert,
     LeadCreate,
     LeadUpdate,
     PaymentCreate,
+    RefundCreate,
     SpecialtyEnable,
 )
 from app.modules.crm.routes import _normalize_email, _normalize_phone
@@ -356,6 +358,32 @@ def invoice_list(request: Request, patient_id: UUID | None = None, cursor: str |
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
+@billing_router.get("/{invoice_id}")
+def invoice_detail(invoice_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "billing.read")
+    invoice = db.execute(text("""
+        SELECT i.id, i.patient_id, i.invoice_number, i.currency, i.subtotal_minor, i.discount_minor, i.tax_minor,
+               i.total_minor, i.status, i.issued_at, i.notes, i.void_reason, i.voided_at, i.version,
+               p.full_name AS patient_name, p.patient_number
+        FROM invoices i JOIN patients p ON p.clinic_id = i.clinic_id AND p.id = i.patient_id
+        WHERE i.clinic_id = :clinic_id AND i.id = :invoice_id
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().one_or_none()
+    if invoice is None:
+        raise _error("NOT_FOUND", "Invoice not found.", status.HTTP_404_NOT_FOUND)
+    lines = db.execute(text("""
+        SELECT il.id, il.service_id, il.provider_id, il.description, il.quantity, il.unit_price_minor, il.tax_minor, il.line_total_minor,
+               d.public_name AS provider_name
+        FROM invoice_lines il LEFT JOIN doctor_profiles d ON d.clinic_id = il.clinic_id AND d.id = il.provider_id
+        WHERE il.clinic_id = :clinic_id AND il.invoice_id = :invoice_id ORDER BY il.id
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().all()
+    payments = db.execute(text("SELECT id, amount_minor, currency, method, reference, paid_at FROM payments WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id ORDER BY paid_at, id"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().all()
+    refunds = db.execute(text("SELECT id, amount_minor, currency, reason, method, reference, created_at FROM refunds WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id ORDER BY created_at, id"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().all()
+    paid_minor = sum(p["amount_minor"] for p in payments)
+    refunded_minor = sum(r["amount_minor"] for r in refunds)
+    db.commit()
+    return {"data": {**dict(invoice), "paid_minor": paid_minor, "refunded_minor": refunded_minor, "balance_minor": invoice["total_minor"] - paid_minor, "lines": [dict(l) for l in lines], "payments": [dict(p) for p in payments], "refunds": [dict(r) for r in refunds]}, "meta": {"request_id": request.state.request_id}}
+
+
 @billing_router.post("", status_code=status.HTTP_201_CREATED)
 def invoice_create(payload: InvoiceCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "billing.manage", csrf_token)
@@ -441,3 +469,50 @@ def invoice_receipt(invoice_id: UUID, request: Request, db: Session = Depends(ge
     paid_minor = sum(payment["amount_minor"] for payment in payments)
     db.commit()
     return {"data": {"clinic": {"name": invoice["clinic_name"]}, "patient": {"id": invoice["patient_id"], "patient_number": invoice["patient_number"], "name": invoice["patient_name"]}, "invoice": {**{key: invoice[key] for key in ("id", "invoice_number", "currency", "subtotal_minor", "discount_minor", "tax_minor", "total_minor", "status", "issued_at", "notes")}, "paid_minor": paid_minor, "balance_minor": invoice["total_minor"] - paid_minor}, "lines": [dict(line) for line in lines], "payments": [dict(payment) for payment in payments]}, "meta": {"request_id": request.state.request_id}}
+
+
+@billing_router.post("/{invoice_id}/void")
+def invoice_void(invoice_id: UUID, payload: InvoiceVoid, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "billing.manage", csrf_token)
+    row = db.execute(text("""
+        UPDATE invoices SET status = 'void', void_reason = :reason, voided_at = now(), voided_by_user_id = :user_id,
+               updated_at = now(), version = version + 1
+        WHERE clinic_id = :clinic_id AND id = :invoice_id AND status <> 'void' AND version = :expected_version
+        RETURNING id, invoice_number, status, void_reason, voided_at, version
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id, "reason": payload.reason, "user_id": session["user_id"], "expected_version": payload.expected_version}).mappings().one_or_none()
+    if row is None:
+        existing = db.execute(text("SELECT id, status, version FROM invoices WHERE clinic_id = :clinic_id AND id = :invoice_id"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().one_or_none()
+        if existing is None:
+            raise _error("NOT_FOUND", "Invoice not found.", status.HTTP_404_NOT_FOUND)
+        if existing["status"] == "void":
+            raise _error("ALREADY_VOID", "This invoice has already been voided.", status.HTTP_409_CONFLICT)
+        raise _error("VERSION_CONFLICT", "The invoice was updated by another user. Refresh and try again.", status.HTTP_409_CONFLICT)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="invoice.void", entity_type="invoice", entity_id=invoice_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"reason": payload.reason})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@billing_router.post("/{invoice_id}/refund", status_code=status.HTTP_201_CREATED)
+def refund_create(invoice_id: UUID, payload: RefundCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "billing.manage", csrf_token)
+    invoice = db.execute(text("SELECT id, currency, total_minor, status FROM invoices WHERE clinic_id = :clinic_id AND id = :invoice_id FOR UPDATE"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).mappings().one_or_none()
+    if invoice is None:
+        raise _error("NOT_FOUND", "Invoice not found.", status.HTTP_404_NOT_FOUND)
+    if invoice["status"] == "void":
+        raise _error("INVALID_INPUT", "Cannot refund a voided invoice.", status.HTTP_400_BAD_REQUEST)
+    paid = db.execute(text("SELECT COALESCE(sum(amount_minor), 0) FROM payment_allocations WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).scalar_one()
+    already_refunded = db.execute(text("SELECT COALESCE(sum(amount_minor), 0) FROM refunds WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).scalar_one()
+    refundable = paid - already_refunded
+    if payload.amount_minor > refundable:
+        raise _error("INVALID_INPUT", f"Refund exceeds the refundable balance ({refundable}).", status.HTTP_400_BAD_REQUEST)
+    refund = db.execute(text("""
+        INSERT INTO refunds (clinic_id, invoice_id, amount_minor, currency, reason, method, reference, refunded_by_user_id)
+        VALUES (:clinic_id, :invoice_id, :amount, :currency, :reason, :method, :reference, :user_id)
+        RETURNING id, invoice_id, amount_minor, currency, reason, method, reference, created_at
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id, "amount": payload.amount_minor, "currency": invoice["currency"], "reason": payload.reason, "method": payload.method, "reference": payload.reference, "user_id": session["user_id"]}).mappings().one()
+    new_refunded = already_refunded + payload.amount_minor
+    new_status = "refunded" if new_refunded >= paid else "partially_refunded"
+    db.execute(text("UPDATE invoices SET status = :status, updated_at = now(), version = version + 1 WHERE clinic_id = :clinic_id AND id = :invoice_id"), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id, "status": new_status})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="refund.create", entity_type="refund", entity_id=refund["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"invoice_id": str(invoice_id), "amount_minor": payload.amount_minor, "reason": payload.reason})
+    db.commit()
+    return {"data": dict(refund), "meta": {"request_id": request.state.request_id}}
