@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
 import { csrfToken } from "../_lib/client";
@@ -141,14 +140,8 @@ export default function OperationsPage() {
     setError(null);
     try {
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setPushState("denied");
-        return;
-      }
-      if (!pushKey) {
-        setPushState("unavailable");
-        return;
-      }
+      if (permission !== "granted") { setPushState("denied"); return; }
+      if (!pushKey) { setPushState("unavailable"); return; }
       const registration = await navigator.serviceWorker.register("/sw.js");
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -175,37 +168,56 @@ export default function OperationsPage() {
   const opsRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (loading || !opsRef.current) return;
-    anime({ targets: opsRef.current.querySelectorAll(".panel-card, .followup-row"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
+    anime({ targets: opsRef.current.querySelectorAll(".panel-card, .operations-row, .operations-card"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
   }, [loading]);
 
-  return <main className="dashboard-page" ref={opsRef}>
-    <header className="dash-header shell"><Link className="wordmark" href="/">care<span>/</span>fully</Link><div className="clinic-chip" aria-label="Clinic operations session"><span className="clinic-avatar">OP</span><span>Operations workspace</span></div></header>
-    <div className="dashboard shell">
-      <aside className="sidebar"><p className="eyebrow">WORKSPACE</p><nav aria-label="Workspace navigation"><Link className="side-link" href="/dashboard">◈ <span>Overview</span></Link><Link className="side-link" href="/schedule">◷ <span>Schedule</span></Link><Link className="side-link" href="/patients">○ <span>Patients</span></Link><Link className="side-link" href="/queue">▣ <span>Queue</span></Link><Link className="side-link active" href="/operations" aria-current="page">↗ <span>Operations</span></Link><Link className="side-link" href="/website">✦ <span>Website</span></Link></nav></aside>
-      <section className="dash-content operations-content" aria-busy={loading}>
-        <div className="dash-topline"><div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div><div style={{ display: "flex", gap: 10 }}><button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button><button className="button button-primary" type="button" onClick={() => setAddFollowUpOpen(true)}>Create follow-up <span>+</span></button></div></div>
-        <p className="queue-intro">A focused, permission-scoped handoff for tasks that need attention. Patient details stay in the protected patient workspace.</p>
-        {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}{notice && <div className="success-alert" role="status">{notice}</div>}
-        <div className="operations-filters">
-          <label>Priority<select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="">All</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
-          <label>Status<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">All open</option><option value="due">Due</option><option value="contacted">Contacted</option><option value="booked">Booked</option><option value="completed">Completed</option></select></label>
+  return <>
+    <section className="dash-content operations-content" ref={opsRef} aria-busy={loading}>
+      <div className="dash-topline">
+        <div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div>
+        <div className="header-actions">
+          <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
+          <button className="button button-primary" type="button" onClick={() => setAddFollowUpOpen(true)}>Create follow-up <span>+</span></button>
         </div>
-        <div className="operations-grid">
-          <section className="detail-card operations-card" aria-labelledby="follow-up-heading"><div className="card-heading"><div><p className="eyebrow">ACTION QUEUE</p><h2 id="follow-up-heading">Follow-ups</h2></div><span className="directory-count">{followUps.length} shown</span></div>{loading && followUps.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading follow-ups</strong><span>Checking your scoped task list…</span></div>}{!loading && !error && followUps.length === 0 && <div className="dashboard-empty"><strong>No follow-ups need attention</strong><span>New tasks will appear here when they are assigned.</span></div>}{followUps.length > 0 && <div className="operations-list">{followUps.map((item) => <article className="operations-row" key={item.id}><div><strong>{item.reason}</strong><small>Due {formatDate(item.due_at)} · {item.priority} priority · {item.status}</small></div><button className="button button-secondary" type="button" onClick={() => void complete(item)} disabled={working === item.id || item.status === "completed"}>{working === item.id ? "Saving…" : "Complete"}</button></article>)}</div>}{nextFollowUp && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more follow-ups <span>↓</span></button>}</section>
-          <section className="detail-card operations-card" aria-labelledby="notification-heading"><div className="card-heading"><div><p className="eyebrow">INBOX</p><h2 id="notification-heading">Notifications</h2></div><span className="directory-count">{notifications.filter((item) => !item.read_at).length} unread</span></div>{loading && notifications.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading notifications</strong><span>Checking your private inbox…</span></div>}{!loading && !error && notifications.length === 0 && <div className="dashboard-empty"><strong>Your inbox is clear</strong><span>Operational alerts will appear here.</span></div>}{notifications.length > 0 && <div className="operations-list">{notifications.map((item) => <article className={item.read_at ? "operations-row notification-read" : "operations-row notification-unread"} key={item.id}><div><strong>{item.title}</strong><small>{item.body} · {formatDate(item.created_at)}</small></div>{!item.read_at && <button className="ghost-button" type="button" onClick={() => void markRead(item)} disabled={working === item.id}>Mark read <span>✓</span></button>}</article>)}</div>}{nextNotification && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more notifications <span>↓</span></button>}</section>
-        </div>
-        <section className="detail-card operations-card push-card" aria-labelledby="push-heading">
-          <div className="card-heading"><div><p className="eyebrow">BROWSER ALERTS</p><h2 id="push-heading">Push notifications</h2></div><span className="directory-count">{pushState === "on" ? "enabled" : pushState === "checking" ? "checking…" : "off"}</span></div>
-          <p className="privacy-caption">Receive a privacy-safe alert on this device when a follow-up becomes overdue. Only the stored alert title and message are sent; patient details stay in the protected workspace.</p>
-          {pushState === "checking" && <p className="privacy-caption" role="status">Checking browser alert support…</p>}
-          {pushState === "unsupported" && <p className="privacy-caption" role="status">This browser does not support push notifications.</p>}
-          {pushState === "unavailable" && <p className="privacy-caption" role="status">Browser alerts are not configured for this deployment.</p>}
-          {pushState === "denied" && <p className="privacy-caption" role="status">Notifications are blocked in your browser settings.</p>}
-          {pushState === "on" ? <p className="privacy-caption" role="status">Alerts are enabled on this device.</p> : (pushState === "off" || pushState === "error") && <button className="button button-secondary" type="button" onClick={() => void enablePush()} disabled={working !== null}>{working === "push" ? "Enabling…" : "Enable browser alerts"} <span>→</span></button>}
+      </div>
+      <p className="queue-intro">A focused, permission-scoped handoff for tasks that need attention. Patient details stay in the protected patient workspace.</p>
+      {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
+      {notice && <div className="success-alert" role="status">{notice}</div>}
+
+      <div className="operations-filters">
+        <label>Priority<select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="">All</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+        <label>Status<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">All open</option><option value="due">Due</option><option value="contacted">Contacted</option><option value="booked">Booked</option><option value="completed">Completed</option></select></label>
+      </div>
+
+      <div className="operations-grid">
+        <section className="detail-card operations-card" aria-labelledby="follow-up-heading">
+          <div className="card-heading"><div><p className="eyebrow">ACTION QUEUE</p><h2 id="follow-up-heading">Follow-ups</h2></div><span className="directory-count">{followUps.length} shown</span></div>
+          {loading && followUps.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading follow-ups</strong><span>Checking your scoped task list…</span></div>}
+          {!loading && !error && followUps.length === 0 && <div className="dashboard-empty"><strong>No follow-ups need attention</strong><span>New tasks will appear here when they are assigned.</span></div>}
+          {followUps.length > 0 && <div className="operations-list">{followUps.map((item) => <article className="operations-row" key={item.id}><div><strong>{item.reason}</strong><small>Due {formatDate(item.due_at)} · {item.priority} priority · {item.status}</small></div><button className="button button-secondary" type="button" onClick={() => void complete(item)} disabled={working === item.id || item.status === "completed"}>{working === item.id ? "Saving…" : "Complete"}</button></article>)}</div>}
+          {nextFollowUp && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more follow-ups <span>↓</span></button>}
         </section>
-        {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · refresh if the clinic day has changed.</p>}
+
+        <section className="detail-card operations-card" aria-labelledby="notification-heading">
+          <div className="card-heading"><div><p className="eyebrow">INBOX</p><h2 id="notification-heading">Notifications</h2></div><span className="directory-count">{notifications.filter((item) => !item.read_at).length} unread</span></div>
+          {loading && notifications.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading notifications</strong><span>Checking your private inbox…</span></div>}
+          {!loading && !error && notifications.length === 0 && <div className="dashboard-empty"><strong>Your inbox is clear</strong><span>Operational alerts will appear here.</span></div>}
+          {notifications.length > 0 && <div className="operations-list">{notifications.map((item) => <article className={item.read_at ? "operations-row notification-read" : "operations-row notification-unread"} key={item.id}><div><strong>{item.title}</strong><small>{item.body} · {formatDate(item.created_at)}</small></div>{!item.read_at && <button className="ghost-button" type="button" onClick={() => void markRead(item)} disabled={working === item.id}>Mark read <span>✓</span></button>}</article>)}</div>}
+          {nextNotification && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more notifications <span>↓</span></button>}
+        </section>
+      </div>
+
+      <section className="detail-card operations-card push-card" aria-labelledby="push-heading">
+        <div className="card-heading"><div><p className="eyebrow">BROWSER ALERTS</p><h2 id="push-heading">Push notifications</h2></div><span className="directory-count">{pushState === "on" ? "enabled" : pushState === "checking" ? "checking…" : "off"}</span></div>
+        <p className="privacy-caption">Receive a privacy-safe alert on this device when a follow-up becomes overdue. Only the stored alert title and message are sent; patient details stay in the protected workspace.</p>
+        {pushState === "checking" && <p className="privacy-caption" role="status">Checking browser alert support…</p>}
+        {pushState === "unsupported" && <p className="privacy-caption" role="status">This browser does not support push notifications.</p>}
+        {pushState === "unavailable" && <p className="privacy-caption" role="status">Browser alerts are not configured for this deployment.</p>}
+        {pushState === "denied" && <p className="privacy-caption" role="status">Notifications are blocked in your browser settings.</p>}
+        {pushState === "on" ? <p className="privacy-caption" role="status">Alerts are enabled on this device.</p> : (pushState === "off" || pushState === "error") && <button className="button button-secondary" type="button" onClick={() => void enablePush()} disabled={working !== null}>{working === "push" ? "Enabling…" : "Enable browser alerts"} <span>→</span></button>}
       </section>
-    </div>
+      {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · refresh if the clinic day has changed.</p>}
+    </section>
     <FollowUpDrawer open={addFollowUpOpen} onClose={() => setAddFollowUpOpen(false)} onCreated={() => void load()} />
-  </main>;
+  </>;
 }

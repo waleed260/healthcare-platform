@@ -16,7 +16,7 @@ import { api, csrfToken } from "../_lib/client";
 type Brand = SiteBrand;
 type Website = { id: string; name: string; template_key: string; status: string; version: number; brand?: Brand; draft_version_id?: string | null; live_version_id?: string | null };
 type Page = { id: string; slug: string; title: string; version: number; seo_title?: string | null; seo_description?: string | null };
-type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string; media_id?: string | null; gallery_ids?: string[] };
+type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string; media_id?: string | null; gallery_ids?: string[]; custom_css?: string };
 type MediaAsset = { id: string; original_filename?: string; alt_text: string; mime_type: string; scan_status: string };
 type Section = { id: string; section_type: string; layout_key: string; position: number; content: Content; is_visible: boolean; version: number };
 type Version = { id: string; version_number: number; published_at?: string | null; created_at: string };
@@ -685,14 +685,16 @@ export default function WebsiteEditorPage() {
                 <SiteHeader brand={brand} clinicSlug={clinicSlug} />
                 <div className="public-shell">
                   {visibleSections.map((section) => (
-                    <PreviewSection
-                      key={section.id}
-                      section={section}
-                      template={template}
-                      brand={brand}
-                      selected={section.id === selectedSectionId}
-                      onSelect={() => { setSelectedSectionId(section.id); setRightTab("content"); }}
-                    />
+                    <div key={section.id} className={`wb-section-wrap section-${section.section_type}`}>
+                      {section.content.custom_css && <style>{section.content.custom_css}</style>}
+                      <PreviewSection
+                        section={section}
+                        template={template}
+                        brand={brand}
+                        selected={section.id === selectedSectionId}
+                        onSelect={() => { setSelectedSectionId(section.id); setRightTab("content"); }}
+                      />
+                    </div>
                   ))}
                   {visibleSections.length === 0 && (
                     <div className="wb-preview-empty">
@@ -854,6 +856,11 @@ export default function WebsiteEditorPage() {
                   </div>
                 )}
 
+                <div className="wb-field-stack" style={{ marginTop: 16 }}>
+                  <label>Custom CSS
+                    <textarea className="wb-css-editor" rows={4} placeholder={"/* Scoped to this section */\n.section-hero { background: linear-gradient(...); }"} value={selectedSection.content.custom_css ?? ""} disabled={!canEdit} style={{ fontFamily: "monospace", fontSize: "0.8rem" }} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, custom_css: e.target.value } } : s))} />
+                  </label>
+                </div>
                 <div className="wb-section-actions">
                   <button className="wb-btn wb-btn-primary" onClick={() => void saveSection(selectedSection)} disabled={controlsDisabled}>Save section</button>
                   <button className="wb-btn wb-btn-secondary" onClick={() => void duplicateSection(selectedSection)} disabled={controlsDisabled}>Duplicate</button>
