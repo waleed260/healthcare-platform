@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, label, patch, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -108,7 +109,13 @@ export default function ContentPage() {
   };
   const updateField = (index: number, patchValue: Partial<Field>) => setDraftFields((fields) => fields.map((field, i) => i === index ? { ...field, ...patchValue } : field));
 
-  return <main className="workspace-page content-page">
+  const contentRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!contentRef.current) return;
+    anime({ targets: contentRef.current.querySelectorAll(".surface-card, .inventory-summary > div"), opacity: [0, 1], translateY: [22, 0], duration: 500, delay: anime.stagger(50, { start: 120 }), easing: "easeOutCubic" });
+  }, [tab]);
+
+  return <main className="workspace-page content-page" ref={contentRef}>
     <div className="workspace-page-header"><div><p className="eyebrow">WEBSITE · CONTENT</p><h1>Words and <em>forms</em> that work.</h1><p className="workspace-page-intro">Build lead and appointment-request forms, publish blog articles, and approve testimonials before they appear on your site.</p></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import anime from "animejs";
 
 type Session = { display_name?: string; email?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
 type Notification = { id: string; read_at: string | null };
@@ -35,6 +36,7 @@ const navGroups: NavGroup[] = [
     { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
     { href: "/domains", label: "Domains", icon: "◎", permission: "website.read" },
     { href: "/media", label: "Media", icon: "▣", permission: "website.read" },
+    { href: "/analytics", label: "Analytics", icon: "◈", permission: "report.read" },
   ]},
   { key: "manage", label: "MANAGEMENT", items: [
     { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
@@ -126,6 +128,19 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => { setMobileNavOpen(false); }, [pathname]);
 
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!navRef.current || !session) return;
+    anime({
+      targets: navRef.current.querySelectorAll(".workspace-nav-link"),
+      opacity: [0, 1],
+      translateX: [-10, 0],
+      duration: 350,
+      delay: anime.stagger(20, { start: 50 }),
+      easing: "easeOutCubic",
+    });
+  }, [session]);
+
   const signOut = useCallback(async () => {
     try { await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" }); } catch { /* continue */ }
     window.location.href = "/login";
@@ -134,7 +149,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   return <div className="workspace-layout">
     <aside className={`workspace-sidebar ${mobileNavOpen ? "sidebar-open" : ""}`} aria-label="Authenticated workspace navigation">
       <Link className="workspace-brand" href="/">care<span>/</span>fully</Link>
-      <nav className="workspace-nav">
+      <nav className="workspace-nav" ref={navRef}>
         {visibleGroups.map((group) => {
           const isCollapsed = collapsed.has(group.key);
           const hasLabel = group.label.length > 0;

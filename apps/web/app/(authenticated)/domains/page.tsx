@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, label, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -87,6 +88,19 @@ export default function DomainsPage() {
   const verified = domains.filter((d) => d.observed_status === "verified").length;
   const pending = domains.filter((d) => d.observed_status === "pending").length;
 
+  const domainListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (loading || domains.length === 0 || !domainListRef.current) return;
+    anime({
+      targets: domainListRef.current.querySelectorAll(".invoice-row"),
+      opacity: [0, 1],
+      translateX: [-14, 0],
+      duration: 440,
+      delay: anime.stagger(50, { start: 100 }),
+      easing: "easeOutCubic",
+    });
+  }, [loading, domains.length]);
+
   return <main className="workspace-page domains-page">
     <div className="workspace-page-header">
       <div>
@@ -143,7 +157,7 @@ export default function DomainsPage() {
         <span className="muted-mono">{domains.length} DOMAIN{domains.length !== 1 ? "S" : ""}</span>
       </div>
       {!loading && domains.length === 0 && <div className="dashboard-empty"><strong>No domains yet</strong><span>Add a custom domain to serve your website on your own hostname.</span></div>}
-      {domains.length > 0 && <div className="invoice-list">
+      {domains.length > 0 && <div className="invoice-list" ref={domainListRef}>
         {domains.map((item) => <article className="invoice-row" key={item.id}>
           <div className="invoice-mark" style={{ fontSize: "1rem" }}>{statusIcon[item.observed_status] ?? "○"}</div>
           <div className="invoice-main">

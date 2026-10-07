@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, label, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -119,7 +120,20 @@ export default function PrivacyPage() {
   const pendingCount = requests.filter((r) => r.status === "requested").length;
   const activeExports = exports.filter((e) => e.status === "completed").length;
 
-  return <main className="workspace-page privacy-page">
+  const privacyRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (loading || !privacyRef.current) return;
+    anime({
+      targets: privacyRef.current.querySelectorAll(".surface-card, .inventory-summary > div"),
+      opacity: [0, 1],
+      translateY: [22, 0],
+      duration: 500,
+      delay: anime.stagger(55, { start: 120 }),
+      easing: "easeOutCubic",
+    });
+  }, [loading]);
+
+  return <main className="workspace-page privacy-page" ref={privacyRef}>
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">GOVERNANCE · IDENTITY · ERASURE</p>

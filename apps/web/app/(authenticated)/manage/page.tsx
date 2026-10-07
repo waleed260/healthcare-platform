@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, label, money, patch, post, writeHeaders } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
@@ -273,7 +274,20 @@ export default function ManagePage() {
 
   // ── Render ──
 
-  return <main className="workspace-page manage-page">
+  const manageRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (loading || !manageRef.current) return;
+    anime({
+      targets: manageRef.current.querySelectorAll(".surface-card, .invoice-row"),
+      opacity: [0, 1],
+      translateY: [20, 0],
+      duration: 480,
+      delay: anime.stagger(40, { start: 120 }),
+      easing: "easeOutCubic",
+    });
+  }, [loading, tab]);
+
+  return <main className="workspace-page manage-page" ref={manageRef}>
     <div className="workspace-page-header"><div><p className="eyebrow">MANAGEMENT</p><h1>Run the clinic, <em>your way.</em></h1><p className="workspace-page-intro">Services, branches, staff and access in one place.</p></div><div className="header-actions"><button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 

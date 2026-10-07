@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import anime from "animejs";
 import { csrfToken } from "../_lib/client";
 import FollowUpDrawer from "../_lib/follow-up-drawer";
 
@@ -171,7 +172,13 @@ export default function OperationsPage() {
 
   useEffect(() => { void setupPush(); }, [setupPush]);
 
-  return <main className="dashboard-page">
+  const opsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (loading || !opsRef.current) return;
+    anime({ targets: opsRef.current.querySelectorAll(".panel-card, .followup-row"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
+  }, [loading]);
+
+  return <main className="dashboard-page" ref={opsRef}>
     <header className="dash-header shell"><Link className="wordmark" href="/">care<span>/</span>fully</Link><div className="clinic-chip" aria-label="Clinic operations session"><span className="clinic-avatar">OP</span><span>Operations workspace</span></div></header>
     <div className="dashboard shell">
       <aside className="sidebar"><p className="eyebrow">WORKSPACE</p><nav aria-label="Workspace navigation"><Link className="side-link" href="/dashboard">◈ <span>Overview</span></Link><Link className="side-link" href="/schedule">◷ <span>Schedule</span></Link><Link className="side-link" href="/patients">○ <span>Patients</span></Link><Link className="side-link" href="/queue">▣ <span>Queue</span></Link><Link className="side-link active" href="/operations" aria-current="page">↗ <span>Operations</span></Link><Link className="side-link" href="/website">✦ <span>Website</span></Link></nav></aside>

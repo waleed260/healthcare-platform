@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, label, patch, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -127,6 +128,20 @@ export default function MediaPage() {
   const cleanCount = items.filter((m) => m.scan_status === "clean").length;
   const pendingCount = items.filter((m) => m.scan_status === "pending_scan").length;
 
+  const mediaListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (loading || filtered.length === 0 || !mediaListRef.current) return;
+    anime({
+      targets: mediaListRef.current.querySelectorAll(".invoice-row"),
+      opacity: [0, 1],
+      translateY: [18, 0],
+      scale: [0.97, 1],
+      duration: 440,
+      delay: anime.stagger(35, { start: 80 }),
+      easing: "easeOutCubic",
+    });
+  }, [loading, filtered.length, typeFilter, search]);
+
   return <main className="workspace-page media-page">
     <div className="workspace-page-header">
       <div>
@@ -171,7 +186,7 @@ export default function MediaPage() {
         <span className="muted-mono">{filtered.length} FILE{filtered.length !== 1 ? "S" : ""}</span>
       </div>
       {!loading && filtered.length === 0 && <div className="dashboard-empty"><strong>{search || typeFilter !== "all" ? "No matching media" : "No media uploaded yet"}</strong><span>Upload images to use them on your website pages.</span></div>}
-      {filtered.length > 0 && <div className="invoice-list">
+      {filtered.length > 0 && <div className="invoice-list" ref={mediaListRef}>
         {filtered.map((item) => <article className="invoice-row" key={item.id}>
           <div className="invoice-mark" style={{ fontSize: "0.7rem", textTransform: "uppercase" }}>{item.mime_type.replace("image/", "").slice(0, 4)}</div>
           <div className="invoice-main">

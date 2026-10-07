@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, label, money, post } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
@@ -140,7 +141,13 @@ export default function PackagesPage() {
 
   const activePackages = useMemo(() => packages.filter((p) => p.status === "active"), [packages]);
 
-  return <main className="workspace-page packages-page">
+  const pkgRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (loading || !pkgRef.current) return;
+    anime({ targets: pkgRef.current.querySelectorAll(".surface-card, .invoice-row, .inventory-summary > div"), opacity: [0, 1], translateY: [20, 0], duration: 480, delay: anime.stagger(40, { start: 100 }), easing: "easeOutCubic" });
+  }, [loading]);
+
+  return <main className="workspace-page packages-page" ref={pkgRef}>
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">BUSINESS · SESSION-BASED CARE</p>

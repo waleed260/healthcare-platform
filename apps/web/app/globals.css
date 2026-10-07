@@ -569,3 +569,118 @@ legend{font-size:var(--text-xs)}
 .theme-preview-bar .text-control.is-active{background:var(--leaf)!important;color:#fff!important}
 /* 12px floor for headings in panels */
 .wb-editor h4,.theme-preview-frame h4{font-size:var(--text-xs)}
+
+/* ─── anime.js / vibeui animation system ─── */
+@keyframes anim-fade-up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes anim-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes anim-scale-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@keyframes anim-slide-down{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
+@keyframes anim-glow-pulse{0%,100%{box-shadow:0 0 0 0 rgba(39,76,66,.08)}50%{box-shadow:0 0 0 8px rgba(39,76,66,.04)}}
+@keyframes anim-shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes anim-count-flash{0%{color:var(--leaf)}100%{color:inherit}}
+
+.anim-fade-up{animation:anim-fade-up .5s cubic-bezier(.22,.68,0,1.02) both}
+.anim-fade-in{animation:anim-fade-in .4s ease both}
+.anim-scale-in{animation:anim-scale-in .45s cubic-bezier(.22,.68,0,1.02) both}
+.anim-slide-down{animation:anim-slide-down .4s ease both}
+
+/* vibeui glass morphism card variant */
+.glass-card{background:rgba(251,250,245,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(216,222,215,.5);border-radius:16px;box-shadow:0 4px 24px rgba(28,41,40,.05)}
+
+/* vibeui gradient accents */
+.gradient-leaf{background:linear-gradient(135deg,#274c42 0%,#3d7a6a 100%)}
+.gradient-coral{background:linear-gradient(135deg,#b84f38 0%,#d4795e 100%)}
+.gradient-mint{background:linear-gradient(135deg,#cfe5d7 0%,#a8d4bb 100%)}
+
+/* vibeui hover lift for cards */
+.surface-card{transition:transform .22s cubic-bezier(.22,.68,0,1.02),box-shadow .22s ease}
+.surface-card:hover{transform:translateY(-2px);box-shadow:0 12px 32px -8px rgba(28,41,40,.08)}
+
+/* vibeui smooth row hover */
+.invoice-row{transition:background .15s ease,transform .15s ease}
+.invoice-row:hover{background:rgba(207,229,215,.12);transform:translateX(3px)}
+
+/* animated summary stat cards */
+.inventory-summary>div{transition:transform .2s cubic-bezier(.22,.68,0,1.02),box-shadow .2s ease}
+.inventory-summary>div:hover{transform:translateY(-3px) scale(1.01);box-shadow:0 8px 20px -6px rgba(28,41,40,.1)}
+
+/* button micro-interactions */
+.button{transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+.button:active:not(:disabled){transform:scale(.97)}
+.button-primary:hover:not(:disabled){box-shadow:0 6px 20px -4px rgba(39,76,66,.3);transform:translateY(-1px)}
+.button-secondary:hover:not(:disabled){box-shadow:0 4px 14px -4px rgba(28,41,40,.1);transform:translateY(-1px)}
+
+/* shimmer loading skeleton */
+.skeleton{background:linear-gradient(90deg,var(--cream) 25%,rgba(207,229,215,.3) 50%,var(--cream) 75%);background-size:200% 100%;animation:anim-shimmer 1.8s infinite;border-radius:8px}
+
+/* page entrance animation */
+.workspace-page{animation:anim-fade-up .45s cubic-bezier(.22,.68,0,1.02) both}
+.workspace-page-header{animation:anim-slide-down .4s cubic-bezier(.22,.68,0,1.02) both}
+.workspace-page-header h1{animation:anim-fade-up .55s cubic-bezier(.22,.68,0,1.02) .08s both}
+.workspace-page-header .workspace-page-intro{animation:anim-fade-up .5s ease .15s both}
+
+/* stagger delay helpers */
+.stagger-1{animation-delay:.05s}.stagger-2{animation-delay:.1s}.stagger-3{animation-delay:.15s}
+.stagger-4{animation-delay:.2s}.stagger-5{animation-delay:.25s}.stagger-6{animation-delay:.3s}
+
+/* vibeui tab indicator underline animation */
+.pipeline-tabs button{position:relative;transition:color .2s ease}
+.pipeline-tabs button.active::after,.pipeline-tabs button[aria-selected="true"]::after{content:'';position:absolute;bottom:-2px;left:10%;right:10%;height:2px;background:var(--leaf);border-radius:1px;animation:anim-scale-in .25s ease both}
+
+/* smooth overlay backdrop */
+.confirm-scrim,.wb-modal-backdrop{animation:anim-fade-in .2s ease both}
+
+/* vibeui floating action pulse */
+.fab-pulse{animation:anim-glow-pulse 2.5s infinite}
+
+/* analytics chart bars */
+@keyframes bar-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.chart-bar{transform-origin:bottom;animation:bar-grow .6s cubic-bezier(.22,.68,0,1.02) both}
+.chart-bar:nth-child(1){animation-delay:.05s}.chart-bar:nth-child(2){animation-delay:.1s}
+.chart-bar:nth-child(3){animation-delay:.15s}.chart-bar:nth-child(4){animation-delay:.2s}
+.chart-bar:nth-child(5){animation-delay:.25s}.chart-bar:nth-child(6){animation-delay:.3s}
+.chart-bar:nth-child(7){animation-delay:.35s}.chart-bar:nth-child(8){animation-delay:.4s}
+.chart-bar:nth-child(9){animation-delay:.45s}.chart-bar:nth-child(10){animation-delay:.5s}
+.chart-bar:nth-child(11){animation-delay:.55s}.chart-bar:nth-child(12){animation-delay:.6s}
+
+/* analytics page specific */
+.analytics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:20px}
+.analytics-card{background:var(--cream);border:1px solid var(--line);border-radius:14px;padding:20px 22px;transition:transform .2s cubic-bezier(.22,.68,0,1.02),box-shadow .2s ease}
+.analytics-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px -8px rgba(28,41,40,.1)}
+.analytics-card .eyebrow{margin:0 0 8px}
+.analytics-card strong{font:600 32px/1.1 'DM Sans',sans-serif;letter-spacing:-.02em;display:block;margin:0 0 4px}
+.analytics-card small{color:var(--muted);font:12px 'DM Mono',monospace}
+.analytics-card .trend-up{color:#43856d}.analytics-card .trend-down{color:#a14937}
+.analytics-chart{background:var(--cream);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:16px}
+.analytics-chart h3{font:600 15px/1.3 'DM Sans',sans-serif;margin:0 0 16px}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:160px;padding:0 4px}
+.bar-chart .chart-bar{flex:1;background:linear-gradient(to top,#274c42,#3d7a6a);border-radius:4px 4px 0 0;min-width:14px;position:relative}
+.bar-chart .chart-bar:hover{background:linear-gradient(to top,#1a3830,#274c42)}
+.bar-chart .chart-bar-label{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font:10px 'DM Mono',monospace;color:var(--muted);white-space:nowrap}
+.bar-chart .chart-bar-value{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font:600 11px 'DM Sans',sans-serif;color:var(--ink);opacity:0;transition:opacity .15s ease}
+.bar-chart .chart-bar:hover .chart-bar-value{opacity:1}
+
+/* donut chart */
+.donut-chart{position:relative;width:140px;height:140px;margin:0 auto 12px}
+.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.donut-center strong{font:600 28px/1 'DM Sans',sans-serif;letter-spacing:-.02em}
+.donut-center small{font:11px 'DM Mono',monospace;color:var(--muted)}
+.donut-legend{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+.donut-legend span{display:flex;align-items:center;gap:5px;font:12px 'DM Sans',sans-serif;color:var(--muted)}
+.donut-legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+
+/* conversion funnel */
+.funnel-chart{display:flex;flex-direction:column;gap:8px}
+.funnel-step{display:flex;align-items:center;gap:12px}
+.funnel-bar{height:32px;border-radius:6px;background:linear-gradient(90deg,#274c42,#3d7a6a);transition:width .8s cubic-bezier(.22,.68,0,1.02);min-width:24px;display:flex;align-items:center;padding:0 10px}
+.funnel-bar span{font:600 12px 'DM Sans',sans-serif;color:#fff}
+.funnel-label{font:13px 'DM Sans',sans-serif;color:var(--muted);min-width:90px;text-align:right}
+.funnel-count{font:12px 'DM Mono',monospace;color:var(--ink);min-width:50px}
+
+/* reduce motion preference */
+@media(prefers-reduced-motion:reduce){
+.workspace-page,.workspace-page-header,.workspace-page-header h1,.workspace-page-header .workspace-page-intro,.anim-fade-up,.anim-scale-in,.anim-slide-down,.anim-fade-in{animation:none!important}
+.surface-card,.invoice-row,.inventory-summary>div,.button,.preset-tile,.analytics-card{transition:none!important}
+.chart-bar{animation:none!important}
+.skeleton{animation:none!important}
+}

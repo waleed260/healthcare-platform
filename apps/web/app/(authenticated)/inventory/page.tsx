@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import anime from "animejs";
 import { api, errorMessage, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -125,7 +126,13 @@ export default function InventoryPage() {
 
   const lowCount = stock.filter((item) => item.low_stock).length;
 
-  return <main className="workspace-page inventory-page">
+  const invRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (loading || !invRef.current) return;
+    anime({ targets: invRef.current.querySelectorAll(".surface-card, .invoice-row, .inventory-summary > div"), opacity: [0, 1], translateY: [20, 0], duration: 480, delay: anime.stagger(40, { start: 100 }), easing: "easeOutCubic" });
+  }, [loading]);
+
+  return <main className="workspace-page inventory-page" ref={invRef}>
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">OPERATIONS</p>

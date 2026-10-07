@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import anime from "animejs";
 import { api, apiPage, post, money, label, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -247,6 +248,19 @@ export default function BillingPage() {
   const outstanding = invoices.reduce((sum, inv) => sum + Math.max(inv.total_minor - inv.paid_minor, 0), 0);
   const openCount = invoices.filter((inv) => !["paid", "void", "refunded"].includes(inv.status)).length;
 
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (pageLoading || invoices.length === 0 || !listRef.current) return;
+    anime({
+      targets: listRef.current.querySelectorAll(".invoice-row"),
+      opacity: [0, 1],
+      translateY: [20, 0],
+      duration: 450,
+      delay: anime.stagger(35, { start: 80 }),
+      easing: "easeOutCubic",
+    });
+  }, [pageLoading, invoices.length]);
+
   return (
     <section className="dash-content billing-content" aria-busy={loading || pageLoading}>
       <div className="dash-topline">
@@ -351,7 +365,7 @@ export default function BillingPage() {
         {!pageLoading && invoices.length === 0 && <div className="dashboard-empty"><strong>No invoices yet</strong><span>Issue the first invoice when a service is ready to be charged.</span></div>}
 
         {invoices.length > 0 && (
-          <div className="invoice-list">
+          <div className="invoice-list" ref={listRef}>
             {invoices.map((inv) => {
               const balance = Math.max(inv.total_minor - inv.paid_minor, 0);
               return (
