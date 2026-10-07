@@ -33,6 +33,8 @@ const navGroups: NavGroup[] = [
   { key: "website", label: "WEBSITE", items: [
     { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
     { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
+    { href: "/domains", label: "Domains", icon: "◎", permission: "website.read" },
+    { href: "/media", label: "Media", icon: "▣", permission: "website.read" },
   ]},
   { key: "manage", label: "MANAGEMENT", items: [
     { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
