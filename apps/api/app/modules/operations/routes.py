@@ -11,7 +11,7 @@ from app.modules.appointments.state import validate_transition
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
-from app.modules.operations.schemas import FollowUpAssign, FollowUpComplete, FollowUpCreate, FollowUpUpdate, NotificationRead, PushSubscriptionCreate, QueueCheckIn, QueueCommand, QueueReorder
+from app.modules.operations.schemas import DailyStat, ChannelStat, FunnelStep, TopService, FollowUpAssign, FollowUpComplete, FollowUpCreate, FollowUpUpdate, NotificationRead, PushSubscriptionCreate, QueueCheckIn, QueueCommand, QueueReorder
 from app.modules.operations.push import vapid_public_key
 from app.core.config import get_settings
 from app.core.security import decode_cursor, encode_cursor, encrypt_field
@@ -249,6 +249,135 @@ def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=3
     """), params).mappings().one()
     db.commit()
     return {"data": {"period_days": days, "appointments": [dict(row) for row in appointment_counts], "patients_created": patient_count, "leads": [dict(row) for row in lead_counts], "financial": financial, "package_utilization": dict(package_utilization), "operational": {**dict(operational), "low_inventory": low_inventory}}, "meta": {"request_id": request.state.request_id}}
+
+
+def _parse_range(value: str) -> int:
+    mapping = {"7d": 7, "30d": 30, "90d": 90}
+    days = mapping.get(value)
+    if days is None:
+        raise _error("INVALID_INPUT", "Range must be 7d, 30d, or 90d.", status.HTTP_400_BAD_REQUEST)
+    return days
+
+
+@router.get("/analytics/daily")
+def analytics_daily(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "admin.analytics.read")
+    days = _parse_range(range)
+    clinic_id = session["clinic_id"]
+    user_id = session["user_id"]
+    rows = db.execute(text("""
+        SELECT d::date AS date,
+               COALESCE(appt.cnt, 0) AS appointments,
+               COALESCE(pat.cnt, 0) AS new_patients,
+               COALESCE(pay.total, 0) AS revenue_minor,
+               COALESCE(appt.no_shows, 0) AS no_shows
+        FROM generate_series(
+            (now() - (:days * INTERVAL '1 day'))::date,
+            now()::date,
+            '1 day'::interval
+        ) AS d
+        LEFT JOIN (
+            SELECT (a.starts_at AT TIME ZONE COALESCE(b.timezone, 'UTC'))::date AS day,
+                   COUNT(*) AS cnt,
+                   COUNT(*) FILTER (WHERE a.status = 'no_show') AS no_shows
+            FROM appointments a
+            JOIN branches b ON b.clinic_id = a.clinic_id AND b.id = a.branch_id
+            WHERE a.clinic_id = :clinic_id AND a.archived_at IS NULL
+              AND b.status = 'active' AND b.archived_at IS NULL
+              AND a.starts_at >= now() - (:days * INTERVAL '1 day')
+              AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+                   OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
+            GROUP BY day
+        ) appt ON appt.day = d::date
+        LEFT JOIN (
+            SELECT p.created_at::date AS day, COUNT(*) AS cnt
+            FROM patients p
+            WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL
+              AND p.created_at >= now() - (:days * INTERVAL '1 day')
+            GROUP BY day
+        ) pat ON pat.day = d::date
+        LEFT JOIN (
+            SELECT py.paid_at::date AS day, COALESCE(SUM(py.amount_minor), 0)::bigint AS total
+            FROM payments py
+            WHERE py.clinic_id = :clinic_id
+              AND py.paid_at >= now() - (:days * INTERVAL '1 day')
+            GROUP BY day
+        ) pay ON pay.day = d::date
+        ORDER BY d
+    """), {"clinic_id": clinic_id, "user_id": user_id, "days": days}).mappings().all()
+    db.commit()
+    data = [DailyStat(date=row["date"], appointments=row["appointments"], new_patients=row["new_patients"], revenue_minor=row["revenue_minor"], no_shows=row["no_shows"]).model_dump(mode="json") for row in rows]
+    return {"data": data, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/analytics/channels")
+def analytics_channels(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "admin.analytics.read")
+    days = _parse_range(range)
+    rows = db.execute(text("""
+        SELECT COALESCE(l.source, 'unknown') AS channel,
+               COUNT(*) AS leads,
+               COUNT(*) FILTER (WHERE l.status = 'converted') AS converted
+        FROM leads l
+        WHERE l.clinic_id = :clinic_id
+          AND l.created_at >= now() - (:days * INTERVAL '1 day')
+        GROUP BY COALESCE(l.source, 'unknown')
+        ORDER BY leads DESC
+    """), {"clinic_id": session["clinic_id"], "days": days}).mappings().all()
+    db.commit()
+    data = [ChannelStat(channel=row["channel"], leads=row["leads"], converted=row["converted"]).model_dump(mode="json") for row in rows]
+    return {"data": data, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/analytics/funnel")
+def analytics_funnel(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "admin.analytics.read")
+    days = _parse_range(range)
+    stages = ["new", "contacted", "qualified", "appointment_booked", "visited", "converted"]
+    stage_indices = {s: i for i, s in enumerate(stages)}
+    total_by_status = db.execute(text("""
+        SELECT l.status, COUNT(*) AS cnt
+        FROM leads l
+        WHERE l.clinic_id = :clinic_id
+          AND l.created_at >= now() - (:days * INTERVAL '1 day')
+          AND l.status != 'lost'
+        GROUP BY l.status
+    """), {"clinic_id": session["clinic_id"], "days": days}).mappings().all()
+    counts_by_stage = {s: 0 for s in stages}
+    for row in total_by_status:
+        idx = stage_indices.get(row["status"])
+        if idx is None:
+            continue
+        for stage in stages[: idx + 1]:
+            counts_by_stage[stage] += row["cnt"]
+    db.commit()
+    data = [FunnelStep(stage=s, count=counts_by_stage[s]).model_dump(mode="json") for s in stages]
+    return {"data": data, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/analytics/top-services")
+def analytics_top_services(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "admin.analytics.read")
+    days = _parse_range(range)
+    rows = db.execute(text("""
+        SELECT s.name,
+               COUNT(DISTINCT a.id) AS count,
+               COALESCE(SUM(il.line_total_minor), 0)::bigint AS revenue_minor
+        FROM services s
+        JOIN appointments a ON a.clinic_id = s.clinic_id AND a.service_id = s.id
+        LEFT JOIN invoices i ON i.clinic_id = a.clinic_id AND i.appointment_id = a.id AND i.status NOT IN ('void', 'refunded')
+        LEFT JOIN invoice_lines il ON il.clinic_id = i.clinic_id AND il.invoice_id = i.id
+        WHERE s.clinic_id = :clinic_id AND a.archived_at IS NULL
+          AND a.starts_at >= now() - (:days * INTERVAL '1 day')
+          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes sc WHERE sc.clinic_id = :clinic_id AND sc.user_id = :user_id)
+               OR EXISTS (SELECT 1 FROM user_branch_scopes sc WHERE sc.clinic_id = :clinic_id AND sc.user_id = :user_id AND sc.branch_id = a.branch_id))
+        GROUP BY s.id, s.name
+        ORDER BY count DESC
+        LIMIT 10
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "days": days}).mappings().all()
+    db.commit()
+    data = [TopService(name=row["name"], count=row["count"], revenue_minor=row["revenue_minor"]).model_dump(mode="json") for row in rows]
+    return {"data": data, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/queue")

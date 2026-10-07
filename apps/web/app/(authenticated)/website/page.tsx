@@ -16,7 +16,8 @@ import { api, csrfToken } from "../_lib/client";
 type Brand = SiteBrand;
 type Website = { id: string; name: string; template_key: string; status: string; version: number; brand?: Brand; draft_version_id?: string | null; live_version_id?: string | null };
 type Page = { id: string; slug: string; title: string; version: number; seo_title?: string | null; seo_description?: string | null };
-type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string };
+type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string; media_id?: string | null; gallery_ids?: string[] };
+type MediaAsset = { id: string; original_filename?: string; alt_text: string; mime_type: string; scan_status: string };
 type Section = { id: string; section_type: string; layout_key: string; position: number; content: Content; is_visible: boolean; version: number };
 type Version = { id: string; version_number: number; published_at?: string | null; created_at: string };
 type Domain = { hostname: string; observed_status: string };
@@ -219,6 +220,63 @@ function PreviewSection({ section, template, brand, selected, onSelect }: { sect
       {body && <p>{body}</p>}
       {content.button_label && <span className={`button button-primary ${buttonClass(brand)}`}>{content.button_label} <span>→</span></span>}
     </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────
+   Media picker — selects clean media for section images
+   ──────────────────────────────────────────────────── */
+function MediaPicker({ websiteId, sectionId, mediaId, galleryIds, isGallery, disabled, onSelect, onGalleryChange }: {
+  websiteId: string | null; sectionId: string; mediaId: string | null; galleryIds: string[]; isGallery: boolean; disabled: boolean;
+  onSelect: (id: string | null) => void; onGalleryChange: (ids: string[]) => void;
+}) {
+  const [items, setItems] = useState<MediaAsset[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!websiteId) return;
+    try {
+      const rows = await api<MediaAsset[]>("/api/v1/websites/media?limit=100");
+      setItems((rows ?? []).filter((m) => m.scan_status === "clean" && m.mime_type.startsWith("image/")));
+    } catch { /* graceful */ }
+    setLoaded(true);
+  }, [websiteId]);
+
+  useEffect(() => { if (open && !loaded) void load(); }, [open, loaded, load]);
+
+  const selectedName = mediaId ? items.find((m) => m.id === mediaId)?.alt_text || items.find((m) => m.id === mediaId)?.original_filename || "Selected" : null;
+
+  if (isGallery) {
+    return (
+      <div>
+        <div className="wb-panel-header"><h3>Gallery images</h3><button className="wb-add-btn" disabled={disabled} onClick={() => setOpen((v) => !v)} title="Pick images">+</button></div>
+        {galleryIds.length > 0 && <div className="wb-version-list">{galleryIds.map((gid, idx) => {
+          const asset = items.find((m) => m.id === gid);
+          return <div className="wb-version-row" key={gid}><div><strong>{asset?.alt_text || asset?.original_filename || `Image ${idx + 1}`}</strong><small>{asset?.mime_type ?? ""}</small></div><button className="wb-tree-btn" disabled={disabled} onClick={() => onGalleryChange(galleryIds.filter((_, i) => i !== idx))} title="Remove">✕</button></div>;
+        })}</div>}
+        {galleryIds.length === 0 && <p className="wb-empty">No gallery images selected.</p>}
+        {open && <div className="wb-version-list" style={{ marginTop: 8, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, padding: 4 }}>
+          {items.filter((m) => !galleryIds.includes(m.id)).map((m) => <button key={m.id} className="wb-version-row" style={{ cursor: "pointer", width: "100%", textAlign: "left", background: "none", border: "none" }} onClick={() => { onGalleryChange([...galleryIds, m.id]); }}><div><strong>{m.alt_text || m.original_filename}</strong><small>{m.mime_type}</small></div></button>)}
+          {items.filter((m) => !galleryIds.includes(m.id)).length === 0 && <p className="wb-empty">{loaded ? "No more images available." : "Loading…"}</p>}
+        </div>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label>Section image
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="wb-btn wb-btn-secondary" style={{ flex: 1 }} disabled={disabled} onClick={() => setOpen((v) => !v)} type="button">{selectedName ?? "Choose image…"}</button>
+          {mediaId && <button className="wb-tree-btn" disabled={disabled} onClick={() => onSelect(null)} title="Remove image">✕</button>}
+        </div>
+      </label>
+      {open && <div className="wb-version-list" style={{ marginTop: 4, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, padding: 4 }}>
+        {items.map((m) => <button key={m.id} className="wb-version-row" style={{ cursor: "pointer", width: "100%", textAlign: "left", background: mediaId === m.id ? "var(--accent-bg, #edf6f3)" : "none", border: "none" }} onClick={() => { onSelect(m.id); setOpen(false); }}><div><strong>{m.alt_text || m.original_filename}</strong><small>{m.mime_type}</small></div></button>)}
+        {items.length === 0 && <p className="wb-empty">{loaded ? "No clean images in media library." : "Loading…"}</p>}
+      </div>}
+    </div>
   );
 }
 
@@ -749,6 +807,25 @@ export default function WebsiteEditorPage() {
                     </label>
                   </>}
                 </div>
+
+                {/* media picker for sections that support images */}
+                {["hero", "results", "doctor_profile", "about"].includes(selectedSection.section_type) && (() => {
+                  const isGallery = selectedSection.section_type === "results";
+                  return (
+                    <div className="wb-field-stack" style={{ marginTop: 12 }}>
+                      <MediaPicker
+                        websiteId={website?.id ?? null}
+                        sectionId={selectedSection.id}
+                        mediaId={selectedSection.content.media_id ?? null}
+                        galleryIds={selectedSection.content.gallery_ids ?? []}
+                        isGallery={isGallery}
+                        disabled={!canEdit}
+                        onSelect={(id) => setSections((cur) => cur.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, media_id: id } } : s))}
+                        onGalleryChange={(ids) => setSections((cur) => cur.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, gallery_ids: ids } } : s))}
+                      />
+                    </div>
+                  );
+                })()}
 
                 {/* items list editor for sections with repeatable items */}
                 {["services", "pricing", "doctor_profile", "testimonials", "statistics", "hours", "faq", "results"].includes(selectedSection.section_type) && (
