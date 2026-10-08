@@ -20,7 +20,7 @@ from app.modules.audit.service import record_event
 from app.modules.websites.publishing import refresh_draft_snapshot, snapshot_checksum, validate_publish_snapshot
 from app.modules.websites.scanner import MAX_WEBSITE_IMAGE_BYTES, validate_image_magic
 from app.modules.files.storage import delete_private_object, put_private_object, put_public_object, read_private_object, read_public_object
-from app.modules.websites.schemas import DomainCreate, DomainVerify, WebsiteArchiveRequest, WebsiteCreate, WebsiteLeadCreate, WebsiteMediaCreate, WebsiteMediaUpdate, WebsitePageCreate, WebsitePageUpdate, WebsitePublishRequest, WebsiteRollbackRequest, WebsiteSectionEdit, WebsiteSectionUpdate, WebsiteUpdate, WebsiteVersionCommand
+from app.modules.websites.schemas import DomainCreate, DomainVerify, ThemeInstanceArchive, ThemeInstanceCreate, ThemeInstanceUpdate, WebsiteArchiveRequest, WebsiteCreate, WebsiteLeadCreate, WebsiteMediaCreate, WebsiteMediaUpdate, WebsitePageCreate, WebsitePageUpdate, WebsitePublishRequest, WebsiteRollbackRequest, WebsiteSectionEdit, WebsiteSectionUpdate, WebsiteUpdate, WebsiteVersionCommand
 from app.modules.appointments.rate_limit import consume_public_management_limit
 
 router = APIRouter(prefix="/api/v1/websites", tags=["websites"])
@@ -91,6 +91,38 @@ def _collection_cursor(cursor: str | None, namespace: str) -> dict[str, str]:
     return values
 
 
+STARTER_PAGES = [
+    {"slug": "home", "title": "Home", "sections": [
+        {"section_type": "hero", "layout_key": "split", "position": 0, "content": {"heading": "Care that feels considered.", "body": "Welcome to our clinic. We combine modern medical expertise with a warm, personal approach to your health.", "button_label": "Book an appointment", "button_href": "#appointment"}, "is_visible": True},
+        {"section_type": "services", "layout_key": "cards", "position": 1, "content": {"heading": "Our services", "eyebrow": "WHAT WE OFFER", "body": "Comprehensive care tailored to your needs.", "items": [{"title": "General Consultation", "description": "Thorough assessment and personalised treatment plans."}, {"title": "Preventive Care", "description": "Screenings, health checks, and wellness guidance."}, {"title": "Specialist Referrals", "description": "Coordinated specialist care when you need it."}]}, "is_visible": True},
+        {"section_type": "appointment_cta", "layout_key": "banner", "position": 2, "content": {"heading": "Ready to take the next step?", "body": "Book your appointment online or call us directly.", "button_label": "Book now", "button_href": "#appointment"}, "is_visible": True},
+    ]},
+    {"slug": "about", "title": "About", "sections": [
+        {"section_type": "about", "layout_key": "text", "position": 0, "content": {"heading": "About our practice", "eyebrow": "WHO WE ARE", "body": "Founded with a commitment to patient-centred care, our practice brings together experienced physicians dedicated to your wellbeing. We believe healthcare should be accessible, transparent, and personal."}, "is_visible": True},
+    ]},
+    {"slug": "contact", "title": "Contact", "sections": [
+        {"section_type": "contact", "layout_key": "text", "position": 0, "content": {"heading": "Get in touch", "body": "We would love to hear from you. Reach out to schedule an appointment or ask a question."}, "is_visible": True},
+        {"section_type": "hours", "layout_key": "text", "position": 1, "content": {"heading": "Opening hours", "body": "Monday–Friday: 8:00 AM – 6:00 PM\nSaturday: 9:00 AM – 1:00 PM\nSunday: Closed"}, "is_visible": True},
+    ]},
+    {"slug": "privacy", "title": "Privacy Policy", "sections": [
+        {"section_type": "legal", "layout_key": "text", "position": 0, "content": {"heading": "Privacy Policy", "body": "We are committed to protecting your personal information and your right to privacy. This policy describes how we collect, use, and share information when you use our services. We collect personal data you voluntarily provide to us, including name, email, phone number, and health information necessary for treatment. Your data is stored securely and never sold to third parties."}, "is_visible": True},
+    ]},
+    {"slug": "cancellation", "title": "Cancellation Policy", "sections": [
+        {"section_type": "legal", "layout_key": "text", "position": 0, "content": {"heading": "Cancellation Policy", "body": "We understand that plans change. If you need to cancel or reschedule an appointment, please give us at least 24 hours notice. Late cancellations or missed appointments may be subject to a fee. This policy helps us serve all patients effectively and keeps appointment times available for those who need them."}, "is_visible": True},
+    ]},
+    {"slug": "medical-disclaimer", "title": "Medical Disclaimer", "sections": [
+        {"section_type": "legal", "layout_key": "text", "position": 0, "content": {"heading": "Medical Disclaimer", "body": "The content on this website is provided for general informational purposes only and does not constitute medical advice, diagnosis, or treatment. Always seek the advice of a qualified healthcare provider with any questions regarding a medical condition. Never disregard professional medical advice or delay seeking it because of something you have read on this website."}, "is_visible": True},
+    ]},
+]
+
+
+def _seed_starter_pages(db: Session, clinic_id: UUID, website_id: UUID) -> None:
+    for page_def in STARTER_PAGES:
+        page = db.execute(text("INSERT INTO website_pages (clinic_id, website_id, slug, title) VALUES (:clinic_id, :website_id, :slug, :title) RETURNING id"), {"clinic_id": clinic_id, "website_id": website_id, "slug": page_def["slug"], "title": page_def["title"]}).mappings().one()
+        for section_def in page_def["sections"]:
+            db.execute(text("INSERT INTO website_sections (clinic_id, page_id, section_type, layout_key, position, content, is_visible) VALUES (:clinic_id, :page_id, :section_type, :layout_key, :position, CAST(:content AS jsonb), :is_visible)"), {"clinic_id": clinic_id, "page_id": page["id"], "section_type": section_def["section_type"], "layout_key": section_def["layout_key"], "position": section_def["position"], "content": json.dumps(section_def["content"]), "is_visible": section_def["is_visible"]})
+
+
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
     session = _session_or_401(db, session_token)
     if session["clinic_id"] is None:
@@ -126,6 +158,8 @@ def website_create(payload: WebsiteCreate, request: Request, db: Session = Depen
     session = _authorized(db, session_token, "website.edit")
     _csrf(request, session, csrf_token)
     row = db.execute(text("INSERT INTO websites (clinic_id, name, template_key, brand) VALUES (:clinic_id, :name, :template_key, CAST(:brand AS jsonb)) RETURNING id, name, template_key, brand, status, version, created_at"), {"clinic_id": session["clinic_id"], "name": payload.name.strip(), "template_key": payload.template_key, "brand": json.dumps(payload.brand)}).mappings().one()
+    _seed_starter_pages(db, session["clinic_id"], row["id"])
+    db.execute(text("INSERT INTO theme_instances (clinic_id, website_id, name, status, brand_snapshot, created_by) VALUES (:clinic_id, :website_id, 'Live', 'live', CAST(:brand AS jsonb), :user_id)"), {"clinic_id": session["clinic_id"], "website_id": row["id"], "brand": json.dumps(payload.brand), "user_id": session["user_id"]})
     draft = refresh_draft_snapshot(db, session["clinic_id"], row["id"], session["user_id"])
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.create", entity_type="website", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
@@ -545,6 +579,113 @@ def media_delete(media_id: UUID, payload: WebsiteVersionCommand, request: Reques
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.media_delete", entity_type="website_media", entity_id=media_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": {"id": deleted["id"], "deleted": True}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/{website_id}/themes")
+def theme_list(website_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "website.read")
+    rows = db.execute(text("""
+        SELECT id, name, status, brand_snapshot, version, created_at, updated_at, archived_at
+        FROM theme_instances
+        WHERE clinic_id = :clinic_id AND website_id = :website_id AND archived_at IS NULL
+        ORDER BY CASE status WHEN 'live' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, updated_at DESC
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{website_id}/themes", status_code=status.HTTP_201_CREATED)
+def theme_create(website_id: UUID, payload: ThemeInstanceCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _authorized(db, session_token, "website.edit")
+    _csrf(request, session, csrf_token)
+    website = db.execute(text("SELECT id FROM websites WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": website_id}).scalar_one_or_none()
+    if website is None:
+        raise _error("NOT_FOUND", "Website not found.", status.HTTP_404_NOT_FOUND)
+    row = db.execute(text("""
+        INSERT INTO theme_instances (clinic_id, website_id, name, status, brand_snapshot, created_by)
+        VALUES (:clinic_id, :website_id, :name, 'draft', CAST(:brand AS jsonb), :user_id)
+        RETURNING id, name, status, brand_snapshot, version, created_at
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "name": payload.name.strip(), "brand": json.dumps(payload.brand_snapshot), "user_id": session["user_id"]}).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.theme.create", entity_type="theme_instance", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.patch("/{website_id}/themes/{theme_id}")
+def theme_update(website_id: UUID, theme_id: UUID, payload: ThemeInstanceUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _authorized(db, session_token, "website.edit")
+    _csrf(request, session, csrf_token)
+    values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
+    if not values:
+        raise _error("INVALID_INPUT", "At least one theme field is required.", status.HTTP_400_BAD_REQUEST)
+    params = {"clinic_id": session["clinic_id"], "website_id": website_id, "theme_id": theme_id, "expected_version": payload.expected_version}
+    assignments = []
+    for field, value in values.items():
+        if field == "brand_snapshot":
+            assignments.append("brand_snapshot = CAST(:brand_snapshot AS jsonb)")
+            params["brand_snapshot"] = json.dumps(value)
+        else:
+            assignments.append(f"{field} = :{field}")
+            params[field] = value
+    if payload.status == "live":
+        db.execute(text("UPDATE theme_instances SET status = 'draft' WHERE clinic_id = :clinic_id AND website_id = :website_id AND status = 'live'"), {"clinic_id": session["clinic_id"], "website_id": website_id})
+    row = db.execute(text(f"""
+        UPDATE theme_instances SET {', '.join(assignments)}, version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :theme_id
+          AND archived_at IS NULL AND version = :expected_version
+        RETURNING id, name, status, brand_snapshot, version, updated_at
+    """), params).mappings().one_or_none()
+    if row is None:
+        exists = db.execute(text("SELECT version FROM theme_instances WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :theme_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "website_id": website_id, "theme_id": theme_id}).scalar_one_or_none()
+        raise _error("VERSION_CONFLICT" if exists is not None else "NOT_FOUND", "The theme changed before update." if exists is not None else "Theme not found.", status.HTTP_409_CONFLICT if exists is not None else status.HTTP_404_NOT_FOUND)
+    if row["status"] == "live":
+        db.execute(text("UPDATE websites SET brand = CAST(:brand AS jsonb), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :website_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "website_id": website_id, "brand": json.dumps(row["brand_snapshot"])})
+        refresh_draft_snapshot(db, session["clinic_id"], website_id, session["user_id"])
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.theme.update", entity_type="theme_instance", entity_id=theme_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{website_id}/themes/{theme_id}/archive")
+def theme_archive(website_id: UUID, theme_id: UUID, payload: ThemeInstanceArchive, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _authorized(db, session_token, "website.edit")
+    _csrf(request, session, csrf_token)
+    row = db.execute(text("""
+        UPDATE theme_instances SET archived_at = now(), status = 'archived', version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :theme_id
+          AND archived_at IS NULL AND status <> 'live' AND version = :expected_version
+        RETURNING id, status, archived_at, version
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "theme_id": theme_id, "expected_version": payload.expected_version}).mappings().one_or_none()
+    if row is None:
+        live_check = db.execute(text("SELECT status FROM theme_instances WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :theme_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "website_id": website_id, "theme_id": theme_id}).scalar_one_or_none()
+        if live_check == "live":
+            raise _error("INVALID_STATE", "The live theme cannot be archived.", status.HTTP_400_BAD_REQUEST)
+        raise _error("VERSION_CONFLICT" if live_check is not None else "NOT_FOUND", "The theme changed before archiving." if live_check is not None else "Theme not found.", status.HTTP_409_CONFLICT if live_check is not None else status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.theme.archive", entity_type="theme_instance", entity_id=theme_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{website_id}/themes/{theme_id}/activate")
+def theme_activate(website_id: UUID, theme_id: UUID, payload: ThemeInstanceArchive, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _authorized(db, session_token, "website.edit")
+    _csrf(request, session, csrf_token)
+    current = db.execute(text("SELECT id, status, brand_snapshot, version FROM theme_instances WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :theme_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "website_id": website_id, "theme_id": theme_id}).mappings().one_or_none()
+    if current is None:
+        raise _error("NOT_FOUND", "Theme not found.", status.HTTP_404_NOT_FOUND)
+    if current["version"] != payload.expected_version:
+        raise _error("VERSION_CONFLICT", "The theme changed before activation.", status.HTTP_409_CONFLICT)
+    db.execute(text("UPDATE theme_instances SET status = 'draft', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND website_id = :website_id AND status = 'live'"), {"clinic_id": session["clinic_id"], "website_id": website_id})
+    row = db.execute(text("""
+        UPDATE theme_instances SET status = 'live', version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND website_id = :website_id AND id = :theme_id
+        RETURNING id, name, status, brand_snapshot, version, updated_at
+    """), {"clinic_id": session["clinic_id"], "website_id": website_id, "theme_id": theme_id}).mappings().one()
+    db.execute(text("UPDATE websites SET brand = CAST(:brand AS jsonb), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :website_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "website_id": website_id, "brand": json.dumps(row["brand_snapshot"])})
+    refresh_draft_snapshot(db, session["clinic_id"], website_id, session["user_id"])
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.theme.activate", entity_type="theme_instance", entity_id=theme_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/domains")

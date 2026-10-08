@@ -88,9 +88,10 @@ const SECTION_LIBRARY: SectionCategory[] = [
   { label: "Content", icon: "≡", types: [
     { type: "about", layout: "text", label: "Text", description: "Rich text content block" },
     { type: "about", layout: "image_text", label: "Image + text", description: "Side-by-side image and copy" },
-    { type: "about", layout: "video", label: "Video", description: "Embedded video section" },
-    { type: "about", layout: "timeline", label: "Timeline", description: "Step-by-step process" },
-    { type: "about", layout: "comparison", label: "Comparison", description: "Feature comparison table" },
+    { type: "video", layout: "default", label: "Video", description: "Embedded video player" },
+    { type: "timeline", layout: "default", label: "Timeline", description: "Step-by-step process" },
+    { type: "gallery", layout: "default", label: "Gallery", description: "Image gallery grid" },
+    { type: "comparison", layout: "default", label: "Comparison", description: "Feature comparison table" },
     { type: "faq", layout: "accordion", label: "FAQ", description: "Collapsible questions" },
     { type: "hours", layout: "text", label: "Hours", description: "Operating hours" },
     { type: "location", layout: "map", label: "Map / location", description: "Clinic location" },
@@ -104,7 +105,8 @@ const defaultContent: Content = { heading: "", body: "", button_label: null, but
 type Device = "desktop" | "tablet" | "mobile";
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 768, mobile: 375 };
 
-type RightTab = "design" | "content" | "page" | "seo" | "library" | "history";
+type ThemeInstance = { id: string; name: string; status: string; brand_snapshot: Brand; version: number; created_at: string; updated_at?: string };
+type RightTab = "design" | "content" | "page" | "seo" | "library" | "history" | "themes";
 
 /* ────────────────────────────────────────────────────
    Helpers
@@ -114,6 +116,49 @@ async function request<T>(url: string, init?: RequestOptions): Promise<T> {
 }
 function writeHeaders(extra?: Record<string, string>) { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken(), ...extra }; }
 function hex(value: string | undefined, fallback: string) { return /^#[0-9a-f]{6}$/i.test(value ?? "") ? value! : fallback; }
+
+/* ────────────────────────────────────────────────────
+   CodeMirror CSS editor (loaded dynamically from CDN)
+   ──────────────────────────────────────────────────── */
+declare global { interface Window { CodeMirror?: { fromTextArea: (el: HTMLTextAreaElement, opts: Record<string, unknown>) => { getValue: () => string; on: (ev: string, cb: () => void) => void; toTextArea: () => void }; } } }
+const CM_BASE = "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18";
+let cmLoadPromise: Promise<boolean> | null = null;
+function loadCodeMirror(): Promise<boolean> {
+  if (cmLoadPromise) return cmLoadPromise;
+  cmLoadPromise = new Promise((resolve) => {
+    if (window.CodeMirror) { resolve(true); return; }
+    const script = document.createElement("script");
+    script.src = `${CM_BASE}/codemirror.min.js`;
+    script.onload = () => { const mode = document.createElement("script"); mode.src = `${CM_BASE}/mode/css/css.min.js`; mode.onload = () => resolve(true); mode.onerror = () => resolve(false); document.head.appendChild(mode); };
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+    const link = document.createElement("link"); link.rel = "stylesheet"; link.href = `${CM_BASE}/codemirror.min.css`; document.head.appendChild(link);
+  });
+  return cmLoadPromise;
+}
+function CssEditor({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (v: string) => void }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cmRef = useRef<ReturnType<NonNullable<Window["CodeMirror"]>["fromTextArea"]> | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCodeMirror().then((ok) => { if (!cancelled && ok) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !textareaRef.current || cmRef.current || disabled) return;
+    const cm = window.CodeMirror!.fromTextArea(textareaRef.current, { mode: "css", lineNumbers: true, theme: "default", indentUnit: 2, tabSize: 2, lineWrapping: true });
+    cm.on("change", () => onChangeRef.current(cm.getValue()));
+    cmRef.current = cm;
+    return () => { cmRef.current?.toTextArea(); cmRef.current = null; };
+  }, [loaded, disabled]);
+
+  return <div className="wb-field-stack" style={{ marginTop: 16 }}><label style={{ display: "block", marginBottom: 4, fontSize: "0.78rem", fontWeight: 500 }}>Custom CSS</label><textarea ref={textareaRef} className="wb-css-editor" rows={6} placeholder={"/* Scoped to this section */\n.public-hero {\n  background: linear-gradient(...);\n}"} value={value} disabled={disabled} style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.78rem", width: "100%", border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, padding: "8px 10px" }} onChange={(e) => onChange(e.target.value)} /></div>;
+}
 
 /* ────────────────────────────────────────────────────
    Preview section renderer — looks like actual website
@@ -336,6 +381,8 @@ export default function WebsiteEditorPage() {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [showSectionLibrary, setShowSectionLibrary] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [themeInstances, setThemeInstances] = useState<ThemeInstance[]>([]);
+  const [newThemeName, setNewThemeName] = useState("");
 
   useEffect(() => {
     if (website) document.body.classList.add("wb-editor-active");
@@ -372,8 +419,8 @@ export default function WebsiteEditorPage() {
   const loadWebsite = useCallback(async (selected: Website) => {
     setBusy("load"); setWebsite(selected);
     try {
-      const [pageRows, versionRows] = await Promise.all([request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`)]);
-      setVersions(versionRows ?? []);
+      const [pageRows, versionRows, themeRows] = await Promise.all([request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`), request<ThemeInstance[]>(`/api/v1/websites/${selected.id}/themes`).catch(() => [] as ThemeInstance[])]);
+      setVersions(versionRows ?? []); setThemeInstances(themeRows ?? []);
       const allPages = Array.isArray(pageRows) ? pageRows : [];
       allPages.sort((a, b) => a.slug === "home" ? -1 : b.slug === "home" ? 1 : a.title.localeCompare(b.title));
       setPages(allPages);
@@ -731,6 +778,7 @@ export default function WebsiteEditorPage() {
               { key: "page" as RightTab, label: "Page", icon: "❏" },
               { key: "seo" as RightTab, label: "SEO", icon: "⌕" },
               { key: "library" as RightTab, label: "Library", icon: "❖" },
+              { key: "themes" as RightTab, label: "Themes", icon: "◈" },
               { key: "history" as RightTab, label: "History", icon: "↺" },
             ]).map((tab) => (
               <button key={tab.key} className={`wb-rtab${rightTab === tab.key ? " is-active" : ""}`} onClick={() => setRightTab(tab.key)}>
@@ -954,11 +1002,7 @@ export default function WebsiteEditorPage() {
                   </>; })()}
                 </fieldset>
 
-                <div className="wb-field-stack" style={{ marginTop: 16 }}>
-                  <label>Custom CSS
-                    <textarea className="wb-css-editor" rows={4} placeholder={"/* Scoped to this section */\n.section-hero { background: linear-gradient(...); }"} value={selectedSection.content.custom_css ?? ""} disabled={!canEdit} style={{ fontFamily: "monospace", fontSize: "0.8rem" }} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, custom_css: e.target.value } } : s))} />
-                  </label>
-                </div>
+                <CssEditor value={selectedSection.content.custom_css ?? ""} disabled={!canEdit} onChange={(value) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, custom_css: value } } : s))} />
                 <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
                   <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Device visibility</legend>
                   {(["tablet", "mobile"] as const).map((target) => {
@@ -1054,6 +1098,65 @@ export default function WebsiteEditorPage() {
 
             {/* ── Library tab ── */}
             {rightTab === "library" && website && <LibraryPanel key={`lib-${website.id}`} website={website} pageId={page?.id ?? null} sections={sections} disabled={controlsDisabled} onChanged={() => void load()} />}
+
+            {/* ── Themes tab ── */}
+            {rightTab === "themes" && website && (
+              <section className="wb-panel">
+                <h3>Theme instances</h3>
+                <p className="wb-panel-meta">{themeInstances.length} theme{themeInstances.length !== 1 ? "s" : ""}</p>
+                <div className="wb-version-list">
+                  {themeInstances.map((ti) => (
+                    <div className="wb-version-row" key={ti.id} style={{ borderLeft: ti.status === "live" ? "3px solid var(--wb-accent, #274c42)" : "3px solid transparent" }}>
+                      <div>
+                        <strong>{ti.name}</strong>
+                        <small style={{ textTransform: "capitalize" }}>{ti.status} · v{ti.version}</small>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {ti.status === "draft" && (
+                          <button className="wb-btn wb-btn-primary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                            setBusy("theme"); setError(null);
+                            try {
+                              await request(`/api/v1/websites/${website.id}/themes/${ti.id}/activate`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
+                              setNotice(`"${ti.name}" is now live.`);
+                              void load();
+                            } catch (reason) { setError(reason instanceof Error ? reason.message : "Activation failed."); }
+                            finally { setBusy(null); }
+                          }}>Activate</button>
+                        )}
+                        {ti.status !== "live" && (
+                          <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                            setBusy("theme"); setError(null);
+                            try {
+                              await request(`/api/v1/websites/${website.id}/themes/${ti.id}/archive`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
+                              setThemeInstances((cur) => cur.filter((t) => t.id !== ti.id));
+                              setNotice(`"${ti.name}" archived.`);
+                            } catch (reason) { setError(reason instanceof Error ? reason.message : "Archive failed."); }
+                            finally { setBusy(null); }
+                          }}>Archive</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="wb-field-stack" style={{ marginTop: 12, borderTop: "1px solid var(--wb-border, #e5e5e3)", paddingTop: 12 }}>
+                  <label>New theme
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input type="text" placeholder="Theme name" value={newThemeName} onChange={(e) => setNewThemeName(e.target.value)} disabled={controlsDisabled} style={{ flex: 1 }} />
+                      <button className="wb-btn wb-btn-primary" disabled={controlsDisabled || !newThemeName.trim()} onClick={async () => {
+                        setBusy("theme"); setError(null);
+                        try {
+                          const created = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: newThemeName.trim(), brand_snapshot: brand }) });
+                          if (created) setThemeInstances((cur) => [...cur, created]);
+                          setNewThemeName(""); setNotice(`Theme "${newThemeName.trim()}" created.`);
+                        } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed."); }
+                        finally { setBusy(null); }
+                      }}>Create</button>
+                    </div>
+                  </label>
+                  <small style={{ color: "var(--wb-muted, #999)" }}>Creates a draft copy of the current brand settings.</small>
+                </div>
+              </section>
+            )}
 
             {/* ── History tab ── */}
             {rightTab === "history" && (

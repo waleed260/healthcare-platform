@@ -32,6 +32,12 @@ test.describe("theme settings isolation and rendering", () => {
         data = [];
       } else if (path.includes("/public/sites/slug") && path.includes("/results")) {
         data = [];
+      } else if (path.includes("/themes") && !path.includes("activate") && !path.includes("archive")) {
+        data = [{ id: "th1", name: "Live", status: "live", brand_snapshot: brand, version: 1, created_at: "2026-10-01T00:00:00Z" }, { id: "th2", name: "Draft Autumn", status: "draft", brand_snapshot: {}, version: 1, created_at: "2026-10-02T00:00:00Z" }];
+      } else if (path.includes("/themes/") && path.includes("/activate")) {
+        data = { id: "th2", name: "Draft Autumn", status: "live", brand_snapshot: {}, version: 2 };
+      } else if (path.includes("/themes/") && path.includes("/archive")) {
+        data = { id: "th2", status: "archived", archived_at: "2026-10-08T00:00:00Z", version: 2 };
       }
 
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data, meta: { request_id: "r1" } }) });
@@ -91,5 +97,28 @@ test.describe("theme settings isolation and rendering", () => {
     await installApi(page, {});
     await page.goto("/website");
     await expect(page.locator(".preset-tile")).toHaveCount(6);
+  });
+
+  test("themes tab lists theme instances", async ({ page }) => {
+    await installApi(page, {});
+    await page.goto("/website");
+    await page.locator(".wb-rtab", { hasText: "Themes" }).click();
+    await expect(page.locator(".wb-version-row")).toHaveCount(2);
+    await expect(page.locator(".wb-version-row").first()).toContainText("Live");
+  });
+
+  test("themes tab has create input", async ({ page }) => {
+    await installApi(page, {});
+    await page.goto("/website");
+    await page.locator(".wb-rtab", { hasText: "Themes" }).click();
+    await expect(page.locator('input[placeholder="Theme name"]')).toBeVisible();
+  });
+
+  test("draft theme shows activate button", async ({ page }) => {
+    await installApi(page, {});
+    await page.goto("/website");
+    await page.locator(".wb-rtab", { hasText: "Themes" }).click();
+    const draftRow = page.locator(".wb-version-row", { hasText: "Draft Autumn" });
+    await expect(draftRow.locator("button", { hasText: "Activate" })).toBeVisible();
   });
 });
