@@ -1,7 +1,7 @@
 from alembic import op
 
 revision = "0023_governance_integrity"
-down_revision = "0022_holiday_scopes"
+down_revision = ("0022_holiday_scopes", "0022_theme_instances")
 branch_labels = None
 depends_on = None
 
