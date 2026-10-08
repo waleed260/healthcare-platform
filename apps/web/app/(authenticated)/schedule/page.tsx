@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEventHandler } from "react";
+import anime from "animejs";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 import BlockTimeDrawer from "../_lib/block-time-drawer";
+import { csrfToken } from "../_lib/client";
 
 type Appointment = { id: string; reference: string; branch_id: string; doctor_id: string | null; service_id: string | null; patient_id: string | null; starts_at: string; ends_at: string; status: string; source?: string; version: number };
 type Option = { id: string; name?: string; public_name?: string };
@@ -23,26 +24,168 @@ const formatDay = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.
 const formatTime = (value: string) => formatDay(new Date(value), { hour: "numeric", minute: "2-digit" });
 const errorMessage = async (response: Response, fallback: string) => { const payload = await response.json().catch(() => null) as { error?: { message?: string }; detail?: { error?: { message?: string } } } | null; return payload?.error?.message ?? payload?.detail?.error?.message ?? fallback; };
 async function api<T>(url: string, init?: RequestOptions): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (response.status === 401) { window.location.href = "/login"; throw new Error("Session expired."); } if (!response.ok) throw new Error(await errorMessage(response, "The schedule request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
-import { csrfToken } from "../_lib/client";
 function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
 
-function AppointmentCard({ appointment, doctorName, serviceName, onOpen, onDragStart }: { appointment: Appointment; doctorName: string; serviceName: string; onOpen: () => void; onDragStart: DragEventHandler<HTMLButtonElement> }) { return <button className={`calendar-appointment ${statusClass(appointment.status)}`} draggable onDragStart={onDragStart} onClick={onOpen} type="button"><strong>{formatTime(appointment.starts_at)}</strong><span>{appointment.reference}</span><small>{doctorName || serviceName || statusLabels[appointment.status]}</small></button>; }
+function AppointmentCard({ appointment, doctorName, serviceName, onOpen, onDragStart }: { appointment: Appointment; doctorName: string; serviceName: string; onOpen: () => void; onDragStart: DragEventHandler<HTMLButtonElement> }) {
+  return <button className={`calendar-appointment ${statusClass(appointment.status)}`} draggable onDragStart={onDragStart} onClick={onOpen} type="button"><strong>{formatTime(appointment.starts_at)}</strong><span>{appointment.reference}</span><small>{doctorName || serviceName || statusLabels[appointment.status]}</small></button>;
+}
 
 export default function SchedulePage() {
-  const [appointments, setAppointments] = useState<Appointment[]>([]); const [branches, setBranches] = useState<Option[]>([]); const [doctors, setDoctors] = useState<Option[]>([]); const [services, setServices] = useState<Option[]>([]); const [permissions, setPermissions] = useState<string[]>([]); const [clinicSlug, setClinicSlug] = useState(""); const [view, setView] = useState<ViewMode>("week"); const [cursorDate, setCursorDate] = useState(new Date()); const [selectedBranch, setSelectedBranch] = useState(""); const [selectedDoctor, setSelectedDoctor] = useState(""); const [selectedService, setSelectedService] = useState(""); const [selectedStatus, setSelectedStatus] = useState(""); const [selected, setSelected] = useState<Appointment | null>(null); const [detail, setDetail] = useState<Appointment | null>(null); const [assignDoctor, setAssignDoctor] = useState(""); const [rescheduleDate, setRescheduleDate] = useState(""); const [rescheduleTime, setRescheduleTime] = useState(""); const [reason, setReason] = useState("Schedule update"); const [draggedId, setDraggedId] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null); const [addApptOpen, setAddApptOpen] = useState(false); const [blockOpen, setBlockOpen] = useState(false);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [branches, setBranches] = useState<Option[]>([]);
+  const [doctors, setDoctors] = useState<Option[]>([]);
+  const [services, setServices] = useState<Option[]>([]);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [clinicSlug, setClinicSlug] = useState("");
+  const [view, setView] = useState<ViewMode>("week");
+  const [cursorDate, setCursorDate] = useState(new Date());
+  const [selectedBranch, setSelectedBranch] = useState("");
+  const [selectedDoctor, setSelectedDoctor] = useState("");
+  const [selectedService, setSelectedService] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [selected, setSelected] = useState<Appointment | null>(null);
+  const [detail, setDetail] = useState<Appointment | null>(null);
+  const [assignDoctor, setAssignDoctor] = useState("");
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const [reason, setReason] = useState("Schedule update");
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [addApptOpen, setAddApptOpen] = useState(false);
+  const [blockOpen, setBlockOpen] = useState(false);
+
   const can = (permission: string) => permissions.includes(permission);
-  const load = useCallback(async () => { setLoading(true); setError(null); try { const [session, appointmentRows, branchRows, doctorRows, serviceRows] = await Promise.all([api<Session>("/api/v1/auth/me"), api<Appointment[]>(`/api/v1/appointments?limit=100${selectedBranch ? `&branch_id=${encodeURIComponent(selectedBranch)}` : ""}${selectedDoctor ? `&doctor_id=${encodeURIComponent(selectedDoctor)}` : ""}${selectedService ? `&service_id=${encodeURIComponent(selectedService)}` : ""}${selectedStatus ? `&status=${encodeURIComponent(selectedStatus)}` : ""}`), api<Option[]>("/api/v1/branches?limit=100"), api<Option[]>("/api/v1/doctors?limit=100"), api<Option[]>("/api/v1/services?limit=100")]); setPermissions(session.permissions ?? []); if (session.clinic_slug) setClinicSlug(session.clinic_slug); setAppointments(appointmentRows ?? []); setBranches(branchRows ?? []); setDoctors(doctorRows ?? []); setServices(serviceRows ?? []); } catch (reason) { setError(reason instanceof Error ? reason.message : "The schedule could not be loaded."); } finally { setLoading(false); } }, [selectedBranch, selectedDoctor, selectedService, selectedStatus]);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [session, appointmentRows, branchRows, doctorRows, serviceRows] = await Promise.all([
+        api<Session>("/api/v1/auth/me"),
+        api<Appointment[]>(`/api/v1/appointments?limit=100${selectedBranch ? `&branch_id=${encodeURIComponent(selectedBranch)}` : ""}${selectedDoctor ? `&doctor_id=${encodeURIComponent(selectedDoctor)}` : ""}${selectedService ? `&service_id=${encodeURIComponent(selectedService)}` : ""}${selectedStatus ? `&status=${encodeURIComponent(selectedStatus)}` : ""}`),
+        api<Option[]>("/api/v1/branches?limit=100"),
+        api<Option[]>("/api/v1/doctors?limit=100"),
+        api<Option[]>("/api/v1/services?limit=100"),
+      ]);
+      setPermissions(session.permissions ?? []);
+      if (session.clinic_slug) setClinicSlug(session.clinic_slug);
+      setAppointments(appointmentRows ?? []);
+      setBranches(branchRows ?? []);
+      setDoctors(doctorRows ?? []);
+      setServices(serviceRows ?? []);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The schedule could not be loaded.");
+    } finally { setLoading(false); }
+  }, [selectedBranch, selectedDoctor, selectedService, selectedStatus]);
+
   useEffect(() => { void load(); }, [load]);
-  const names = useMemo(() => ({ doctor: new Map(doctors.map((item) => [item.id, item.public_name ?? item.name ?? item.id])), service: new Map(services.map((item) => [item.id, item.name ?? item.id])), branch: new Map(branches.map((item) => [item.id, item.name ?? item.id])) }), [branches, doctors, services]);
+
+  const names = useMemo(() => ({
+    doctor: new Map(doctors.map((item) => [item.id, item.public_name ?? item.name ?? item.id])),
+    service: new Map(services.map((item) => [item.id, item.name ?? item.id])),
+    branch: new Map(branches.map((item) => [item.id, item.name ?? item.id])),
+  }), [branches, doctors, services]);
+
   const filtered = appointments;
   const days = useMemo(() => view === "day" ? [cursorDate] : view === "week" ? Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(cursorDate), index)) : (() => { const first = new Date(cursorDate.getFullYear(), cursorDate.getMonth(), 1); const gridStart = startOfWeek(first); return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index)); })(), [cursorDate, view]);
   const grouped = useMemo(() => { const result = new Map<string, Appointment[]>(); filtered.forEach((item) => { const key = dateKey(new Date(item.starts_at)); result.set(key, [...(result.get(key) ?? []), item]); }); return result; }, [filtered]);
   const title = view === "month" ? formatDay(cursorDate, { month: "long", year: "numeric" }) : view === "day" ? formatDay(cursorDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : `${formatDay(days[0], { month: "short", day: "numeric" })} – ${formatDay(days[6], { month: "short", day: "numeric", year: "numeric" })}`;
   const changePeriod = (amount: number) => setCursorDate((current) => view === "day" ? addDays(current, amount) : view === "week" ? addDays(current, amount * 7) : new Date(current.getFullYear(), current.getMonth() + amount, 1));
-  const openAppointment = async (appointment: Appointment) => { setSelected(appointment); setAssignDoctor(appointment.doctor_id ?? ""); setRescheduleDate(dateKey(new Date(appointment.starts_at))); setRescheduleTime(`${String(new Date(appointment.starts_at).getHours()).padStart(2, "0")}:${String(new Date(appointment.starts_at).getMinutes()).padStart(2, "0")}`); try { const loaded = await api<Appointment>(`/api/v1/appointments/${appointment.id}`); setDetail(loaded); setAssignDoctor(loaded.doctor_id ?? ""); } catch { setDetail(appointment); } };
-  const command = async (action: string, url: string, body: object) => { if (!selected) return; setBusy(action); setError(null); try { await api(url, { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) }); setSelected(null); setDetail(null); await load(); } catch (reason) { setError(reason instanceof Error ? reason.message : "The appointment action could not be completed."); } finally { setBusy(null); } };
+
+  const openAppointment = async (appointment: Appointment) => {
+    setSelected(appointment); setAssignDoctor(appointment.doctor_id ?? ""); setRescheduleDate(dateKey(new Date(appointment.starts_at))); setRescheduleTime(`${String(new Date(appointment.starts_at).getHours()).padStart(2, "0")}:${String(new Date(appointment.starts_at).getMinutes()).padStart(2, "0")}`);
+    try { const loaded = await api<Appointment>(`/api/v1/appointments/${appointment.id}`); setDetail(loaded); setAssignDoctor(loaded.doctor_id ?? ""); } catch { setDetail(appointment); }
+  };
+
+  const command = async (action: string, url: string, body: object) => {
+    if (!selected) return; setBusy(action); setError(null);
+    try { await api(url, { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) }); setSelected(null); setDetail(null); await load(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "The appointment action could not be completed."); }
+    finally { setBusy(null); }
+  };
+
   const reschedule = (appointment: Appointment, targetDate: string, targetTime: string) => { if (!can("appointment.reschedule")) return; const [hour, minute] = targetTime.split(":").map(Number); const startsAt = dateAt(targetDate, hour, minute).toISOString(); void command("reschedule", `/api/v1/appointments/${appointment.id}/reschedule`, { starts_at: startsAt, expected_version: appointment.version, reason }); };
   const dropOnDay = (day: Date) => { if (!draggedId) return; const appointment = appointments.find((item) => item.id === draggedId); if (!appointment) return; reschedule(appointment, dateKey(day), `${String(new Date(appointment.starts_at).getHours()).padStart(2, "0")}:${String(new Date(appointment.starts_at).getMinutes()).padStart(2, "0")}`); setDraggedId(null); };
-  const actionStatus = detail?.status ?? selected?.status; const selectedAppointment = detail ?? selected;
-  return <main className="dashboard-page"><header className="dash-header shell"><Link className="wordmark" href="/">care<span>/</span>fully</Link><div className="clinic-chip"><span className="clinic-avatar">VC</span><span>Clinic schedule</span></div></header><div className="dashboard shell"><aside className="sidebar"><p className="eyebrow">WORKSPACE</p><nav aria-label="Workspace navigation"><Link className="side-link" href="/dashboard">◈ <span>Overview</span></Link><Link className="side-link active" href="/schedule" aria-current="page">◷ <span>Schedule</span></Link><Link className="side-link" href="/patients">○ <span>Patients</span></Link><Link className="side-link" href="/queue">▣ <span>Queue</span></Link></nav></aside><section className="dash-content schedule-content" aria-busy={loading || busy !== null}><div className="dash-topline"><div><p className="eyebrow">CALENDAR · SCOPED CLINIC VIEW</p><h1>Make room for <em>care.</em></h1></div><button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>{can("appointment.create") && <button className="button button-primary" onClick={() => setAddApptOpen(true)}>Add appointment <span>+</span></button>}{can("scheduling.manage") && <button className="button button-secondary" onClick={() => setBlockOpen(true)}>Block time <span>▣</span></button>}</div><p className="schedule-intro">A working calendar for the whole appointment lifecycle. Drag a card to propose a new time, or open it for the full command drawer.</p>{error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => { setError(null); void load(); }}>Try again <span>→</span></button></div>}<section className="calendar-toolbar"><div className="calendar-nav"><button className="icon-button" onClick={() => changePeriod(-1)} aria-label="Previous period">←</button><button className="today-button" onClick={() => setCursorDate(new Date())}>Today</button><button className="icon-button" onClick={() => changePeriod(1)} aria-label="Next period">→</button><h2>{title}</h2></div><div className="view-switcher" role="group" aria-label="Calendar view"><button className={view === "day" ? "active" : ""} onClick={() => setView("day")}>Day</button><button className={view === "week" ? "active" : ""} onClick={() => setView("week")}>Week</button><button className={view === "month" ? "active" : ""} onClick={() => setView("month")}>Month</button></div></section><section className="calendar-filters" aria-label="Appointment filters"><label>Branch<select value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}><option value="">All branches</option>{branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Doctor<select value={selectedDoctor} onChange={(event) => setSelectedDoctor(event.target.value)}><option value="">All doctors</option>{doctors.map((item) => <option key={item.id} value={item.id}>{item.public_name ?? item.name}</option>)}</select></label><label>Service<select value={selectedService} onChange={(event) => setSelectedService(event.target.value)}><option value="">All services</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Status<select value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label></section><div className="status-legend" aria-label="Appointment status legend">{statuses.map((status) => <span key={status}><i className={statusClass(status)} />{statusLabels[status]}</span>)}</div><section tabIndex={0} aria-label="Schedule calendar" className={`calendar-grid calendar-${view} ${view === "month" ? "calendar-month" : ""}`}><div className="calendar-weekdays">{days.slice(0, view === "month" ? 7 : days.length).map((day) => <span key={day.toISOString()}>{formatDay(day, { weekday: "short" })}</span>)}</div>{loading && <div className="dashboard-empty" role="status"><strong>Loading the schedule</strong><span>Checking your authorized appointments…</span></div>}{!loading && days.map((day) => { const key = dateKey(day); const items = grouped.get(key) ?? []; return <div className={`calendar-cell ${key === dateKey(new Date()) ? "is-today" : ""} ${view === "month" && day.getMonth() !== cursorDate.getMonth() ? "is-outside" : ""}`} key={key} onDragOver={(event) => event.preventDefault()} onDrop={() => dropOnDay(day)}><div className="calendar-cell-heading"><strong>{view === "month" ? day.getDate() : formatDay(day, { weekday: "short", month: "short", day: "numeric" })}</strong><small>{items.length ? `${items.length} booked` : "Open"}</small></div>{items.sort((a, b) => a.starts_at.localeCompare(b.starts_at)).map((appointment) => <AppointmentCard key={appointment.id} appointment={appointment} doctorName={names.doctor.get(appointment.doctor_id ?? "") ?? ""} serviceName={names.service.get(appointment.service_id ?? "") ?? ""} onOpen={() => void openAppointment(appointment)} onDragStart={() => setDraggedId(appointment.id)} />)}</div>; })}</section></section></div>{selected && <div className="drawer-scrim" onClick={() => setSelected(null)}><aside className="appointment-drawer" onClick={(event) => event.stopPropagation()} aria-label="Appointment details"><button className="drawer-close" onClick={() => setSelected(null)} aria-label="Close appointment details">×</button><p className="eyebrow">APPOINTMENT COMMAND</p><h2>{detail?.reference ?? selected.reference}</h2><p className={`drawer-status ${statusClass(actionStatus ?? "requested")}`}>{statusLabels[actionStatus ?? "requested"]}</p><dl className="appointment-details"><div><dt>When</dt><dd>{formatDay(new Date(detail?.starts_at ?? selected.starts_at), { weekday: "long", month: "short", day: "numeric" })}<br />{formatTime(detail?.starts_at ?? selected.starts_at)} – {formatTime(detail?.ends_at ?? selected.ends_at)}</dd></div><div><dt>Doctor</dt><dd>{names.doctor.get((detail ?? selected).doctor_id ?? "") ?? "Unassigned"}</dd></div><div><dt>Service</dt><dd>{names.service.get((detail ?? selected).service_id ?? "") ?? "Service unavailable"}</dd></div><div><dt>Branch</dt><dd>{names.branch.get((detail ?? selected).branch_id) ?? "Branch unavailable"}</dd></div></dl><div className="drawer-actions"><h3>Actions</h3><label>Assign doctor<select value={assignDoctor} onChange={(event) => setAssignDoctor(event.target.value)} disabled={!can("appointment.manage")}><option value="">Unassigned</option>{doctors.map((item) => <option key={item.id} value={item.id}>{item.public_name ?? item.name}</option>)}</select></label><button className="button button-secondary" onClick={() => void command("assign", `/api/v1/appointments/${selected.id}/assign`, { doctor_id: assignDoctor || null, expected_version: selectedAppointment?.version ?? selected.version })} disabled={!can("appointment.manage") || busy !== null} title={!can("appointment.manage") ? "Requires appointment.manage" : undefined}>Save assignment <span>↗</span></button>{actionStatus === "requested" && <button className="button button-primary" onClick={() => void command("approve", `/api/v1/appointments/${selected.id}/approve`, { expected_version: (detail ?? selected).version })} disabled={!can("appointment.approve") || busy !== null} title={!can("appointment.approve") ? "Requires appointment.approve" : undefined}>Approve <span>✓</span></button>}{actionStatus === "confirmed" && <button className="button button-secondary" onClick={() => void command("check-in", `/api/v1/appointments/${selected.id}/transitions`, { to_status: "arrived", expected_version: (detail ?? selected).version })} disabled={!can("appointment.check_in") || busy !== null} title={!can("appointment.check_in") ? "Requires appointment.check_in" : undefined}>Check in <span>→</span></button>}{["requested", "confirmed"].includes(actionStatus ?? "") && <><label>Reschedule date<input type="date" value={rescheduleDate} onChange={(event) => setRescheduleDate(event.target.value)} disabled={!can("appointment.reschedule")} /></label><label>Reschedule time<input type="time" value={rescheduleTime} onChange={(event) => setRescheduleTime(event.target.value)} disabled={!can("appointment.reschedule")} /></label><label>Reason<input value={reason} onChange={(event) => setReason(event.target.value)} disabled={!can("appointment.reschedule")} /></label><button className="button button-secondary" onClick={() => reschedule(detail ?? selected, rescheduleDate, rescheduleTime)} disabled={!can("appointment.reschedule") || busy !== null} title={!can("appointment.reschedule") ? "Requires appointment.reschedule" : undefined}>Reschedule <span>↗</span></button></>}{["requested", "confirmed"].includes(actionStatus ?? "") && <button className="text-control danger-control" onClick={() => void command("cancel", `/api/v1/appointments/${selected.id}/cancel`, { expected_version: (detail ?? selected).version, reason_code: "staff_request", note: "Cancelled from schedule" })} disabled={!can("appointment.cancel") || busy !== null}>Cancel appointment</button>}{!can("appointment.approve") && actionStatus === "requested" && <p className="drawer-note">Approve is disabled because this session lacks appointment.approve.</p>}{!can("appointment.reschedule") && <p className="drawer-note">Reschedule is disabled because this session lacks appointment.reschedule.</p>}</div></aside></div>}{clinicSlug && <AddAppointmentDrawer open={addApptOpen} onClose={() => setAddApptOpen(false)} clinicSlug={clinicSlug} onCreated={() => void load()} />}<BlockTimeDrawer open={blockOpen} onClose={() => setBlockOpen(false)} onCreated={() => void load()} /></main>;
+  const actionStatus = detail?.status ?? selected?.status;
+  const selectedAppointment = detail ?? selected;
+
+  const scheduleRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (loading || !scheduleRef.current) return;
+    anime({ targets: scheduleRef.current.querySelectorAll(".calendar-cell, .calendar-toolbar, .calendar-filters"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
+  }, [loading]);
+
+  return <>
+    <section className="dash-content schedule-content" ref={scheduleRef} aria-busy={loading || busy !== null}>
+      <div className="dash-topline">
+        <div><p className="eyebrow">CALENDAR · SCOPED CLINIC VIEW</p><h1>Make room for <em>care.</em></h1></div>
+        <div className="header-actions">
+          <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
+          {can("appointment.create") && <button className="button button-primary" onClick={() => setAddApptOpen(true)}>Add appointment <span>+</span></button>}
+          {can("scheduling.manage") && <button className="button button-secondary" onClick={() => setBlockOpen(true)}>Block time <span>▣</span></button>}
+        </div>
+      </div>
+      <p className="schedule-intro">A working calendar for the whole appointment lifecycle. Drag a card to propose a new time, or open it for the full command drawer.</p>
+      {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => { setError(null); void load(); }}>Try again <span>→</span></button></div>}
+
+      <section className="calendar-toolbar">
+        <div className="calendar-nav">
+          <button className="icon-button" onClick={() => changePeriod(-1)} aria-label="Previous period">←</button>
+          <button className="today-button" onClick={() => setCursorDate(new Date())}>Today</button>
+          <button className="icon-button" onClick={() => changePeriod(1)} aria-label="Next period">→</button>
+          <h2>{title}</h2>
+        </div>
+        <div className="view-switcher" role="group" aria-label="Calendar view">
+          <button className={view === "day" ? "active" : ""} onClick={() => setView("day")}>Day</button>
+          <button className={view === "week" ? "active" : ""} onClick={() => setView("week")}>Week</button>
+          <button className={view === "month" ? "active" : ""} onClick={() => setView("month")}>Month</button>
+        </div>
+      </section>
+
+      <section className="calendar-filters" aria-label="Appointment filters">
+        <label>Branch<select value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}><option value="">All branches</option>{branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>Doctor<select value={selectedDoctor} onChange={(event) => setSelectedDoctor(event.target.value)}><option value="">All doctors</option>{doctors.map((item) => <option key={item.id} value={item.id}>{item.public_name ?? item.name}</option>)}</select></label>
+        <label>Service<select value={selectedService} onChange={(event) => setSelectedService(event.target.value)}><option value="">All services</option>{services.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label>Status<select value={selectedStatus} onChange={(event) => setSelectedStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></label>
+      </section>
+
+      <div className="status-legend" aria-label="Appointment status legend">{statuses.map((status) => <span key={status}><i className={statusClass(status)} />{statusLabels[status]}</span>)}</div>
+
+      <section tabIndex={0} aria-label="Schedule calendar" className={`calendar-grid calendar-${view} ${view === "month" ? "calendar-month" : ""}`}>
+        <div className="calendar-weekdays">{days.slice(0, view === "month" ? 7 : days.length).map((day) => <span key={day.toISOString()}>{formatDay(day, { weekday: "short" })}</span>)}</div>
+        {loading && <div className="dashboard-empty" role="status"><strong>Loading the schedule</strong><span>Checking your authorized appointments…</span></div>}
+        {!loading && days.map((day) => { const key = dateKey(day); const items = grouped.get(key) ?? []; return <div className={`calendar-cell ${key === dateKey(new Date()) ? "is-today" : ""} ${view === "month" && day.getMonth() !== cursorDate.getMonth() ? "is-outside" : ""}`} key={key} onDragOver={(event) => event.preventDefault()} onDrop={() => dropOnDay(day)}><div className="calendar-cell-heading"><strong>{view === "month" ? day.getDate() : formatDay(day, { weekday: "short", month: "short", day: "numeric" })}</strong><small>{items.length ? `${items.length} booked` : "Open"}</small></div>{items.sort((a, b) => a.starts_at.localeCompare(b.starts_at)).map((appointment) => <AppointmentCard key={appointment.id} appointment={appointment} doctorName={names.doctor.get(appointment.doctor_id ?? "") ?? ""} serviceName={names.service.get(appointment.service_id ?? "") ?? ""} onOpen={() => void openAppointment(appointment)} onDragStart={() => setDraggedId(appointment.id)} />)}</div>; })}
+      </section>
+    </section>
+
+    {selected && <div className="drawer-scrim" onClick={() => setSelected(null)}>
+      <aside className="appointment-drawer" onClick={(event) => event.stopPropagation()} aria-label="Appointment details">
+        <button className="drawer-close" onClick={() => setSelected(null)} aria-label="Close appointment details">×</button>
+        <p className="eyebrow">APPOINTMENT COMMAND</p>
+        <h2>{detail?.reference ?? selected.reference}</h2>
+        <p className={`drawer-status ${statusClass(actionStatus ?? "requested")}`}>{statusLabels[actionStatus ?? "requested"]}</p>
+        <dl className="appointment-details">
+          <div><dt>When</dt><dd>{formatDay(new Date(detail?.starts_at ?? selected.starts_at), { weekday: "long", month: "short", day: "numeric" })}<br />{formatTime(detail?.starts_at ?? selected.starts_at)} – {formatTime(detail?.ends_at ?? selected.ends_at)}</dd></div>
+          <div><dt>Doctor</dt><dd>{names.doctor.get((detail ?? selected).doctor_id ?? "") ?? "Unassigned"}</dd></div>
+          <div><dt>Service</dt><dd>{names.service.get((detail ?? selected).service_id ?? "") ?? "Service unavailable"}</dd></div>
+          <div><dt>Branch</dt><dd>{names.branch.get((detail ?? selected).branch_id) ?? "Branch unavailable"}</dd></div>
+        </dl>
+        <div className="drawer-actions">
+          <h3>Actions</h3>
+          <label>Assign doctor<select value={assignDoctor} onChange={(event) => setAssignDoctor(event.target.value)} disabled={!can("appointment.manage")}><option value="">Unassigned</option>{doctors.map((item) => <option key={item.id} value={item.id}>{item.public_name ?? item.name}</option>)}</select></label>
+          <button className="button button-secondary" onClick={() => void command("assign", `/api/v1/appointments/${selected.id}/assign`, { doctor_id: assignDoctor || null, expected_version: selectedAppointment?.version ?? selected.version })} disabled={!can("appointment.manage") || busy !== null} title={!can("appointment.manage") ? "Requires appointment.manage" : undefined}>Save assignment <span>↗</span></button>
+          {actionStatus === "requested" && <button className="button button-primary" onClick={() => void command("approve", `/api/v1/appointments/${selected.id}/approve`, { expected_version: (detail ?? selected).version })} disabled={!can("appointment.approve") || busy !== null} title={!can("appointment.approve") ? "Requires appointment.approve" : undefined}>Approve <span>✓</span></button>}
+          {actionStatus === "confirmed" && <button className="button button-secondary" onClick={() => void command("check-in", `/api/v1/appointments/${selected.id}/transitions`, { to_status: "arrived", expected_version: (detail ?? selected).version })} disabled={!can("appointment.check_in") || busy !== null} title={!can("appointment.check_in") ? "Requires appointment.check_in" : undefined}>Check in <span>→</span></button>}
+          {["requested", "confirmed"].includes(actionStatus ?? "") && <><label>Reschedule date<input type="date" value={rescheduleDate} onChange={(event) => setRescheduleDate(event.target.value)} disabled={!can("appointment.reschedule")} /></label><label>Reschedule time<input type="time" value={rescheduleTime} onChange={(event) => setRescheduleTime(event.target.value)} disabled={!can("appointment.reschedule")} /></label><label>Reason<input value={reason} onChange={(event) => setReason(event.target.value)} disabled={!can("appointment.reschedule")} /></label><button className="button button-secondary" onClick={() => reschedule(detail ?? selected, rescheduleDate, rescheduleTime)} disabled={!can("appointment.reschedule") || busy !== null} title={!can("appointment.reschedule") ? "Requires appointment.reschedule" : undefined}>Reschedule <span>↗</span></button></>}
+          {["requested", "confirmed"].includes(actionStatus ?? "") && <button className="text-control danger-control" onClick={() => void command("cancel", `/api/v1/appointments/${selected.id}/cancel`, { expected_version: (detail ?? selected).version, reason_code: "staff_request", note: "Cancelled from schedule" })} disabled={!can("appointment.cancel") || busy !== null}>Cancel appointment</button>}
+          {!can("appointment.approve") && actionStatus === "requested" && <p className="drawer-note">Approve is disabled because this session lacks appointment.approve.</p>}
+          {!can("appointment.reschedule") && <p className="drawer-note">Reschedule is disabled because this session lacks appointment.reschedule.</p>}
+        </div>
+      </aside>
+    </div>}
+
+    {clinicSlug && <AddAppointmentDrawer open={addApptOpen} onClose={() => setAddApptOpen(false)} clinicSlug={clinicSlug} onCreated={() => void load()} />}
+    <BlockTimeDrawer open={blockOpen} onClose={() => setBlockOpen(false)} onCreated={() => void load()} />
+  </>;
 }

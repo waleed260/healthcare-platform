@@ -24,7 +24,7 @@ class SectionContent(BaseModel):
 class WebsiteSectionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    section_type: Literal["hero", "banner", "appointment_cta", "lead_form", "doctor_profile", "services", "pricing", "faq", "testimonials", "results", "statistics", "hours", "location", "contact", "about", "legal"]
+    section_type: Literal["hero", "banner", "appointment_cta", "lead_form", "doctor_profile", "services", "pricing", "faq", "testimonials", "results", "statistics", "hours", "location", "contact", "about", "legal", "timeline", "process", "steps", "gallery", "video", "comparison", "team", "care_team"]
     layout_key: str = Field(min_length=1, max_length=80)
     position: int = Field(ge=0, le=100)
     content: SectionContent
@@ -167,6 +167,38 @@ class WebsiteMediaCreate(BaseModel):
     original_filename: str = Field(min_length=1, max_length=240)
     alt_text: str = Field(min_length=1, max_length=240)
     mime_type: Literal["image/jpeg", "image/png", "image/webp"]
+
+
+class ThemeInstanceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    brand_snapshot: dict[str, object] = Field(default_factory=dict)
+
+    @field_validator("brand_snapshot")
+    @classmethod
+    def validate_brand(cls, value: dict[str, object]) -> dict[str, object]:
+        return normalize_brand(value)
+
+
+class ThemeInstanceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    brand_snapshot: dict[str, object] | None = None
+    status: Literal["draft", "live", "archived"] | None = None
+
+    @field_validator("brand_snapshot")
+    @classmethod
+    def validate_brand(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        return None if value is None else normalize_brand(value)
+
+
+class ThemeInstanceArchive(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
 
 
 class DomainCreate(BaseModel):

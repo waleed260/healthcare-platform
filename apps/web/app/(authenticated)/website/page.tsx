@@ -16,7 +16,8 @@ import { api, csrfToken } from "../_lib/client";
 type Brand = SiteBrand;
 type Website = { id: string; name: string; template_key: string; status: string; version: number; brand?: Brand; draft_version_id?: string | null; live_version_id?: string | null };
 type Page = { id: string; slug: string; title: string; version: number; seo_title?: string | null; seo_description?: string | null };
-type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string };
+type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string; media_id?: string | null; gallery_ids?: string[]; custom_css?: string; design?: Record<string, unknown> };
+type MediaAsset = { id: string; original_filename?: string; alt_text: string; mime_type: string; scan_status: string };
 type Section = { id: string; section_type: string; layout_key: string; position: number; content: Content; is_visible: boolean; version: number };
 type Version = { id: string; version_number: number; published_at?: string | null; created_at: string };
 type Domain = { hostname: string; observed_status: string };
@@ -87,9 +88,10 @@ const SECTION_LIBRARY: SectionCategory[] = [
   { label: "Content", icon: "≡", types: [
     { type: "about", layout: "text", label: "Text", description: "Rich text content block" },
     { type: "about", layout: "image_text", label: "Image + text", description: "Side-by-side image and copy" },
-    { type: "about", layout: "video", label: "Video", description: "Embedded video section" },
-    { type: "about", layout: "timeline", label: "Timeline", description: "Step-by-step process" },
-    { type: "about", layout: "comparison", label: "Comparison", description: "Feature comparison table" },
+    { type: "video", layout: "default", label: "Video", description: "Embedded video player" },
+    { type: "timeline", layout: "default", label: "Timeline", description: "Step-by-step process" },
+    { type: "gallery", layout: "default", label: "Gallery", description: "Image gallery grid" },
+    { type: "comparison", layout: "default", label: "Comparison", description: "Feature comparison table" },
     { type: "faq", layout: "accordion", label: "FAQ", description: "Collapsible questions" },
     { type: "hours", layout: "text", label: "Hours", description: "Operating hours" },
     { type: "location", layout: "map", label: "Map / location", description: "Clinic location" },
@@ -103,7 +105,8 @@ const defaultContent: Content = { heading: "", body: "", button_label: null, but
 type Device = "desktop" | "tablet" | "mobile";
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 768, mobile: 375 };
 
-type RightTab = "design" | "content" | "page" | "seo" | "library" | "history";
+type ThemeInstance = { id: string; name: string; status: string; brand_snapshot: Brand; version: number; created_at: string; updated_at?: string };
+type RightTab = "design" | "content" | "page" | "seo" | "library" | "history" | "themes";
 
 /* ────────────────────────────────────────────────────
    Helpers
@@ -113,6 +116,49 @@ async function request<T>(url: string, init?: RequestOptions): Promise<T> {
 }
 function writeHeaders(extra?: Record<string, string>) { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken(), ...extra }; }
 function hex(value: string | undefined, fallback: string) { return /^#[0-9a-f]{6}$/i.test(value ?? "") ? value! : fallback; }
+
+/* ────────────────────────────────────────────────────
+   CodeMirror CSS editor (loaded dynamically from CDN)
+   ──────────────────────────────────────────────────── */
+declare global { interface Window { CodeMirror?: { fromTextArea: (el: HTMLTextAreaElement, opts: Record<string, unknown>) => { getValue: () => string; on: (ev: string, cb: () => void) => void; toTextArea: () => void }; } } }
+const CM_BASE = "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18";
+let cmLoadPromise: Promise<boolean> | null = null;
+function loadCodeMirror(): Promise<boolean> {
+  if (cmLoadPromise) return cmLoadPromise;
+  cmLoadPromise = new Promise((resolve) => {
+    if (window.CodeMirror) { resolve(true); return; }
+    const script = document.createElement("script");
+    script.src = `${CM_BASE}/codemirror.min.js`;
+    script.onload = () => { const mode = document.createElement("script"); mode.src = `${CM_BASE}/mode/css/css.min.js`; mode.onload = () => resolve(true); mode.onerror = () => resolve(false); document.head.appendChild(mode); };
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+    const link = document.createElement("link"); link.rel = "stylesheet"; link.href = `${CM_BASE}/codemirror.min.css`; document.head.appendChild(link);
+  });
+  return cmLoadPromise;
+}
+function CssEditor({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (v: string) => void }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cmRef = useRef<ReturnType<NonNullable<Window["CodeMirror"]>["fromTextArea"]> | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCodeMirror().then((ok) => { if (!cancelled && ok) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !textareaRef.current || cmRef.current || disabled) return;
+    const cm = window.CodeMirror!.fromTextArea(textareaRef.current, { mode: "css", lineNumbers: true, theme: "default", indentUnit: 2, tabSize: 2, lineWrapping: true });
+    cm.on("change", () => onChangeRef.current(cm.getValue()));
+    cmRef.current = cm;
+    return () => { cmRef.current?.toTextArea(); cmRef.current = null; };
+  }, [loaded, disabled]);
+
+  return <div className="wb-field-stack" style={{ marginTop: 16 }}><label style={{ display: "block", marginBottom: 4, fontSize: "0.78rem", fontWeight: 500 }}>Custom CSS</label><textarea ref={textareaRef} className="wb-css-editor" rows={6} placeholder={"/* Scoped to this section */\n.public-hero {\n  background: linear-gradient(...);\n}"} value={value} disabled={disabled} style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.78rem", width: "100%", border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, padding: "8px 10px" }} onChange={(e) => onChange(e.target.value)} /></div>;
+}
 
 /* ────────────────────────────────────────────────────
    Preview section renderer — looks like actual website
@@ -223,6 +269,63 @@ function PreviewSection({ section, template, brand, selected, onSelect }: { sect
 }
 
 /* ────────────────────────────────────────────────────
+   Media picker — selects clean media for section images
+   ──────────────────────────────────────────────────── */
+function MediaPicker({ websiteId, sectionId, mediaId, galleryIds, isGallery, disabled, onSelect, onGalleryChange }: {
+  websiteId: string | null; sectionId: string; mediaId: string | null; galleryIds: string[]; isGallery: boolean; disabled: boolean;
+  onSelect: (id: string | null) => void; onGalleryChange: (ids: string[]) => void;
+}) {
+  const [items, setItems] = useState<MediaAsset[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!websiteId) return;
+    try {
+      const rows = await api<MediaAsset[]>("/api/v1/websites/media?limit=100");
+      setItems((rows ?? []).filter((m) => m.scan_status === "clean" && m.mime_type.startsWith("image/")));
+    } catch { /* graceful */ }
+    setLoaded(true);
+  }, [websiteId]);
+
+  useEffect(() => { if (open && !loaded) void load(); }, [open, loaded, load]);
+
+  const selectedName = mediaId ? items.find((m) => m.id === mediaId)?.alt_text || items.find((m) => m.id === mediaId)?.original_filename || "Selected" : null;
+
+  if (isGallery) {
+    return (
+      <div>
+        <div className="wb-panel-header"><h3>Gallery images</h3><button className="wb-add-btn" disabled={disabled} onClick={() => setOpen((v) => !v)} title="Pick images">+</button></div>
+        {galleryIds.length > 0 && <div className="wb-version-list">{galleryIds.map((gid, idx) => {
+          const asset = items.find((m) => m.id === gid);
+          return <div className="wb-version-row" key={gid}><div><strong>{asset?.alt_text || asset?.original_filename || `Image ${idx + 1}`}</strong><small>{asset?.mime_type ?? ""}</small></div><button className="wb-tree-btn" disabled={disabled} onClick={() => onGalleryChange(galleryIds.filter((_, i) => i !== idx))} title="Remove">✕</button></div>;
+        })}</div>}
+        {galleryIds.length === 0 && <p className="wb-empty">No gallery images selected.</p>}
+        {open && <div className="wb-version-list" style={{ marginTop: 8, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, padding: 4 }}>
+          {items.filter((m) => !galleryIds.includes(m.id)).map((m) => <button key={m.id} className="wb-version-row" style={{ cursor: "pointer", width: "100%", textAlign: "left", background: "none", border: "none" }} onClick={() => { onGalleryChange([...galleryIds, m.id]); }}><div><strong>{m.alt_text || m.original_filename}</strong><small>{m.mime_type}</small></div></button>)}
+          {items.filter((m) => !galleryIds.includes(m.id)).length === 0 && <p className="wb-empty">{loaded ? "No more images available." : "Loading…"}</p>}
+        </div>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label>Section image
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="wb-btn wb-btn-secondary" style={{ flex: 1 }} disabled={disabled} onClick={() => setOpen((v) => !v)} type="button">{selectedName ?? "Choose image…"}</button>
+          {mediaId && <button className="wb-tree-btn" disabled={disabled} onClick={() => onSelect(null)} title="Remove image">✕</button>}
+        </div>
+      </label>
+      {open && <div className="wb-version-list" style={{ marginTop: 4, maxHeight: 200, overflowY: "auto", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, padding: 4 }}>
+        {items.map((m) => <button key={m.id} className="wb-version-row" style={{ cursor: "pointer", width: "100%", textAlign: "left", background: mediaId === m.id ? "var(--accent-bg, #edf6f3)" : "none", border: "none" }} onClick={() => { onSelect(m.id); setOpen(false); }}><div><strong>{m.alt_text || m.original_filename}</strong><small>{m.mime_type}</small></div></button>)}
+        {items.length === 0 && <p className="wb-empty">{loaded ? "No clean images in media library." : "Loading…"}</p>}
+      </div>}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────
    Device preview — scales content to simulate device widths
    ──────────────────────────────────────────────────── */
 function DevicePreview({ device, children }: { device: Device; children: (ref: React.RefObject<HTMLDivElement | null>) => React.ReactNode }) {
@@ -278,6 +381,8 @@ export default function WebsiteEditorPage() {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [showSectionLibrary, setShowSectionLibrary] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [themeInstances, setThemeInstances] = useState<ThemeInstance[]>([]);
+  const [newThemeName, setNewThemeName] = useState("");
 
   useEffect(() => {
     if (website) document.body.classList.add("wb-editor-active");
@@ -294,15 +399,28 @@ export default function WebsiteEditorPage() {
 
   /* ── API callbacks ── */
   const validateDraft = useCallback(async (selected: Website) => {
-    try { setValidation(await request<Validation>(`/api/v1/websites/${selected.id}/validation`)); }
-    catch (reason) { setValidation({ valid: false, code: "VALIDATION_UNAVAILABLE", message: reason instanceof Error ? reason.message : "Draft validation is unavailable." }); }
-  }, []);
+    try {
+      const serverResult = await request<Validation>(`/api/v1/websites/${selected.id}/validation`);
+      if (serverResult && !serverResult.valid) { setValidation(serverResult); return; }
+      const allPages = pages.length ? pages : (await request<Page[]>(`/api/v1/websites/${selected.id}/pages`)) ?? [];
+      const hasLegal = allPages.some((p) => /privacy|terms|legal|policy/i.test(p.slug));
+      if (!hasLegal) { setValidation({ valid: false, code: "MISSING_LEGAL", message: "Add a privacy policy or terms page before publishing." }); return; }
+      const colors = selected.brand?.theme?.colors;
+      if (colors?.primary && colors?.background) {
+        const lum = (hex: string) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+        const l1 = lum(colors.primary); const l2 = lum(colors.background);
+        const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        if (ratio < 4.5) { setValidation({ valid: false, code: "LOW_CONTRAST", message: `Primary/background contrast ratio is ${ratio.toFixed(1)}:1 — WCAG AA requires at least 4.5:1.` }); return; }
+      }
+      setValidation(serverResult);
+    } catch (reason) { setValidation({ valid: false, code: "VALIDATION_UNAVAILABLE", message: reason instanceof Error ? reason.message : "Draft validation is unavailable." }); }
+  }, [pages]);
 
   const loadWebsite = useCallback(async (selected: Website) => {
     setBusy("load"); setWebsite(selected);
     try {
-      const [pageRows, versionRows] = await Promise.all([request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`)]);
-      setVersions(versionRows ?? []);
+      const [pageRows, versionRows, themeRows] = await Promise.all([request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`), request<ThemeInstance[]>(`/api/v1/websites/${selected.id}/themes`).catch(() => [] as ThemeInstance[])]);
+      setVersions(versionRows ?? []); setThemeInstances(themeRows ?? []);
       const allPages = Array.isArray(pageRows) ? pageRows : [];
       allPages.sort((a, b) => a.slug === "home" ? -1 : b.slug === "home" ? 1 : a.title.localeCompare(b.title));
       setPages(allPages);
@@ -627,14 +745,16 @@ export default function WebsiteEditorPage() {
                 <SiteHeader brand={brand} clinicSlug={clinicSlug} />
                 <div className="public-shell">
                   {visibleSections.map((section) => (
-                    <PreviewSection
-                      key={section.id}
-                      section={section}
-                      template={template}
-                      brand={brand}
-                      selected={section.id === selectedSectionId}
-                      onSelect={() => { setSelectedSectionId(section.id); setRightTab("content"); }}
-                    />
+                    <div key={section.id} className={`wb-section-wrap section-${section.section_type}`}>
+                      {section.content.custom_css && <style>{section.content.custom_css}</style>}
+                      <PreviewSection
+                        section={section}
+                        template={template}
+                        brand={brand}
+                        selected={section.id === selectedSectionId}
+                        onSelect={() => { setSelectedSectionId(section.id); setRightTab("content"); }}
+                      />
+                    </div>
                   ))}
                   {visibleSections.length === 0 && (
                     <div className="wb-preview-empty">
@@ -658,6 +778,7 @@ export default function WebsiteEditorPage() {
               { key: "page" as RightTab, label: "Page", icon: "❏" },
               { key: "seo" as RightTab, label: "SEO", icon: "⌕" },
               { key: "library" as RightTab, label: "Library", icon: "❖" },
+              { key: "themes" as RightTab, label: "Themes", icon: "◈" },
               { key: "history" as RightTab, label: "History", icon: "↺" },
             ]).map((tab) => (
               <button key={tab.key} className={`wb-rtab${rightTab === tab.key ? " is-active" : ""}`} onClick={() => setRightTab(tab.key)}>
@@ -725,6 +846,17 @@ export default function WebsiteEditorPage() {
                       )}
                     </select>
                   </label>
+                  {["services", "pricing", "doctor_profile", "testimonials", "statistics"].includes(selectedSection.section_type) && (() => {
+                    const dataMode = (selectedSection.content as Record<string, unknown>).data_mode as string | undefined;
+                    const isManual = dataMode === "manual";
+                    return <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                      <span style={{ fontSize: "0.6rem", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" as const, padding: "2px 7px", borderRadius: 3, background: isManual ? "#fef8ed" : "#eaf7f0", color: isManual ? "#b5740a" : "#1a7f4b" }}>{isManual ? "MANUAL" : "DYNAMIC"}</span>
+                      <select value={dataMode ?? "dynamic"} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, data_mode: e.target.value } } : s))} disabled={!canEdit} style={{ flex: 1 }}>
+                        <option value="dynamic">Dynamic — from CRM records</option>
+                        <option value="manual">Manual — inline items only</option>
+                      </select>
+                    </div>;
+                  })()}
                   <label>Heading
                     <input value={selectedSection.content.heading} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, heading: e.target.value } } : s))} disabled={!canEdit} />
                   </label>
@@ -750,8 +882,32 @@ export default function WebsiteEditorPage() {
                   </>}
                 </div>
 
+                {/* media picker for sections that support images */}
+                {["hero", "results", "doctor_profile", "about"].includes(selectedSection.section_type) && (() => {
+                  const isGallery = selectedSection.section_type === "results";
+                  return (
+                    <div className="wb-field-stack" style={{ marginTop: 12 }}>
+                      <MediaPicker
+                        websiteId={website?.id ?? null}
+                        sectionId={selectedSection.id}
+                        mediaId={selectedSection.content.media_id ?? null}
+                        galleryIds={selectedSection.content.gallery_ids ?? []}
+                        isGallery={isGallery}
+                        disabled={!canEdit}
+                        onSelect={(id) => setSections((cur) => cur.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, media_id: id } } : s))}
+                        onGalleryChange={(ids) => setSections((cur) => cur.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, gallery_ids: ids } } : s))}
+                      />
+                    </div>
+                  );
+                })()}
+
                 {/* items list editor for sections with repeatable items */}
-                {["services", "pricing", "doctor_profile", "testimonials", "statistics", "hours", "faq", "results"].includes(selectedSection.section_type) && (
+                {["services", "pricing", "doctor_profile", "testimonials", "statistics"].includes(selectedSection.section_type) && (selectedSection.content as Record<string, unknown>).data_mode !== "manual" && (
+                  <div style={{ margin: "12px 0", padding: "8px 12px", background: "var(--done-bg, #eaf7f0)", borderRadius: 6, fontSize: "0.78rem", color: "var(--done, #1a7f4b)" }}>
+                    <strong>Dynamic mode</strong> — content pulled from CRM records (services, doctors, testimonials). Switch to Manual to edit items inline.
+                  </div>
+                )}
+                {(["hours", "faq", "results"].includes(selectedSection.section_type) || ((selectedSection.content as Record<string, unknown>).data_mode === "manual" && ["services", "pricing", "doctor_profile", "testimonials", "statistics"].includes(selectedSection.section_type))) && (
                   <div className="wb-items-editor">
                     <div className="wb-panel-header" style={{ marginTop: 16 }}>
                       <h3>Items</h3>
@@ -777,6 +933,121 @@ export default function WebsiteEditorPage() {
                   </div>
                 )}
 
+                <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
+                  <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Section Design</legend>
+                  {(() => { const design = (selectedSection.content.design ?? {}) as Record<string, unknown>; const setDesign = (key: string, value: unknown) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, design: { ...(s.content.design as Record<string, unknown> ?? {}), [key]: value } } } : s)); return <>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Background color
+                        <input type="color" value={String(design.background_color || "#ffffff")} onChange={(e) => setDesign("background_color", e.target.value)} disabled={!canEdit} style={{ width: "100%", height: 28, cursor: "pointer" }} />
+                      </label>
+                      <label className="wb-design-label">Overlay color
+                        <input type="color" value={String(design.overlay_color || "#000000")} onChange={(e) => setDesign("overlay_color", e.target.value)} disabled={!canEdit} style={{ width: "100%", height: 28, cursor: "pointer" }} />
+                      </label>
+                    </div>
+                    <label className="wb-design-label" style={{ marginBottom: 8, display: "block" }}>Background image URL
+                      <input type="url" value={String(design.background_image || "")} onChange={(e) => setDesign("background_image", e.target.value || null)} disabled={!canEdit} placeholder="https://..." style={{ width: "100%" }} />
+                    </label>
+                    <label className="wb-design-label" style={{ marginBottom: 8, display: "block" }}>Overlay opacity: {Number(design.overlay_opacity ?? 0)}%
+                      <input type="range" min={0} max={100} value={Number(design.overlay_opacity ?? 0)} onChange={(e) => setDesign("overlay_opacity", Number(e.target.value))} disabled={!canEdit} style={{ width: "100%" }} />
+                    </label>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Padding top (px)
+                        <input type="number" min={0} max={200} value={Number(design.padding_top ?? "")} onChange={(e) => setDesign("padding_top", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="auto" />
+                      </label>
+                      <label className="wb-design-label">Padding bottom (px)
+                        <input type="number" min={0} max={200} value={Number(design.padding_bottom ?? "")} onChange={(e) => setDesign("padding_bottom", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="auto" />
+                      </label>
+                    </div>
+                    <label className="wb-design-label" style={{ marginBottom: 8, display: "block" }}>Content width
+                      <select value={String(design.content_width || "full")} onChange={(e) => setDesign("content_width", e.target.value === "full" ? null : e.target.value)} disabled={!canEdit} style={{ width: "100%" }}>
+                        <option value="full">Full width</option>
+                        <option value="contained">Contained (960px)</option>
+                        <option value="narrow">Narrow (720px)</option>
+                      </select>
+                    </label>
+                    <div style={{ marginBottom: 4 }}>
+                      <span className="wb-design-label" style={{ display: "block", marginBottom: 4 }}>Text alignment</span>
+                      <div className="wb-align-buttons" style={{ display: "flex", gap: 4 }}>
+                        {(["left", "center", "right"] as const).map((align) => <button key={align} type="button" className={`wb-align-btn${String(design.text_align || "left") === align ? " active" : ""}`} style={{ flex: 1, padding: "4px 8px", fontSize: "0.75rem", fontWeight: 600, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, background: String(design.text_align || "left") === align ? "var(--wb-accent, #274c42)" : "transparent", color: String(design.text_align || "left") === align ? "#fff" : "inherit", cursor: "pointer" }} onClick={() => setDesign("text_align", align === "left" ? null : align)} disabled={!canEdit}>{align.charAt(0).toUpperCase() + align.slice(1)}</button>)}
+                      </div>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Border color
+                        <input type="color" value={String(design.border_color || "#e5e5e3")} onChange={(e) => setDesign("border_color", e.target.value)} disabled={!canEdit} style={{ width: "100%", height: 28, cursor: "pointer" }} />
+                      </label>
+                      <label className="wb-design-label">Border width (px)
+                        <input type="number" min={0} max={8} value={Number(design.border_width ?? 0)} onChange={(e) => setDesign("border_width", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="0" />
+                      </label>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Border radius (px)
+                        <input type="number" min={0} max={40} value={Number(design.border_radius ?? 0)} onChange={(e) => setDesign("border_radius", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="0" />
+                      </label>
+                      <label className="wb-design-label">Box shadow
+                        <select value={String(design.box_shadow || "none")} onChange={(e) => setDesign("box_shadow", e.target.value === "none" ? null : e.target.value)} disabled={!canEdit} style={{ width: "100%" }}>
+                          <option value="none">None</option>
+                          <option value="soft">Soft</option>
+                          <option value="strong">Strong</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="wb-design-label" style={{ marginBottom: 4, display: "block" }}>Columns
+                      <select value={String(design.columns || "auto")} onChange={(e) => setDesign("columns", e.target.value === "auto" ? null : e.target.value)} disabled={!canEdit} style={{ width: "100%" }}>
+                        <option value="auto">Auto</option>
+                        <option value="2">2 columns</option>
+                        <option value="3">3 columns</option>
+                        <option value="4">4 columns</option>
+                      </select>
+                    </label>
+                  </>; })()}
+                </fieldset>
+
+                <CssEditor value={selectedSection.content.custom_css ?? ""} disabled={!canEdit} onChange={(value) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, custom_css: value } } : s))} />
+                <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
+                  <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Device visibility</legend>
+                  {(["tablet", "mobile"] as const).map((target) => {
+                    const overrides = brand?.[target] ?? {};
+                    const hidden = (overrides.hide_section_ids ?? []).includes(selectedSection.id);
+                    return <label key={target} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <input type="checkbox" checked={hidden} disabled={!canEdit} onChange={() => {
+                        const ids: string[] = overrides.hide_section_ids ?? [];
+                        const next = hidden ? ids.filter((id) => id !== selectedSection.id) : [...ids, selectedSection.id];
+                        void updateBrand({ [target]: { ...overrides, hide_section_ids: next } });
+                      }} />
+                      Hide on {target}
+                    </label>;
+                  })}
+                </fieldset>
+                <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
+                  <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Responsive overrides</legend>
+                  {(() => { const design = (selectedSection.content.design ?? {}) as Record<string, unknown>; const setDesignNested = (device: string, key: string, value: unknown) => setSections((current) => current.map((s) => { if (s.id !== selectedSection.id) return s; const d = (s.content.design ?? {}) as Record<string, unknown>; const sub = (d[device] ?? {}) as Record<string, unknown>; return { ...s, content: { ...s.content, design: { ...d, [device]: { ...sub, [key]: value } } } }; })); const tabletD = (design.tablet ?? {}) as Record<string, unknown>; const mobileD = (design.mobile ?? {}) as Record<string, unknown>; return <>
+                    <p style={{ fontSize: "0.7rem", color: "var(--wb-muted, #6b7280)", margin: "0 0 8px" }}>Override design for smaller screens</p>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Tablet pad top (px)
+                        <input type="number" min={0} max={200} value={Number(tabletD.padding_top ?? "")} onChange={(e) => setDesignNested("tablet", "padding_top", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                      <label className="wb-design-label">Tablet pad bottom (px)
+                        <input type="number" min={0} max={200} value={Number(tabletD.padding_bottom ?? "")} onChange={(e) => setDesignNested("tablet", "padding_bottom", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Mobile pad top (px)
+                        <input type="number" min={0} max={200} value={Number(mobileD.padding_top ?? "")} onChange={(e) => setDesignNested("mobile", "padding_top", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                      <label className="wb-design-label">Mobile pad bottom (px)
+                        <input type="number" min={0} max={200} value={Number(mobileD.padding_bottom ?? "")} onChange={(e) => setDesignNested("mobile", "padding_bottom", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <label className="wb-design-label">Tablet font scale
+                        <input type="number" min={0.7} max={1.4} step={0.05} value={Number(tabletD.font_scale ?? 1)} onChange={(e) => setDesignNested("tablet", "font_scale", Number(e.target.value) === 1 ? null : Number(e.target.value))} disabled={!canEdit} />
+                      </label>
+                      <label className="wb-design-label">Mobile font scale
+                        <input type="number" min={0.7} max={1.4} step={0.05} value={Number(mobileD.font_scale ?? 1)} onChange={(e) => setDesignNested("mobile", "font_scale", Number(e.target.value) === 1 ? null : Number(e.target.value))} disabled={!canEdit} />
+                      </label>
+                    </div>
+                  </>; })()}
+                </fieldset>
                 <div className="wb-section-actions">
                   <button className="wb-btn wb-btn-primary" onClick={() => void saveSection(selectedSection)} disabled={controlsDisabled}>Save section</button>
                   <button className="wb-btn wb-btn-secondary" onClick={() => void duplicateSection(selectedSection)} disabled={controlsDisabled}>Duplicate</button>
@@ -827,6 +1098,65 @@ export default function WebsiteEditorPage() {
 
             {/* ── Library tab ── */}
             {rightTab === "library" && website && <LibraryPanel key={`lib-${website.id}`} website={website} pageId={page?.id ?? null} sections={sections} disabled={controlsDisabled} onChanged={() => void load()} />}
+
+            {/* ── Themes tab ── */}
+            {rightTab === "themes" && website && (
+              <section className="wb-panel">
+                <h3>Theme instances</h3>
+                <p className="wb-panel-meta">{themeInstances.length} theme{themeInstances.length !== 1 ? "s" : ""}</p>
+                <div className="wb-version-list">
+                  {themeInstances.map((ti) => (
+                    <div className="wb-version-row" key={ti.id} style={{ borderLeft: ti.status === "live" ? "3px solid var(--wb-accent, #274c42)" : "3px solid transparent" }}>
+                      <div>
+                        <strong>{ti.name}</strong>
+                        <small style={{ textTransform: "capitalize" }}>{ti.status} · v{ti.version}</small>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {ti.status === "draft" && (
+                          <button className="wb-btn wb-btn-primary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                            setBusy("theme"); setError(null);
+                            try {
+                              await request(`/api/v1/websites/${website.id}/themes/${ti.id}/activate`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
+                              setNotice(`"${ti.name}" is now live.`);
+                              void load();
+                            } catch (reason) { setError(reason instanceof Error ? reason.message : "Activation failed."); }
+                            finally { setBusy(null); }
+                          }}>Activate</button>
+                        )}
+                        {ti.status !== "live" && (
+                          <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                            setBusy("theme"); setError(null);
+                            try {
+                              await request(`/api/v1/websites/${website.id}/themes/${ti.id}/archive`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
+                              setThemeInstances((cur) => cur.filter((t) => t.id !== ti.id));
+                              setNotice(`"${ti.name}" archived.`);
+                            } catch (reason) { setError(reason instanceof Error ? reason.message : "Archive failed."); }
+                            finally { setBusy(null); }
+                          }}>Archive</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="wb-field-stack" style={{ marginTop: 12, borderTop: "1px solid var(--wb-border, #e5e5e3)", paddingTop: 12 }}>
+                  <label>New theme
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input type="text" placeholder="Theme name" value={newThemeName} onChange={(e) => setNewThemeName(e.target.value)} disabled={controlsDisabled} style={{ flex: 1 }} />
+                      <button className="wb-btn wb-btn-primary" disabled={controlsDisabled || !newThemeName.trim()} onClick={async () => {
+                        setBusy("theme"); setError(null);
+                        try {
+                          const created = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: newThemeName.trim(), brand_snapshot: brand }) });
+                          if (created) setThemeInstances((cur) => [...cur, created]);
+                          setNewThemeName(""); setNotice(`Theme "${newThemeName.trim()}" created.`);
+                        } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed."); }
+                        finally { setBusy(null); }
+                      }}>Create</button>
+                    </div>
+                  </label>
+                  <small style={{ color: "var(--wb-muted, #999)" }}>Creates a draft copy of the current brand settings.</small>
+                </div>
+              </section>
+            )}
 
             {/* ── History tab ── */}
             {rightTab === "history" && (

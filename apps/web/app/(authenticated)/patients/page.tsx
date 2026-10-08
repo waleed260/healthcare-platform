@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import anime from "animejs";
 import { apiPage, errorMessage } from "../_lib/client";
 import Pagination, { usePagination } from "../_lib/pagination";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
@@ -39,6 +40,19 @@ export default function PatientsPage() {
   }
 
   useEffect(() => { void reload(); }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const patientListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (loading || patients.length === 0 || !patientListRef.current) return;
+    anime({
+      targets: patientListRef.current.querySelectorAll(".patient-row"),
+      opacity: [0, 1],
+      translateX: [-16, 0],
+      duration: 420,
+      delay: anime.stagger(30, { start: 80 }),
+      easing: "easeOutCubic",
+    });
+  }, [loading, patients.length]);
 
   return (
     <section className="dash-content patient-content" aria-busy={loading}>
@@ -97,7 +111,7 @@ export default function PatientsPage() {
         )}
 
         {patients.length > 0 && (
-          <div className="patient-list" role="list">
+          <div className="patient-list" role="list" ref={patientListRef}>
             {patients.map((patient) => (
               <Link className="patient-row" href={`/patients/${patient.id}`} key={patient.id} role="listitem">
                 <span className="patient-initial" aria-hidden="true">{patient.full_name.trim().charAt(0).toUpperCase()}</span>

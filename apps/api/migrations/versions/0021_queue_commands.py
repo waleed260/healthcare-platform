@@ -4,7 +4,7 @@ import sqlalchemy as sa
 
 
 revision = "0021_queue_commands"
-down_revision = "0020_public_rate_limits"
+down_revision = "0021_expand_section_types"
 branch_labels = None
 depends_on = None
 

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
@@ -84,3 +84,36 @@ class PushSubscriptionCreate(BaseModel):
         if value.scheme != "https":
             raise ValueError("push endpoint must use HTTPS")
         return value
+
+
+class DailyStat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    appointments: int
+    new_patients: int
+    revenue_minor: int
+    no_shows: int
+
+
+class ChannelStat(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    channel: str
+    leads: int
+    converted: int
+
+
+class FunnelStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage: str
+    count: int
+
+
+class TopService(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    count: int
+    revenue_minor: int

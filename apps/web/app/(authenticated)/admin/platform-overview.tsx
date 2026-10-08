@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, label, money, post } from "../(authenticated)/_lib/client";
+import { api, errorMessage, label, money, post } from "../_lib/client";
 
 type Overview = {
   clinics: { by_status: Record<string, number>; total: number; onboarded_30d: number };
