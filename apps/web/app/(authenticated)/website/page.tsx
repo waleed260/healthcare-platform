@@ -16,7 +16,7 @@ import { api, csrfToken } from "../_lib/client";
 type Brand = SiteBrand;
 type Website = { id: string; name: string; template_key: string; status: string; version: number; brand?: Brand; draft_version_id?: string | null; live_version_id?: string | null };
 type Page = { id: string; slug: string; title: string; version: number; seo_title?: string | null; seo_description?: string | null };
-type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string; media_id?: string | null; gallery_ids?: string[]; custom_css?: string };
+type Content = { heading: string; body: string; eyebrow?: string; button_label?: string | null; button_href?: string | null; items?: Array<Record<string, unknown>>; location?: string; address?: string; media_id?: string | null; gallery_ids?: string[]; custom_css?: string; design?: Record<string, unknown> };
 type MediaAsset = { id: string; original_filename?: string; alt_text: string; mime_type: string; scan_status: string };
 type Section = { id: string; section_type: string; layout_key: string; position: number; content: Content; is_visible: boolean; version: number };
 type Version = { id: string; version_number: number; published_at?: string | null; created_at: string };
@@ -352,9 +352,22 @@ export default function WebsiteEditorPage() {
 
   /* ── API callbacks ── */
   const validateDraft = useCallback(async (selected: Website) => {
-    try { setValidation(await request<Validation>(`/api/v1/websites/${selected.id}/validation`)); }
-    catch (reason) { setValidation({ valid: false, code: "VALIDATION_UNAVAILABLE", message: reason instanceof Error ? reason.message : "Draft validation is unavailable." }); }
-  }, []);
+    try {
+      const serverResult = await request<Validation>(`/api/v1/websites/${selected.id}/validation`);
+      if (serverResult && !serverResult.valid) { setValidation(serverResult); return; }
+      const allPages = pages.length ? pages : (await request<Page[]>(`/api/v1/websites/${selected.id}/pages`)) ?? [];
+      const hasLegal = allPages.some((p) => /privacy|terms|legal|policy/i.test(p.slug));
+      if (!hasLegal) { setValidation({ valid: false, code: "MISSING_LEGAL", message: "Add a privacy policy or terms page before publishing." }); return; }
+      const colors = selected.brand?.theme?.colors;
+      if (colors?.primary && colors?.background) {
+        const lum = (hex: string) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+        const l1 = lum(colors.primary); const l2 = lum(colors.background);
+        const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        if (ratio < 4.5) { setValidation({ valid: false, code: "LOW_CONTRAST", message: `Primary/background contrast ratio is ${ratio.toFixed(1)}:1 — WCAG AA requires at least 4.5:1.` }); return; }
+      }
+      setValidation(serverResult);
+    } catch (reason) { setValidation({ valid: false, code: "VALIDATION_UNAVAILABLE", message: reason instanceof Error ? reason.message : "Draft validation is unavailable." }); }
+  }, [pages]);
 
   const loadWebsite = useCallback(async (selected: Website) => {
     setBusy("load"); setWebsite(selected);
@@ -785,6 +798,17 @@ export default function WebsiteEditorPage() {
                       )}
                     </select>
                   </label>
+                  {["services", "pricing", "doctor_profile", "testimonials", "statistics"].includes(selectedSection.section_type) && (() => {
+                    const dataMode = (selectedSection.content as Record<string, unknown>).data_mode as string | undefined;
+                    const isManual = dataMode === "manual";
+                    return <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+                      <span style={{ fontSize: "0.6rem", fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" as const, padding: "2px 7px", borderRadius: 3, background: isManual ? "#fef8ed" : "#eaf7f0", color: isManual ? "#b5740a" : "#1a7f4b" }}>{isManual ? "MANUAL" : "DYNAMIC"}</span>
+                      <select value={dataMode ?? "dynamic"} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, data_mode: e.target.value } } : s))} disabled={!canEdit} style={{ flex: 1 }}>
+                        <option value="dynamic">Dynamic — from CRM records</option>
+                        <option value="manual">Manual — inline items only</option>
+                      </select>
+                    </div>;
+                  })()}
                   <label>Heading
                     <input value={selectedSection.content.heading} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, heading: e.target.value } } : s))} disabled={!canEdit} />
                   </label>
@@ -830,7 +854,12 @@ export default function WebsiteEditorPage() {
                 })()}
 
                 {/* items list editor for sections with repeatable items */}
-                {["services", "pricing", "doctor_profile", "testimonials", "statistics", "hours", "faq", "results"].includes(selectedSection.section_type) && (
+                {["services", "pricing", "doctor_profile", "testimonials", "statistics"].includes(selectedSection.section_type) && (selectedSection.content as Record<string, unknown>).data_mode !== "manual" && (
+                  <div style={{ margin: "12px 0", padding: "8px 12px", background: "var(--done-bg, #eaf7f0)", borderRadius: 6, fontSize: "0.78rem", color: "var(--done, #1a7f4b)" }}>
+                    <strong>Dynamic mode</strong> — content pulled from CRM records (services, doctors, testimonials). Switch to Manual to edit items inline.
+                  </div>
+                )}
+                {(["hours", "faq", "results"].includes(selectedSection.section_type) || ((selectedSection.content as Record<string, unknown>).data_mode === "manual" && ["services", "pricing", "doctor_profile", "testimonials", "statistics"].includes(selectedSection.section_type))) && (
                   <div className="wb-items-editor">
                     <div className="wb-panel-header" style={{ marginTop: 16 }}>
                       <h3>Items</h3>
@@ -856,11 +885,125 @@ export default function WebsiteEditorPage() {
                   </div>
                 )}
 
+                <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
+                  <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Section Design</legend>
+                  {(() => { const design = (selectedSection.content.design ?? {}) as Record<string, unknown>; const setDesign = (key: string, value: unknown) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, design: { ...(s.content.design as Record<string, unknown> ?? {}), [key]: value } } } : s)); return <>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Background color
+                        <input type="color" value={String(design.background_color || "#ffffff")} onChange={(e) => setDesign("background_color", e.target.value)} disabled={!canEdit} style={{ width: "100%", height: 28, cursor: "pointer" }} />
+                      </label>
+                      <label className="wb-design-label">Overlay color
+                        <input type="color" value={String(design.overlay_color || "#000000")} onChange={(e) => setDesign("overlay_color", e.target.value)} disabled={!canEdit} style={{ width: "100%", height: 28, cursor: "pointer" }} />
+                      </label>
+                    </div>
+                    <label className="wb-design-label" style={{ marginBottom: 8, display: "block" }}>Background image URL
+                      <input type="url" value={String(design.background_image || "")} onChange={(e) => setDesign("background_image", e.target.value || null)} disabled={!canEdit} placeholder="https://..." style={{ width: "100%" }} />
+                    </label>
+                    <label className="wb-design-label" style={{ marginBottom: 8, display: "block" }}>Overlay opacity: {Number(design.overlay_opacity ?? 0)}%
+                      <input type="range" min={0} max={100} value={Number(design.overlay_opacity ?? 0)} onChange={(e) => setDesign("overlay_opacity", Number(e.target.value))} disabled={!canEdit} style={{ width: "100%" }} />
+                    </label>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Padding top (px)
+                        <input type="number" min={0} max={200} value={Number(design.padding_top ?? "")} onChange={(e) => setDesign("padding_top", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="auto" />
+                      </label>
+                      <label className="wb-design-label">Padding bottom (px)
+                        <input type="number" min={0} max={200} value={Number(design.padding_bottom ?? "")} onChange={(e) => setDesign("padding_bottom", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="auto" />
+                      </label>
+                    </div>
+                    <label className="wb-design-label" style={{ marginBottom: 8, display: "block" }}>Content width
+                      <select value={String(design.content_width || "full")} onChange={(e) => setDesign("content_width", e.target.value === "full" ? null : e.target.value)} disabled={!canEdit} style={{ width: "100%" }}>
+                        <option value="full">Full width</option>
+                        <option value="contained">Contained (960px)</option>
+                        <option value="narrow">Narrow (720px)</option>
+                      </select>
+                    </label>
+                    <div style={{ marginBottom: 4 }}>
+                      <span className="wb-design-label" style={{ display: "block", marginBottom: 4 }}>Text alignment</span>
+                      <div className="wb-align-buttons" style={{ display: "flex", gap: 4 }}>
+                        {(["left", "center", "right"] as const).map((align) => <button key={align} type="button" className={`wb-align-btn${String(design.text_align || "left") === align ? " active" : ""}`} style={{ flex: 1, padding: "4px 8px", fontSize: "0.75rem", fontWeight: 600, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, background: String(design.text_align || "left") === align ? "var(--wb-accent, #274c42)" : "transparent", color: String(design.text_align || "left") === align ? "#fff" : "inherit", cursor: "pointer" }} onClick={() => setDesign("text_align", align === "left" ? null : align)} disabled={!canEdit}>{align.charAt(0).toUpperCase() + align.slice(1)}</button>)}
+                      </div>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Border color
+                        <input type="color" value={String(design.border_color || "#e5e5e3")} onChange={(e) => setDesign("border_color", e.target.value)} disabled={!canEdit} style={{ width: "100%", height: 28, cursor: "pointer" }} />
+                      </label>
+                      <label className="wb-design-label">Border width (px)
+                        <input type="number" min={0} max={8} value={Number(design.border_width ?? 0)} onChange={(e) => setDesign("border_width", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="0" />
+                      </label>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Border radius (px)
+                        <input type="number" min={0} max={40} value={Number(design.border_radius ?? 0)} onChange={(e) => setDesign("border_radius", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="0" />
+                      </label>
+                      <label className="wb-design-label">Box shadow
+                        <select value={String(design.box_shadow || "none")} onChange={(e) => setDesign("box_shadow", e.target.value === "none" ? null : e.target.value)} disabled={!canEdit} style={{ width: "100%" }}>
+                          <option value="none">None</option>
+                          <option value="soft">Soft</option>
+                          <option value="strong">Strong</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="wb-design-label" style={{ marginBottom: 4, display: "block" }}>Columns
+                      <select value={String(design.columns || "auto")} onChange={(e) => setDesign("columns", e.target.value === "auto" ? null : e.target.value)} disabled={!canEdit} style={{ width: "100%" }}>
+                        <option value="auto">Auto</option>
+                        <option value="2">2 columns</option>
+                        <option value="3">3 columns</option>
+                        <option value="4">4 columns</option>
+                      </select>
+                    </label>
+                  </>; })()}
+                </fieldset>
+
                 <div className="wb-field-stack" style={{ marginTop: 16 }}>
                   <label>Custom CSS
                     <textarea className="wb-css-editor" rows={4} placeholder={"/* Scoped to this section */\n.section-hero { background: linear-gradient(...); }"} value={selectedSection.content.custom_css ?? ""} disabled={!canEdit} style={{ fontFamily: "monospace", fontSize: "0.8rem" }} onChange={(e) => setSections((current) => current.map((s) => s.id === selectedSection.id ? { ...s, content: { ...s.content, custom_css: e.target.value } } : s))} />
                   </label>
                 </div>
+                <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
+                  <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Device visibility</legend>
+                  {(["tablet", "mobile"] as const).map((target) => {
+                    const overrides = brand?.[target] ?? {};
+                    const hidden = (overrides.hide_section_ids ?? []).includes(selectedSection.id);
+                    return <label key={target} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <input type="checkbox" checked={hidden} disabled={!canEdit} onChange={() => {
+                        const ids: string[] = overrides.hide_section_ids ?? [];
+                        const next = hidden ? ids.filter((id) => id !== selectedSection.id) : [...ids, selectedSection.id];
+                        void updateBrand({ [target]: { ...overrides, hide_section_ids: next } });
+                      }} />
+                      Hide on {target}
+                    </label>;
+                  })}
+                </fieldset>
+                <fieldset className="wb-design-fieldset" style={{ marginTop: 16, border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 6, padding: "12px 14px" }}>
+                  <legend style={{ fontSize: "0.7rem", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--wb-muted, #6b7280)", padding: "0 6px" }}>Responsive overrides</legend>
+                  {(() => { const design = (selectedSection.content.design ?? {}) as Record<string, unknown>; const setDesignNested = (device: string, key: string, value: unknown) => setSections((current) => current.map((s) => { if (s.id !== selectedSection.id) return s; const d = (s.content.design ?? {}) as Record<string, unknown>; const sub = (d[device] ?? {}) as Record<string, unknown>; return { ...s, content: { ...s.content, design: { ...d, [device]: { ...sub, [key]: value } } } }; })); const tabletD = (design.tablet ?? {}) as Record<string, unknown>; const mobileD = (design.mobile ?? {}) as Record<string, unknown>; return <>
+                    <p style={{ fontSize: "0.7rem", color: "var(--wb-muted, #6b7280)", margin: "0 0 8px" }}>Override design for smaller screens</p>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Tablet pad top (px)
+                        <input type="number" min={0} max={200} value={Number(tabletD.padding_top ?? "")} onChange={(e) => setDesignNested("tablet", "padding_top", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                      <label className="wb-design-label">Tablet pad bottom (px)
+                        <input type="number" min={0} max={200} value={Number(tabletD.padding_bottom ?? "")} onChange={(e) => setDesignNested("tablet", "padding_bottom", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <label className="wb-design-label">Mobile pad top (px)
+                        <input type="number" min={0} max={200} value={Number(mobileD.padding_top ?? "")} onChange={(e) => setDesignNested("mobile", "padding_top", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                      <label className="wb-design-label">Mobile pad bottom (px)
+                        <input type="number" min={0} max={200} value={Number(mobileD.padding_bottom ?? "")} onChange={(e) => setDesignNested("mobile", "padding_bottom", e.target.value ? Number(e.target.value) : null)} disabled={!canEdit} placeholder="inherit" />
+                      </label>
+                    </div>
+                    <div className="wb-design-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <label className="wb-design-label">Tablet font scale
+                        <input type="number" min={0.7} max={1.4} step={0.05} value={Number(tabletD.font_scale ?? 1)} onChange={(e) => setDesignNested("tablet", "font_scale", Number(e.target.value) === 1 ? null : Number(e.target.value))} disabled={!canEdit} />
+                      </label>
+                      <label className="wb-design-label">Mobile font scale
+                        <input type="number" min={0.7} max={1.4} step={0.05} value={Number(mobileD.font_scale ?? 1)} onChange={(e) => setDesignNested("mobile", "font_scale", Number(e.target.value) === 1 ? null : Number(e.target.value))} disabled={!canEdit} />
+                      </label>
+                    </div>
+                  </>; })()}
+                </fieldset>
                 <div className="wb-section-actions">
                   <button className="wb-btn wb-btn-primary" onClick={() => void saveSection(selectedSection)} disabled={controlsDisabled}>Save section</button>
                   <button className="wb-btn wb-btn-secondary" onClick={() => void duplicateSection(selectedSection)} disabled={controlsDisabled}>Duplicate</button>

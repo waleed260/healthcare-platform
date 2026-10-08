@@ -11,6 +11,7 @@ const COLOR_KEYS = ["primary", "secondary", "accent", "background", "text", "mut
 const COLOR_DEFAULTS: Record<(typeof COLOR_KEYS)[number], string> = { primary: "#274c42", secondary: "#5b7a6f", accent: "#e77b5c", background: "#f5f4ee", text: "#1c2928", muted: "#6b7573", border: "#d9d6cc", success: "#2f7d4f", error: "#a8392f" };
 const FONTS = ["serif", "sans", "mono"];
 const FOOTER_KINDS = ["about", "services", "quick_links", "branches", "hours", "contact", "social", "legal", "custom"];
+const SOCIAL_PLATFORMS = ["facebook", "instagram", "twitter", "linkedin", "youtube", "tiktok", "whatsapp"];
 const WIDTH: Record<Device, string> = { desktop: "100%", tablet: "768px", mobile: "375px" };
 
 const pickDraft = (brand: SiteBrand): Draft => ({ theme: brand.theme, header: brand.header, footer: brand.footer, tablet: brand.tablet, mobile: brand.mobile });
@@ -117,17 +118,36 @@ export default function ThemePanel({ brand, disabled, onSave }: { brand: SiteBra
         </div>)}
       </div>)}
       <button className="button button-secondary" onClick={() => setNav([...nav, { label: "New link", href: "#" }])} disabled={nav.length >= 12}>Add link ＋</button>
+      <p className="eyebrow" style={{ marginTop: 16 }}>SOCIAL LINKS</p>
+      {Object.entries(header.social ?? {}).map(([platform, url]) => <div className="theme-row" key={platform}>
+        <select aria-label="Platform" value={platform} onChange={(event) => { const entries = Object.entries(header.social ?? {}); const updated = Object.fromEntries(entries.map(([k, v]) => k === platform ? [event.target.value, v] : [k, v])); setHeader({ social: updated }); }}>{SOCIAL_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+        <input aria-label="URL" maxLength={500} value={url} onChange={(event) => setHeader({ social: { ...header.social, [platform]: event.target.value } })} placeholder="https://..." />
+        <button className="text-control" onClick={() => { const next = { ...header.social }; delete next[platform]; setHeader({ social: next }); }}>Remove</button>
+      </div>)}
+      <button className="button button-secondary" onClick={() => { const used = Object.keys(header.social ?? {}); const available = SOCIAL_PLATFORMS.find((p) => !used.includes(p)) ?? "facebook"; setHeader({ social: { ...header.social, [available]: "" } }); }} disabled={Object.keys(header.social ?? {}).length >= SOCIAL_PLATFORMS.length}>Add social ＋</button>
     </fieldset>
 
     <fieldset className="theme-group" disabled={disabled}><legend>Footer</legend>
-      {columns.map((column, index) => <div className="theme-row" key={index}>
-        <select aria-label="Column type" value={column.kind} onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, kind: event.target.value } : c) })}>{FOOTER_KINDS.map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select>
-        <input aria-label="Column title" maxLength={80} value={column.title ?? ""} placeholder="Title" onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, title: event.target.value } : c) })} />
-        <input aria-label="Column text" maxLength={600} value={column.body ?? ""} placeholder="Text" onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, body: event.target.value } : c) })} />
-        <button className="text-control" onClick={() => index > 0 && setFooter({ columns: columns.map((c, i) => i === index - 1 ? columns[index] : i === index ? columns[index - 1] : c) })} disabled={index === 0}>↑</button>
-        <button className="text-control" onClick={() => setFooter({ columns: columns.filter((_, i) => i !== index) })}>Remove</button>
+      {columns.map((column, index) => <div className="theme-row" key={index} style={{ flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <select aria-label="Column type" value={column.kind} onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, kind: event.target.value } : c) })}>{FOOTER_KINDS.map((kind) => <option key={kind} value={kind}>{kind.replace("_", " ")}</option>)}</select>
+          <input aria-label="Column title" maxLength={80} value={column.title ?? ""} placeholder="Title" onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, title: event.target.value } : c) })} />
+          <input aria-label="Column text" maxLength={600} value={column.body ?? ""} placeholder="Text" onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, body: event.target.value } : c) })} />
+          <button className="text-control" onClick={() => index > 0 && setFooter({ columns: columns.map((c, i) => i === index - 1 ? columns[index] : i === index ? columns[index - 1] : c) })} disabled={index === 0}>↑</button>
+          <button className="text-control" onClick={() => setFooter({ columns: columns.filter((_, i) => i !== index) })}>Remove</button>
+        </div>
+        {(column.links ?? []).map((link, li) => <div className="theme-row theme-subrow" key={li}>
+          <input aria-label="Link label" maxLength={60} value={link.label} onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, links: (c.links ?? []).map((l, j) => j === li ? { ...l, label: event.target.value } : l) } : c) })} placeholder="Link label" />
+          <input aria-label="Link URL" maxLength={500} value={link.href} onChange={(event) => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, links: (c.links ?? []).map((l, j) => j === li ? { ...l, href: event.target.value } : l) } : c) })} placeholder="/page or https://..." />
+          <button className="text-control" onClick={() => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, links: (c.links ?? []).filter((_, j) => j !== li) } : c) })}>Remove</button>
+        </div>)}
+        <button className="text-control" onClick={() => setFooter({ columns: columns.map((c, i) => i === index ? { ...c, links: [...(c.links ?? []), { label: "New link", href: "#" }] } : c) })} disabled={(column.links?.length ?? 0) >= 12}>+ Link</button>
       </div>)}
-      <div className="brand-fields"><button className="button button-secondary" onClick={() => setFooter({ columns: [...columns, { kind: "about" }] })} disabled={columns.length >= 6}>Add column ＋</button><label>Copyright line<input maxLength={200} value={footer.copyright ?? ""} onChange={(event) => setFooter({ copyright: event.target.value })} /></label></div>
+      <div className="brand-fields">
+        <button className="button button-secondary" onClick={() => setFooter({ columns: [...columns, { kind: "about" }] })} disabled={columns.length >= 6}>Add column ＋</button>
+        <label>Copyright line<input maxLength={200} value={footer.copyright ?? ""} onChange={(event) => setFooter({ copyright: event.target.value })} /></label>
+        <label>Show legal links<input type="checkbox" checked={footer.show_legal_links ?? false} onChange={(event) => setFooter({ show_legal_links: event.target.checked })} /></label>
+      </div>
     </fieldset>
 
     <fieldset className="theme-group" disabled={disabled}><legend>Per-device adjustments</legend><div className="brand-fields">
