@@ -398,12 +398,12 @@ export default function WebsiteEditorPage() {
   const template = useMemo<TemplateKey>(() => templateKey(website?.template_key), [website]);
 
   /* ── API callbacks ── */
-  const validateDraft = useCallback(async (selected: Website) => {
+  const validateDraft = useCallback(async (selected: Website, currentPages?: Page[]) => {
     try {
       const serverResult = await request<Validation>(`/api/v1/websites/${selected.id}/validation`);
       if (serverResult && !serverResult.valid) { setValidation(serverResult); return; }
-      const allPages = pages.length ? pages : (await request<Page[]>(`/api/v1/websites/${selected.id}/pages`)) ?? [];
-      const hasLegal = allPages.some((p) => /privacy|terms|legal|policy/i.test(p.slug));
+      const knownPages = currentPages?.length ? currentPages : (await request<Page[]>(`/api/v1/websites/${selected.id}/pages`)) ?? [];
+      const hasLegal = knownPages.some((p) => /privacy|terms|legal|policy/i.test(p.slug));
       if (!hasLegal) { setValidation({ valid: false, code: "MISSING_LEGAL", message: "Add a privacy policy or terms page before publishing." }); return; }
       const colors = selected.brand?.theme?.colors;
       if (colors?.primary && colors?.background) {
@@ -414,7 +414,7 @@ export default function WebsiteEditorPage() {
       }
       setValidation(serverResult);
     } catch (reason) { setValidation({ valid: false, code: "VALIDATION_UNAVAILABLE", message: reason instanceof Error ? reason.message : "Draft validation is unavailable." }); }
-  }, [pages]);
+  }, []);
 
   const loadWebsite = useCallback(async (selected: Website) => {
     setBusy("load"); setWebsite(selected);
@@ -429,7 +429,7 @@ export default function WebsiteEditorPage() {
       setPage(firstPage);
       setSections(firstPage ? (await request<Section[]>(`/api/v1/websites/${selected.id}/pages/${firstPage.id}/sections`)) ?? [] : []);
       setSelectedSectionId(null);
-      void validateDraft(selected);
+      void validateDraft(selected, allPages);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The website could not be loaded."); }
     finally { setBusy(null); setLoading(false); }
   }, [validateDraft]);
