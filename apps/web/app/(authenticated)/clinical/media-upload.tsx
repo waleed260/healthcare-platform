@@ -17,10 +17,13 @@ export default function MediaUpload({ patientId, onUploaded }: { patientId: stri
 
   async function uploadOne(file: File): Promise<Item> {
     try {
+      const extMime: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+      const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+      const mime = file.type || extMime[ext] || "application/octet-stream";
       const response = await fetch(`/api/v1/patients/${patientId}/media/upload?media_kind=${kind}`, {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": csrfToken() },
+        headers: { "Content-Type": mime, "X-CSRF-Token": csrfToken() },
         body: file,
       });
       if (!response.ok) {

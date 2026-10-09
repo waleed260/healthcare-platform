@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from app.core.security import decrypt_field, encrypt_field, hash_token, new_opaque_token
 
 MAX_PATIENT_DOCUMENT_BYTES = 20 * 1024 * 1024
-ALLOWED_TYPES = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}
+ALLOWED_TYPES: dict[str, str | tuple[str, ...]] = {"application/pdf": ".pdf", "image/jpeg": (".jpg", ".jpeg"), "image/png": ".png"}
 MAGIC_PREFIXES = {
     "application/pdf": (b"%PDF-",),
     "image/jpeg": (b"\xff\xd8\xff",),
@@ -25,7 +25,8 @@ def generic_filename(mime_type: str) -> str:
     extension = ALLOWED_TYPES.get(mime_type)
     if extension is None:
         raise ValueError("file type is not permitted")
-    return f"document{extension}"
+    canonical = extension[0] if isinstance(extension, tuple) else extension
+    return f"document{canonical}"
 
 
 def encrypt_original_filename(filename: str) -> str:

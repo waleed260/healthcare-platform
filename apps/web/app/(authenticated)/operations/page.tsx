@@ -5,7 +5,7 @@ import anime from "animejs";
 import { csrfToken } from "../_lib/client";
 import FollowUpDrawer from "../_lib/follow-up-drawer";
 
-type FollowUp = { id: string; reason: string; due_at: string; priority: string; status: string; version: number };
+type FollowUp = { id: string; patient_id?: string; reason: string; due_at: string; priority: string; status: string; version: number };
 type Notification = { id: string; kind: string; title: string; body: string; read_at: string | null; created_at: string };
 
 function message(response: Response, payload: unknown): string {
@@ -34,14 +34,16 @@ function decodeApplicationServerKey(value: string): Uint8Array<ArrayBuffer> {
 export default function OperationsPage() {
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [nextFollowUp, setNextFollowUp] = useState<string | null>(null);
-  const [nextNotification, setNextNotification] = useState<string | null>(null);
+  const followCursorRef = useRef<string | null>(null);
+  const notificationCursorRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
   const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
+  const [hasMoreFollowUps, setHasMoreFollowUps] = useState(false);
+  const [hasMoreNotifications, setHasMoreNotifications] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [pushState, setPushState] = useState<PushState>("checking");
@@ -51,8 +53,8 @@ export default function OperationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const followCursor = append ? nextFollowUp : null;
-      const notificationCursor = append ? nextNotification : null;
+      const followCursor = append ? followCursorRef.current : null;
+      const notificationCursor = append ? notificationCursorRef.current : null;
       const followUrl = `/api/v1/operations/follow-ups?limit=25${priorityFilter ? `&priority=${encodeURIComponent(priorityFilter)}` : ""}${statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : ""}${followCursor ? `&cursor=${encodeURIComponent(followCursor)}` : ""}`;
       const notificationUrl = `/api/v1/operations/notifications?limit=25${notificationCursor ? `&cursor=${encodeURIComponent(notificationCursor)}` : ""}`;
       const [followResponse, notificationResponse] = await Promise.all([
@@ -60,21 +62,23 @@ export default function OperationsPage() {
         fetch(notificationUrl, { credentials: "include", cache: "no-store" }),
       ]);
       if (followResponse.status === 401 || notificationResponse.status === 401) { window.location.href = "/login"; return; }
-      const followPayload = await followResponse.json();
-      const notificationPayload = await notificationResponse.json();
+      const followPayload = await followResponse.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
+      const notificationPayload = await notificationResponse.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
       if (!followResponse.ok) throw new Error(message(followResponse, followPayload));
       if (!notificationResponse.ok) throw new Error(message(notificationResponse, notificationPayload));
       setFollowUps((current) => append ? [...current, ...(followPayload.data ?? [])] : (followPayload.data ?? []));
       setNotifications((current) => append ? [...current, ...(notificationPayload.data ?? [])] : (notificationPayload.data ?? []));
-      setNextFollowUp(followPayload.meta?.next_cursor ?? null);
-      setNextNotification(notificationPayload.meta?.next_cursor ?? null);
+      followCursorRef.current = followPayload.meta?.next_cursor ?? null;
+      notificationCursorRef.current = notificationPayload.meta?.next_cursor ?? null;
+      setHasMoreFollowUps(!!followCursorRef.current);
+      setHasMoreNotifications(!!notificationCursorRef.current);
       setRefreshedAt(new Date());
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The operations workspace could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, [nextFollowUp, nextNotification, priorityFilter, statusFilter]);
+  }, [priorityFilter, statusFilter]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -86,7 +90,7 @@ export default function OperationsPage() {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ expected_version: item.version }),
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
       if (!response.ok) throw new Error(message(response, payload));
       setNotice("Follow-up completed and removed from the active queue."); await load();
     } catch (reason) {
@@ -104,7 +108,7 @@ export default function OperationsPage() {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
         body: JSON.stringify({ notification_ids: [item.id] }),
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
       if (!response.ok) throw new Error(message(response, payload));
       setNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry)); setNotice("Notification marked as read.");
     } catch (reason) {
@@ -185,7 +189,7 @@ export default function OperationsPage() {
       {notice && <div className="success-alert" role="status">{notice}</div>}
 
       <div className="operations-filters">
-        <label>Priority<select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="">All</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+        <label>Priority<select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}><option value="">All</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
         <label>Status<select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option value="">All open</option><option value="due">Due</option><option value="contacted">Contacted</option><option value="booked">Booked</option><option value="completed">Completed</option></select></label>
       </div>
 
@@ -195,7 +199,7 @@ export default function OperationsPage() {
           {loading && followUps.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading follow-ups</strong><span>Checking your scoped task list…</span></div>}
           {!loading && !error && followUps.length === 0 && <div className="dashboard-empty"><strong>No follow-ups need attention</strong><span>New tasks will appear here when they are assigned.</span></div>}
           {followUps.length > 0 && <div className="operations-list">{followUps.map((item) => <article className="operations-row" key={item.id}><div><strong>{item.reason}</strong><small>Due {formatDate(item.due_at)} · {item.priority} priority · {item.status}</small></div><button className="button button-secondary" type="button" onClick={() => void complete(item)} disabled={working === item.id || item.status === "completed"}>{working === item.id ? "Saving…" : "Complete"}</button></article>)}</div>}
-          {nextFollowUp && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more follow-ups <span>↓</span></button>}
+          {hasMoreFollowUps && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more follow-ups <span>↓</span></button>}
         </section>
 
         <section className="detail-card operations-card" aria-labelledby="notification-heading">
@@ -203,7 +207,7 @@ export default function OperationsPage() {
           {loading && notifications.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading notifications</strong><span>Checking your private inbox…</span></div>}
           {!loading && !error && notifications.length === 0 && <div className="dashboard-empty"><strong>Your inbox is clear</strong><span>Operational alerts will appear here.</span></div>}
           {notifications.length > 0 && <div className="operations-list">{notifications.map((item) => <article className={item.read_at ? "operations-row notification-read" : "operations-row notification-unread"} key={item.id}><div><strong>{item.title}</strong><small>{item.body} · {formatDate(item.created_at)}</small></div>{!item.read_at && <button className="ghost-button" type="button" onClick={() => void markRead(item)} disabled={working === item.id}>Mark read <span>✓</span></button>}</article>)}</div>}
-          {nextNotification && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more notifications <span>↓</span></button>}
+          {hasMoreNotifications && <button className="button button-secondary" type="button" onClick={() => void load(true)} disabled={loading}>Load more notifications <span>↓</span></button>}
         </section>
       </div>
 

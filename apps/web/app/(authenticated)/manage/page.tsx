@@ -17,6 +17,7 @@ type Specialty = { id: string; code: string; name: string; description: string |
 type Upgrade = { id: string; kind: string; target_code: string; message: string | null; status: string; decision_note: string | null; created_at: string };
 type Invitation = { id: string; email: string; status: string; created_at: string };
 type FeatureLimit = { feature: string; current_usage: number; limit_value: number };
+type Subscription = { id: string; code: string; name: string; status: string; starts_at: string | null; ends_at: string | null } | null;
 
 const TABS = [
   { id: "services", label: "Services", permission: "service.read" },
@@ -41,6 +42,7 @@ export default function ManagePage() {
   const [upgrades, setUpgrades] = useState<Upgrade[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [featureLimits, setFeatureLimits] = useState<FeatureLimit[]>([]);
+  const [subscription, setSubscription] = useState<Subscription>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +69,7 @@ export default function ManagePage() {
       const granted = session.permissions ?? [];
       setPermissions(granted);
       const has = (code: string) => granted.includes(code);
-      const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows] = await Promise.all([
+      const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow] = await Promise.all([
         has("service.read") ? api<Service[]>("/api/v1/services?limit=100") : Promise.resolve([]),
         has("branch.read") ? api<Branch[]>("/api/v1/branches?limit=100") : Promise.resolve([]),
         has("staff.read") ? api<StaffUser[]>("/api/v1/staff/users?limit=100") : Promise.resolve([]),
@@ -77,6 +79,7 @@ export default function ManagePage() {
         has("service.manage") ? api<ServiceTemplate[]>("/api/v1/service-templates?limit=100").catch(() => []) : Promise.resolve([]),
         has("staff.manage") ? api<Invitation[]>("/api/v1/staff/invitations?limit=50").catch(() => []) : Promise.resolve([]),
         has("clinic.read") ? api<FeatureLimit[]>("/api/v1/feature-limits").catch(() => []) : Promise.resolve([]),
+        has("clinic.read") ? api<Subscription>("/api/v1/subscription").catch(() => null) : Promise.resolve(null),
       ]);
       setServices(serviceRows ?? []);
       setBranches(branchRows ?? []);
@@ -87,6 +90,7 @@ export default function ManagePage() {
       setTemplates(templateRows ?? []);
       setInvitations(inviteRows ?? []);
       setFeatureLimits(limitRows ?? []);
+      setSubscription(subscriptionRow ?? null);
     } catch (reason) {
       setError(errorMessage(reason, "The admin panel could not be loaded."));
     } finally {
@@ -404,6 +408,28 @@ export default function ManagePage() {
     {/* ═══ MODULES TAB ═══ */}
     {tab === "modules" && <section className="surface-card">
       <div className="surface-card-heading"><div><p className="eyebrow">SPECIALTIES &amp; PLAN</p><h2>Grow without migrating.</h2></div></div>
+
+      {subscription && <div style={{ padding: "16px 20px", marginBottom: 12, background: "var(--surface-2, #f0f0ee)", borderRadius: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <p className="eyebrow" style={{ fontSize: "0.68rem", marginBottom: 4 }}>CURRENT PLAN</p>
+            <strong style={{ fontSize: "1.1rem" }}>{subscription.name}</strong>
+            <span className={`pipeline-status ${subscription.status === "active" ? "status-paid" : subscription.status === "cancelled" ? "status-void" : "status-contacted"}`} style={{ marginLeft: 10 }}>{label(subscription.status)}</span>
+            {subscription.ends_at && <small style={{ display: "block", marginTop: 4, color: "var(--text-muted, #6b7280)" }}>Ends {new Date(subscription.ends_at).toLocaleDateString()}</small>}
+          </div>
+          {subscription.status === "active" && can("clinic.update") && <button className="button button-danger" disabled={busy} onClick={() => void (async () => {
+            const ok = await confirm({ title: "Cancel subscription", message: "Your clinic will lose access to premium features when the current billing period ends. This cannot be undone from the dashboard — contact support to reactivate.", danger: true, confirmLabel: "Cancel plan" });
+            if (!ok) return;
+            setBusy(true);
+            try {
+              await api("/api/v1/subscription", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ plan_code: subscription.code, status: "cancelled" }) });
+              toast.success("Subscription cancelled. Access continues until the end of the current period.");
+              await load();
+            } catch (reason) { toast.error(errorMessage(reason, "The subscription could not be cancelled.")); }
+            finally { setBusy(false); }
+          })()}>Cancel plan</button>}
+        </div>
+      </div>}
 
       {featureLimits.length > 0 && <div style={{ marginBottom: 20 }}>
         <p className="eyebrow" style={{ fontSize: "0.68rem", margin: "12px 0 8px" }}>PLAN USAGE</p>

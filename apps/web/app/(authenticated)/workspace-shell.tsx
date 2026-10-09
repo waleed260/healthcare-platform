@@ -19,6 +19,7 @@ const navGroups: NavGroup[] = [
     { href: "/patients", label: "Patients", icon: "○", permission: "patient.read" },
     { href: "/leads", label: "Leads", icon: "↳", permission: "lead.read" },
     { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
+    { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
   ]},
   { key: "clinical", label: "CLINICAL", items: [
     { href: "/clinical", label: "Clinical", icon: "✚", permission: "clinical.read" },
@@ -29,7 +30,6 @@ const navGroups: NavGroup[] = [
     { href: "/packages", label: "Packages", icon: "❑", permission: "package.read" },
     { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
     { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
-    { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
   ]},
   { key: "website", label: "WEBSITE", items: [
     { href: "/website", label: "Website", icon: "✦", permission: "website.read" },

@@ -511,7 +511,7 @@ async def media_upload(request: Request, db: Session = Depends(get_db), session_
     _csrf(request, session, csrf_token)
     filename = (original_filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     mime_type = (content_type or "").split(";", 1)[0].strip().casefold()
-    allowed = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    allowed = {"image/jpeg": (".jpg", ".jpeg"), "image/png": (".png",), "image/webp": (".webp",)}
     if not filename or "\x00" in filename or mime_type not in allowed or not (alt_text or "").strip():
         raise _error("INVALID_INPUT", "A filename, alt text, and supported image MIME type are required.", status.HTTP_400_BAD_REQUEST)
     content = await request.body()
@@ -523,8 +523,9 @@ async def media_upload(request: Request, db: Session = Depends(get_db), session_
         validate_image_magic(mime_type, content[:16])
     except ValueError as exc:
         raise _error("INVALID_INPUT", str(exc), status.HTTP_400_BAD_REQUEST) from exc
+    canonical_ext = allowed[mime_type][0]
     media_id = UUID(secrets.token_hex(16))
-    storage_key = f"website-drafts/{session['clinic_id']}/{media_id}{allowed[mime_type]}"
+    storage_key = f"website-drafts/{session['clinic_id']}/{media_id}{canonical_ext}"
     digest = hashlib.sha256(content).hexdigest()
     try:
         put_private_object(storage_key, content)

@@ -155,16 +155,17 @@ def dashboard_summary(request: Request, db: Session = Depends(get_db), session_t
 
 
 @router.get("/reporting-summary")
-def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=365), specialty_id: str | None = Query(default=None), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=365), specialty_id: str | None = Query(default=None), branch_id: str | None = Query(default=None), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "report.read")
     clinic_id = session["clinic_id"]
-    params = {"clinic_id": clinic_id, "user_id": session["user_id"], "days": days, "specialty_id": specialty_id}
+    params = {"clinic_id": clinic_id, "user_id": session["user_id"], "days": days, "specialty_id": specialty_id, "branch_id": branch_id}
     appointment_counts = db.execute(text("""
         SELECT a.status, COUNT(*) AS count
         FROM appointments a
         WHERE a.clinic_id = :clinic_id AND a.archived_at IS NULL
           AND a.created_at >= now() - (:days * INTERVAL '1 day')
           AND (:specialty_id IS NULL OR a.specialty_id = CAST(:specialty_id AS uuid))
+          AND (:branch_id IS NULL OR a.branch_id = CAST(:branch_id AS uuid))
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
                OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
         GROUP BY a.status ORDER BY a.status
@@ -261,7 +262,7 @@ def _parse_range(value: str) -> int:
 
 @router.get("/analytics/daily")
 def analytics_daily(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
-    session = _authorized(db, session_token, "admin.analytics.read")
+    session = _authorized(db, session_token, "report.read")
     days = _parse_range(range)
     clinic_id = session["clinic_id"]
     user_id = session["user_id"]
@@ -312,7 +313,7 @@ def analytics_daily(request: Request, range: str = Query(default="30d", alias="r
 
 @router.get("/analytics/channels")
 def analytics_channels(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
-    session = _authorized(db, session_token, "admin.analytics.read")
+    session = _authorized(db, session_token, "report.read")
     days = _parse_range(range)
     rows = db.execute(text("""
         SELECT COALESCE(l.source, 'unknown') AS channel,
@@ -331,7 +332,7 @@ def analytics_channels(request: Request, range: str = Query(default="30d", alias
 
 @router.get("/analytics/funnel")
 def analytics_funnel(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
-    session = _authorized(db, session_token, "admin.analytics.read")
+    session = _authorized(db, session_token, "report.read")
     days = _parse_range(range)
     stages = ["new", "contacted", "qualified", "appointment_booked", "visited", "converted"]
     stage_indices = {s: i for i, s in enumerate(stages)}
@@ -357,7 +358,7 @@ def analytics_funnel(request: Request, range: str = Query(default="30d", alias="
 
 @router.get("/analytics/top-services")
 def analytics_top_services(request: Request, range: str = Query(default="30d", alias="range"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
-    session = _authorized(db, session_token, "admin.analytics.read")
+    session = _authorized(db, session_token, "report.read")
     days = _parse_range(range)
     rows = db.execute(text("""
         SELECT s.name,

@@ -77,11 +77,14 @@ export default function MediaPage() {
     if (!file) return;
     const alt = window.prompt("Alt text (required for accessibility)", file.name.replace(/\.[^.]+$/, ""))?.trim();
     if (!alt) { toast.error("Alt text is required."); return; }
+    const extMime: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+    const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+    const mime = file.type || extMime[ext] || "application/octet-stream";
     setBusy(true);
     try {
       await api("/api/v1/websites/media/upload", {
         method: "POST",
-        headers: { ...writeHeaders(), "Content-Type": file.type, "X-Original-Filename": file.name, "X-Alt-Text": alt },
+        headers: { ...writeHeaders(), "Content-Type": mime, "X-Original-Filename": file.name, "X-Alt-Text": alt },
         body: file,
       });
       toast.success("Image uploaded. It will be scanned before use.");

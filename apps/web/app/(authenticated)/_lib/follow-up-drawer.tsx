@@ -32,7 +32,7 @@ export default function FollowUpDrawer({ open, onClose, patientId, appointmentId
     if (!open) return;
     void Promise.all([
       patientId ? Promise.resolve([]) : api<Option[]>("/api/v1/patients?limit=100"),
-      api<Option[]>("/api/v1/staff?limit=100").catch(() => []),
+      api<Option[]>("/api/v1/staff/users?limit=100").catch(() => []),
     ]).then(([p, s]) => {
       setPatients(p ?? []);
       setStaff(s ?? []);

@@ -174,7 +174,10 @@ export default function ClinicalPage() {
                 <div className="invoice-actions">
                   <span className={`pipeline-status status-${plan.status === "completed" ? "paid" : plan.status === "cancelled" ? "void" : "contacted"}`}>{plan.status}</span>
                   {can("clinical.manage") && plan.status !== "completed" && plan.status !== "cancelled" && (
-                    <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: plan.status === "draft" ? "active" : "completed" }), "Plan updated.")}>{plan.status === "draft" ? "Activate" : "Complete"}</button>
+                    <>
+                      <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: plan.status === "draft" ? "active" : "completed" }), "Plan updated.")}>{plan.status === "draft" ? "Activate" : "Complete"}</button>
+                      <button className="text-control danger-control" type="button" disabled={busy} onClick={async () => { const ok = await confirm({ message: `Cancel plan "${plan.title}"?`, danger: true }); if (ok) void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: "cancelled" }), "Plan cancelled."); }}>Cancel</button>
+                    </>
                   )}
                 </div>
               </article>

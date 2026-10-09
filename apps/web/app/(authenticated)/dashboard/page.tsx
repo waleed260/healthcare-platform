@@ -122,6 +122,7 @@ export default function DashboardPage() {
       <Link className="kpi-card" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true">👥</span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
       <Link className="kpi-card" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true">🗎</span><div><small>Pending approval</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
       <Link className="kpi-card" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true">✓</span><div><small>Follow-ups due</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
+      <Link className="kpi-card" href="/notifications"><span className="kpi-ico kpi-ico-purple" aria-hidden="true">◔</span><div><small>Alerts</small><strong>View</strong></div></Link>
     </div>
 
     <div className="dash-main-grid" ref={mainRef}>

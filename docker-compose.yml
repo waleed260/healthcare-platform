@@ -52,8 +52,8 @@ services:
       # never "*", so a direct client cannot spoof X-Forwarded-For. The default is
       # the fixed subnet defined under `networks` below; override for other proxies.
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.31.7.0/24}
-      CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:-http://localhost:3000,https://web-eight-flax-pmiw08soee.vercel.app}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,https://web-eight-flax-pmiw08soee.vercel.app}
+      CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:-http://localhost:3000,https://web-eight-flax-pmiw08soee.vercel.app,https://web-beta-wheat-56.vercel.app}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,https://web-eight-flax-pmiw08soee.vercel.app,https://web-beta-wheat-56.vercel.app}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
