@@ -204,23 +204,18 @@ export default function AddAppointmentDrawer({ open, onClose, clinicSlug, onCrea
           <p className="eyebrow" style={{ marginBottom: 12 }}>STEP 3 — DATE & TIME</p>
           <div className="form-grid">
             <label>
-              DATE & TIME *
-              <input
-                type="datetime-local"
-                required
-                value={form.starts_at}
-                onChange={(e) => setForm((f) => ({ ...f, starts_at: e.target.value }))}
-              />
+              Date & time
+              <input type="datetime-local" required value={form.starts_at} onChange={(e) => setForm((f) => ({ ...f, starts_at: e.target.value }))} />
             </label>
             <label>
-              BRANCH *
+              Branch
               <select required value={form.branch_id} onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))}>
                 <option value="">Select branch</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </label>
             <label>
-              SERVICE *
+              Service
               <select required value={form.service_id} onChange={(e) => setForm((f) => ({ ...f, service_id: e.target.value }))}>
                 <option value="">Select service</option>
                 {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -261,16 +256,16 @@ export default function AddAppointmentDrawer({ open, onClose, clinicSlug, onCrea
           </>}
 
           {form.patient_mode === "new" && <div className="form-grid">
-            <label>FULL NAME *<input required maxLength={160} value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} placeholder="Patient's full name" /></label>
-            <label>EMAIL<input type="email" maxLength={320} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="patient@example.com" /></label>
-            <label>PHONE<input maxLength={40} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+92 300 1234567" /></label>
+            <label>Full name<input required maxLength={160} value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} placeholder="Patient's full name" /></label>
+            <label>Email<input type="email" maxLength={320} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="patient@example.com" /></label>
+            <label>Phone<input maxLength={40} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+92 300 1234567" /></label>
             <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
               <button type="button" className={`button ${form.dob_mode === "age" ? "button-primary" : "button-secondary"}`} style={{ flex: 1, padding: "6px 10px", fontSize: 11 }} onClick={() => setForm((f) => ({ ...f, dob_mode: "age" as const }))}>Enter age</button>
               <button type="button" className={`button ${form.dob_mode === "dob" ? "button-primary" : "button-secondary"}`} style={{ flex: 1, padding: "6px 10px", fontSize: 11 }} onClick={() => setForm((f) => ({ ...f, dob_mode: "dob" as const }))}>Date of birth</button>
             </div>
             {form.dob_mode === "age"
-              ? <label>AGE<input type="number" min={0} max={150} value={form.age} onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))} placeholder="Years" /></label>
-              : <label>DATE OF BIRTH<input type="date" value={form.date_of_birth} onChange={(e) => setForm((f) => ({ ...f, date_of_birth: e.target.value }))} /></label>
+              ? <label>Age<input type="number" min={0} max={150} value={form.age} onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))} placeholder="Years" /></label>
+              : <label>Date of birth<input type="date" value={form.date_of_birth} onChange={(e) => setForm((f) => ({ ...f, date_of_birth: e.target.value }))} /></label>
             }
           </div>}
         </>}

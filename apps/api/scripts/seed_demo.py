@@ -167,9 +167,37 @@ def main() -> None:
                         """, (ident(f"form-response-{clinic_number}"), clinic_id, patient_ids[0], form_id, '{"graft_count": 2500, "donor_area": "Occipital"}'))
                 except psycopg.errors.UndefinedTable:
                     pass
+            owner_password = os.environ.get("OWNER_PASSWORD", "Deku@12345678")
+            owner_email = os.environ.get("OWNER_EMAIL", "vkdeku20@gmail.com")
+            first_clinic_id = ident("clinic-a")
+            first_branch_id = ident("branch-a")
+            cur.execute("""
+                INSERT INTO users (id, clinic_id, normalized_email, display_name, password_hash, status, is_platform_admin)
+                VALUES (%s, %s, %s, 'Platform Owner', %s, 'active', true)
+                ON CONFLICT (normalized_email) DO UPDATE
+                  SET password_hash = EXCLUDED.password_hash,
+                      status = 'active',
+                      is_platform_admin = true,
+                      clinic_id = EXCLUDED.clinic_id,
+                      version = users.version + 1
+                RETURNING id
+            """, (ident("owner-user"), first_clinic_id, owner_email.strip().casefold(), hash_password(owner_password)))
+            owner_row = cur.fetchone()
+            if owner_row:
+                owner_user_id = owner_row["id"] if isinstance(owner_row, dict) else owner_row[0]
+                cur.execute("""
+                    INSERT INTO user_roles (clinic_id, user_id, role_id, assigned_by)
+                    VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING
+                """, (first_clinic_id, owner_user_id, roles["owner"], owner_user_id))
+                cur.execute("""
+                    INSERT INTO user_branch_scopes (clinic_id, user_id, branch_id)
+                    VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
+                """, (first_clinic_id, owner_user_id, first_branch_id))
+
         db.commit()
     print("Seeded two synthetic clinics: demo-collision-a and demo-collision-b")
     print(f"Synthetic login password: {PASSWORD}")
+    print(f"Owner login: {owner_email} / {owner_password}")
 
 
 if __name__ == "__main__":
