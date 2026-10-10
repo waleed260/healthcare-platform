@@ -13,6 +13,7 @@ type NavGroup = { key: string; label: string; items: NavItem[] };
 const navGroups: NavGroup[] = [
   { key: "home", label: "", items: [
     { href: "/dashboard", label: "Overview", icon: "◈", permission: "appointment.read" },
+    { href: "/tasks", label: "Tasks", icon: "☐", permission: "appointment.read" },
   ]},
   { key: "crm", label: "CRM", items: [
     { href: "/schedule", label: "Schedule", icon: "◷", permission: "appointment.read" },

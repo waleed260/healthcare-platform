@@ -11,6 +11,12 @@ class PatientCreate(BaseModel):
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
     date_of_birth: date | None = None
+    emergency_contact_name: str | None = Field(default=None, max_length=200)
+    emergency_contact_phone: str | None = Field(default=None, max_length=40)
+    emergency_contact_relation: str | None = Field(default=None, max_length=80)
+    preferred_communication: str | None = Field(default=None, pattern="^(phone|email|sms|whatsapp)$")
+    contraindications: str | None = Field(default=None, max_length=2000)
+    allergies_summary: str | None = Field(default=None, max_length=2000)
 
 
 class PatientUpdate(BaseModel):
@@ -20,10 +26,13 @@ class PatientUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
-    # DOB is captured at create and scored by the duplicate matcher; allow it to be
-    # corrected. The change is a PHI mutation audited by patient.update (field name
-    # only — the value is never logged).
     date_of_birth: date | None = None
+    emergency_contact_name: str | None = Field(default=None, max_length=200)
+    emergency_contact_phone: str | None = Field(default=None, max_length=40)
+    emergency_contact_relation: str | None = Field(default=None, max_length=80)
+    preferred_communication: str | None = Field(default=None, pattern="^(phone|email|sms|whatsapp)$")
+    contraindications: str | None = Field(default=None, max_length=2000)
+    allergies_summary: str | None = Field(default=None, max_length=2000)
 
 
 class ContactCreate(BaseModel):

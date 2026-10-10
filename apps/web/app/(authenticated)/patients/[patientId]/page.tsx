@@ -8,7 +8,7 @@ import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
 import MergePatientDrawer from "../../_lib/merge-patient-drawer";
 
-type Patient = { id: string; patient_number: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; date_of_birth: string | null; status: string; version: number };
+type Patient = { id: string; patient_number: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; date_of_birth: string | null; status: string; version: number; emergency_contact_name: string | null; emergency_contact_phone: string | null; emergency_contact_relation: string | null; preferred_communication: string | null; contraindications: string | null; allergies_summary: string | null };
 type Contact = { id: string; contact_type: string; value: string; is_primary: boolean };
 type Note = { id: string; note_type: string; visibility: string; body: string; created_at: string };
 type CareTeamMember = { doctor_id: string; public_name: string; specialty: string | null; created_at: string };
@@ -24,18 +24,23 @@ type Transfer = { id: string; from_branch_id: string; to_branch_id: string; from
 type Discharge = { id: string; branch_id: string; branch_name: string | null; discharge_type: string; diagnosis: string | null; treatment_summary: string | null; discharge_instructions: string | null; follow_up_required: boolean; follow_up_date: string | null; discharged_at: string; created_at: string };
 type Branch = { id: string; name: string };
 
-type Tab = "overview" | "vitals" | "transfers" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices";
+type TreatmentPlan = { id: string; title: string; diagnosis: string | null; status: string; starts_on: string | null; ends_on: string | null; version: number; created_at: string };
+type PatientPackage = { id: string; name: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number; purchased_at: string; expires_at: string };
+
+type Tab = "overview" | "vitals" | "transfers" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
-  { key: "vitals", label: "Vitals" },
-  { key: "transfers", label: "Transfer / Discharge" },
-  { key: "timeline", label: "Timeline" },
   { key: "appointments", label: "Appointments" },
-  { key: "notes", label: "Notes" },
-  { key: "documents", label: "Documents" },
-  { key: "consents", label: "Consents" },
+  { key: "vitals", label: "Vitals" },
+  { key: "treatments", label: "Treatments" },
   { key: "prescriptions", label: "Prescriptions" },
   { key: "invoices", label: "Invoices" },
+  { key: "packages", label: "Packages" },
+  { key: "documents", label: "Documents" },
+  { key: "consents", label: "Consents" },
+  { key: "notes", label: "Notes" },
+  { key: "transfers", label: "Transfer / Discharge" },
+  { key: "timeline", label: "Timeline" },
 ];
 
 const statusLabel = (s: string) => s.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -64,6 +69,12 @@ export default function PatientDetailPage() {
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editDob, setEditDob] = useState("");
+  const [editEmergencyName, setEditEmergencyName] = useState("");
+  const [editEmergencyPhone, setEditEmergencyPhone] = useState("");
+  const [editEmergencyRelation, setEditEmergencyRelation] = useState("");
+  const [editPreferredComm, setEditPreferredComm] = useState("");
+  const [editContraindications, setEditContraindications] = useState("");
+  const [editAllergies, setEditAllergies] = useState("");
 
   // Tab data states
   const [notes, setNotes] = useState<Note[]>([]);
@@ -98,6 +109,10 @@ export default function PatientDetailPage() {
   const [dischargeForm, setDischargeForm] = useState({ branch_id: "", discharge_type: "regular", diagnosis: "", treatment_summary: "", discharge_instructions: "", follow_up_required: false, follow_up_date: "" });
   const [transferSaving, setTransferSaving] = useState(false);
   const [dischargeSaving, setDischargeSaving] = useState(false);
+  const [treatments, setTreatments] = useState<TreatmentPlan[]>([]);
+  const [treatmentsLoaded, setTreatmentsLoaded] = useState(false);
+  const [packages, setPackages] = useState<PatientPackage[]>([]);
+  const [packagesLoaded, setPackagesLoaded] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -139,8 +154,22 @@ export default function PatientDetailPage() {
 
   const loadHistory = useCallback(async () => {
     try {
-      const data = await api<HistoryEvent[]>(`/api/v1/patients/${patientId}/history`);
-      setHistory(data ?? []);
+      const [historyData, apptData, noteData, vitalData, invoiceData] = await Promise.all([
+        api<HistoryEvent[]>(`/api/v1/patients/${patientId}/history`),
+        api<Appointment[]>(`/api/v1/appointments?patient_id=${patientId}&limit=100`).catch(() => []),
+        apiPage<Note>(`/api/v1/patients/${patientId}/notes`).then((p) => p.data).catch(() => []),
+        api<Vital[]>(`/api/v1/patients/${patientId}/vitals`).catch(() => []),
+        apiPage<Invoice>(`/api/v1/invoices?patient_id=${patientId}&limit=100`).then((p) => p.data).catch(() => []),
+      ]);
+      const merged: HistoryEvent[] = [
+        ...(historyData ?? []),
+        ...(apptData ?? []).map((a) => ({ id: `appt-${a.id}`, event_type: "appointment", entity_id: a.id, from_status: null, to_status: a.status, reason: `${a.reference} · ${formatDate(a.starts_at)}`, actor_user_id: null, created_at: a.starts_at })),
+        ...(noteData ?? []).map((n) => ({ id: `note-${n.id}`, event_type: "note", entity_id: n.id, from_status: null, to_status: n.note_type, reason: n.body.slice(0, 120), actor_user_id: null, created_at: n.created_at })),
+        ...(vitalData ?? []).map((v) => ({ id: `vital-${v.id}`, event_type: "vital", entity_id: v.id, from_status: null, to_status: v.vital_type, reason: v.label ?? (v.value_systolic ? `${v.value_systolic}/${v.value_diastolic} mmHg` : v.value_text ?? ""), actor_user_id: null, created_at: v.recorded_at })),
+        ...(invoiceData ?? []).map((inv) => ({ id: `inv-${inv.id}`, event_type: "invoice", entity_id: inv.id, from_status: null, to_status: inv.status, reason: `${inv.invoice_number} · ${money(inv.total_minor, inv.currency)}`, actor_user_id: null, created_at: inv.issued_at })),
+      ];
+      merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setHistory(merged);
       setHistoryLoaded(true);
     } catch (reason) { toast.error(errorMessage(reason, "Timeline could not be loaded.")); }
   }, [patientId, toast]);
@@ -234,6 +263,22 @@ export default function PatientDetailPage() {
     } catch (reason) { toast.error(errorMessage(reason, "Vital could not be removed.")); }
   }
 
+  const loadTreatments = useCallback(async () => {
+    try {
+      const page = await apiPage<TreatmentPlan>(`/api/v1/treatment-plans?patient_id=${patientId}&limit=100`);
+      setTreatments(page.data);
+      setTreatmentsLoaded(true);
+    } catch (reason) { toast.error(errorMessage(reason, "Treatments could not be loaded.")); }
+  }, [patientId, toast]);
+
+  const loadPackages = useCallback(async () => {
+    try {
+      const data = await api<PatientPackage[]>(`/api/v1/packages/patients/${patientId}`);
+      setPackages(data ?? []);
+      setPackagesLoaded(true);
+    } catch (reason) { toast.error(errorMessage(reason, "Packages could not be loaded.")); }
+  }, [patientId, toast]);
+
   const loadTransfers = useCallback(async () => {
     try {
       const [t, d, b] = await Promise.all([
@@ -296,8 +341,10 @@ export default function PatientDetailPage() {
     if (activeTab === "prescriptions" && !prescriptionsLoaded) void loadPrescriptions();
     if (activeTab === "invoices" && !invoicesLoaded) void loadInvoices();
     if (activeTab === "vitals" && !vitalsLoaded) void loadVitals();
+    if (activeTab === "treatments" && !treatmentsLoaded) void loadTreatments();
+    if (activeTab === "packages" && !packagesLoaded) void loadPackages();
     if (activeTab === "transfers" && !transfersLoaded) void loadTransfers();
-  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, transfersLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTransfers]);
+  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers]);
 
   function startEditing() {
     if (!patient) return;
@@ -305,6 +352,12 @@ export default function PatientDetailPage() {
     setEditEmail(patient.normalized_email ?? "");
     setEditPhone(patient.normalized_phone ?? "");
     setEditDob(patient.date_of_birth ?? "");
+    setEditEmergencyName(patient.emergency_contact_name ?? "");
+    setEditEmergencyPhone(patient.emergency_contact_phone ?? "");
+    setEditEmergencyRelation(patient.emergency_contact_relation ?? "");
+    setEditPreferredComm(patient.preferred_communication ?? "phone");
+    setEditContraindications(patient.contraindications ?? "");
+    setEditAllergies(patient.allergies_summary ?? "");
     setEditing(true);
   }
 
@@ -318,6 +371,12 @@ export default function PatientDetailPage() {
       if (editEmail.trim() !== (patient.normalized_email ?? "")) body.email = editEmail.trim() || null;
       if (editPhone.trim() !== (patient.normalized_phone ?? "")) body.phone = editPhone.trim() || null;
       if (editDob !== (patient.date_of_birth ?? "")) body.date_of_birth = editDob || null;
+      if (editEmergencyName.trim() !== (patient.emergency_contact_name ?? "")) body.emergency_contact_name = editEmergencyName.trim() || null;
+      if (editEmergencyPhone.trim() !== (patient.emergency_contact_phone ?? "")) body.emergency_contact_phone = editEmergencyPhone.trim() || null;
+      if (editEmergencyRelation.trim() !== (patient.emergency_contact_relation ?? "")) body.emergency_contact_relation = editEmergencyRelation.trim() || null;
+      if (editPreferredComm !== (patient.preferred_communication ?? "phone")) body.preferred_communication = editPreferredComm;
+      if (editContraindications.trim() !== (patient.contraindications ?? "")) body.contraindications = editContraindications.trim() || null;
+      if (editAllergies.trim() !== (patient.allergies_summary ?? "")) body.allergies_summary = editAllergies.trim() || null;
       if (Object.keys(body).length === 1) { setEditing(false); return; }
       await api(`/api/v1/patients/${patientId}`, {
         method: "PATCH",
@@ -422,6 +481,17 @@ export default function PatientDetailPage() {
                       <label>Email<input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="Not recorded" /></label>
                       <label>Phone<input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="Not recorded" /></label>
                       <label>Date of birth<input type="date" value={editDob} onChange={(e) => setEditDob(e.target.value)} /></label>
+                      <label>Preferred communication
+                        <select value={editPreferredComm} onChange={(e) => setEditPreferredComm(e.target.value)}>
+                          <option value="phone">Phone</option><option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option>
+                        </select>
+                      </label>
+                      <label>Allergies<textarea value={editAllergies} onChange={(e) => setEditAllergies(e.target.value)} placeholder="Known allergies" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <label>Contraindications<textarea value={editContraindications} onChange={(e) => setEditContraindications(e.target.value)} placeholder="Any contraindications" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <p className="eyebrow" style={{ marginTop: 12 }}>EMERGENCY CONTACT</p>
+                      <label>Name<input value={editEmergencyName} onChange={(e) => setEditEmergencyName(e.target.value)} placeholder="Emergency contact name" /></label>
+                      <label>Phone<input value={editEmergencyPhone} onChange={(e) => setEditEmergencyPhone(e.target.value)} placeholder="Emergency contact phone" /></label>
+                      <label>Relation<input value={editEmergencyRelation} onChange={(e) => setEditEmergencyRelation(e.target.value)} placeholder="e.g. Spouse, Parent" /></label>
                       <div className="form-actions">
                         <button className="button button-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Save details"}</button>
                         <button className="ghost-button" type="button" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
@@ -432,6 +502,10 @@ export default function PatientDetailPage() {
                       <div><dt>Email</dt><dd>{patient.normalized_email ?? "Not recorded"}</dd></div>
                       <div><dt>Phone</dt><dd>{patient.normalized_phone ?? "Not recorded"}</dd></div>
                       <div><dt>Date of birth</dt><dd>{patient.date_of_birth ?? "Not recorded"}</dd></div>
+                      <div><dt>Preferred contact</dt><dd>{patient.preferred_communication ?? "Phone"}</dd></div>
+                      {patient.allergies_summary && <div><dt>Allergies</dt><dd style={{ color: "var(--coral)" }}>{patient.allergies_summary}</dd></div>}
+                      {patient.contraindications && <div><dt>Contraindications</dt><dd style={{ color: "var(--coral)" }}>{patient.contraindications}</dd></div>}
+                      {patient.emergency_contact_name && <div><dt>Emergency contact</dt><dd>{patient.emergency_contact_name}{patient.emergency_contact_relation ? ` (${patient.emergency_contact_relation})` : ""}{patient.emergency_contact_phone ? ` · ${patient.emergency_contact_phone}` : ""}</dd></div>}
                     </dl>
                   )}
                   {contacts.length > 0 && (
@@ -538,6 +612,72 @@ export default function PatientDetailPage() {
                         <div style={{ textAlign: "right", minWidth: 100 }}>
                           <small style={{ color: "var(--muted)", fontSize: 10, display: "block" }}>{formatDateTime(v.recorded_at)}</small>
                           {can("patient.update") && <button className="ghost-button" type="button" style={{ fontSize: 10, color: "var(--coral)", padding: "2px 6px", marginTop: 4 }} onClick={() => void deleteVital(v)}>Remove</button>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === "treatments" && (
+              <section className="detail-card">
+                <div className="card-heading">
+                  <div><p className="eyebrow">CLINICAL</p><h2>Treatment plans</h2></div>
+                  <span className="directory-count">{treatments.length} shown</span>
+                </div>
+                {!treatmentsLoaded ? (
+                  <div className="dashboard-empty" role="status"><strong>Loading treatments…</strong></div>
+                ) : treatments.length === 0 ? (
+                  <div className="dashboard-empty"><strong>No treatment plans</strong><span>Treatment plans linked to this patient will appear here.</span></div>
+                ) : (
+                  <div className="treatment-list">
+                    {treatments.map((tp) => (
+                      <div className="treatment-row" key={tp.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                        <div>
+                          <strong style={{ fontSize: 13 }}>{tp.title}</strong>
+                          {tp.diagnosis && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>{tp.diagnosis}</p>}
+                          <small style={{ color: "var(--muted)", fontSize: 10 }}>
+                            {tp.starts_on ? `${formatDate(tp.starts_on)}` : ""}
+                            {tp.starts_on && tp.ends_on ? " – " : ""}
+                            {tp.ends_on ? formatDate(tp.ends_on) : ""}
+                            {!tp.starts_on && !tp.ends_on ? formatDate(tp.created_at) : ""}
+                          </small>
+                        </div>
+                        <span className={`pipeline-status status-${tp.status}`}>{statusLabel(tp.status)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === "packages" && (
+              <section className="detail-card">
+                <div className="card-heading">
+                  <div><p className="eyebrow">PACKAGES</p><h2>Purchased packages</h2></div>
+                  <span className="directory-count">{packages.length} shown</span>
+                </div>
+                {!packagesLoaded ? (
+                  <div className="dashboard-empty" role="status"><strong>Loading packages…</strong></div>
+                ) : packages.length === 0 ? (
+                  <div className="dashboard-empty"><strong>No packages</strong><span>Patient package purchases will appear here.</span></div>
+                ) : (
+                  <div className="package-list">
+                    {packages.map((pkg) => (
+                      <div className="package-row" key={pkg.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--line)" }}>
+                        <div>
+                          <strong style={{ fontSize: 13 }}>{pkg.name}</strong>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                            Purchased {formatDate(pkg.purchased_at)} · Expires {formatDate(pkg.expires_at)}
+                          </p>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span className={`pipeline-status status-${pkg.status}`}>{statusLabel(pkg.status)}</span>
+                          <p style={{ margin: "4px 0 0", fontSize: 18, fontFamily: "Fraunces, serif", fontWeight: 500 }}>
+                            {pkg.remaining_sessions}<small style={{ fontSize: 10, color: "var(--muted)" }}>/{pkg.total_sessions} remaining</small>
+                          </p>
+                          <small style={{ color: "var(--muted)", fontSize: 10 }}>{pkg.used_sessions} used</small>
                         </div>
                       </div>
                     ))}

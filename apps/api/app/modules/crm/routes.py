@@ -439,7 +439,7 @@ def care_team_remove(patient_id: UUID, doctor_id: UUID, request: Request, db: Se
 @router.get("/{patient_id}")
 def patient_detail(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "patient.read")
-    patient = db.execute(text(f"SELECT id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth, status, duplicate_of, version, created_at, updated_at FROM patients p WHERE p.clinic_id = :clinic_id AND p.id = :id AND p.archived_at IS NULL {_patient_scope_sql('p')}"), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "id": patient_id}).mappings().one_or_none()
+    patient = db.execute(text(f"SELECT id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth, status, duplicate_of, emergency_contact_name, emergency_contact_phone, emergency_contact_relation, preferred_communication, contraindications, allergies_summary, version, created_at, updated_at FROM patients p WHERE p.clinic_id = :clinic_id AND p.id = :id AND p.archived_at IS NULL {_patient_scope_sql('p')}"), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "id": patient_id}).mappings().one_or_none()
     if patient is None:
         raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
     db.commit()
@@ -475,9 +475,14 @@ def patient_update(patient_id: UUID, payload: PatientUpdate, request: Request, d
         updates.append("date_of_birth = :date_of_birth")
         params["date_of_birth"] = values["date_of_birth"]
         changed_fields.append("date_of_birth")
+    for ext_field in ("emergency_contact_name", "emergency_contact_phone", "emergency_contact_relation", "preferred_communication", "contraindications", "allergies_summary"):
+        if ext_field in values:
+            updates.append(f"{ext_field} = :{ext_field}")
+            params[ext_field] = values[ext_field]
+            changed_fields.append(ext_field)
     if not updates:
         raise _error("INVALID_INPUT", "At least one patient field is required.", status.HTTP_400_BAD_REQUEST)
-    result = db.execute(text(f"UPDATE patients SET {', '.join(updates)}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, full_name, normalized_email, normalized_phone, date_of_birth, version, updated_at"), params).mappings().one()
+    result = db.execute(text(f"UPDATE patients SET {', '.join(updates)}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, full_name, normalized_email, normalized_phone, date_of_birth, emergency_contact_name, emergency_contact_phone, emergency_contact_relation, preferred_communication, contraindications, allergies_summary, version, updated_at"), params).mappings().one()
     # Audit the mutation with field *names* only — never PHI values (DOB, name, contacts).
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient.update", entity_type="patient", entity_id=patient_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(changed_fields)})
     db.commit()

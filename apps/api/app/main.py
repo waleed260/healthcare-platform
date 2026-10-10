@@ -33,6 +33,7 @@ from app.modules.finance.routes import receipt_router, router as finance_router
 from app.modules.upgrades.routes import admin_router as upgrade_admin_router, router as upgrade_router
 from app.modules.clinical_media.routes import router as clinical_media_router
 from app.modules.clinical_forms.routes import patient_router as clinical_form_patient_router, router as clinical_forms_router
+from app.modules.tasks.routes import router as tasks_router
 from app.modules.files.storage import check_storage_readiness
 from app.db.session import engine
 from sqlalchemy import text
@@ -90,6 +91,7 @@ app.include_router(upgrade_admin_router)
 app.include_router(clinical_media_router)
 app.include_router(clinical_forms_router)
 app.include_router(clinical_form_patient_router)
+app.include_router(tasks_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_allowed_origins),
