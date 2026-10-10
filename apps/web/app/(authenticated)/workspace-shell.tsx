@@ -7,7 +7,6 @@ import anime from "animejs";
 import { post } from "./_lib/client";
 
 type Session = { display_name?: string; email?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
-type Notification = { id: string; read_at: string | null };
 type NavItem = { href: string; label: string; icon: string; permission: string };
 type NavGroup = { key: string; label: string; items: NavItem[] };
 
@@ -68,22 +67,18 @@ async function readJson<T>(url: string): Promise<T | null> {
 export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [session, setSession] = useState<Session | null>(null);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [connectionIssue, setConnectionIssue] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    void readJson<Session>("/api/v1/auth/me").then(async (nextSession) => {
+    void readJson<Session>("/api/v1/auth/me").then((nextSession) => {
       if (!mounted) return;
       if (!nextSession) {
         setConnectionIssue(true);
         return;
       }
       setSession(nextSession);
-      if (!nextSession.clinic_id || nextSession.is_platform_admin) return;
-      const nextNotifications = await readJson<Notification[]>("/api/v1/operations/notifications?limit=25");
-      if (mounted) setNotifications(nextNotifications ?? []);
     });
     return () => { mounted = false; };
   }, []);
@@ -113,7 +108,6 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
     return null;
   }, [pathname]);
 
-  const unreadCount = notifications.filter((item) => !item.read_at).length;
   const initials = (session?.display_name ?? "Care team").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -193,7 +187,6 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           <span className="workspace-greeting">{greeting()}, <em>{session?.display_name ?? "team"}.</em></span>
         </div>
         <div className="workspace-top-actions">
-          <Link className="workspace-notifications" href="/notifications" aria-label={`${unreadCount} unread notifications`}><span aria-hidden="true">◌</span>{unreadCount > 0 && <b>{unreadCount}</b>}</Link>
           <div ref={accountRef} style={{ position: "relative" }}>
             <button className="workspace-avatar" type="button" aria-label="Open account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen((v) => !v)}>{initials}</button>
             {accountOpen && <div className="account-menu" role="menu">

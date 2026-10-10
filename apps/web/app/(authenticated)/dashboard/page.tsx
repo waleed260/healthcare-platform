@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
   const [followups, setFollowups] = useState<FollowUp[]>([]);
+  const [requests, setRequests] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
@@ -60,24 +61,31 @@ export default function DashboardPage() {
       const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
       if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
       setSummary(summaryPayload?.data ?? null);
-      const [appts, q, f] = await Promise.all([
-        getData<Appointment[]>("/api/v1/appointments"),
+      const [appts, requested, q, f] = await Promise.all([
+        getData<Appointment[]>("/api/v1/appointments?limit=100"),
+        getData<Appointment[]>("/api/v1/appointments?status=requested&limit=10"),
         getData<QueueEntry[]>("/api/v1/operations/queue"),
-        getData<FollowUp[]>("/api/v1/operations/follow-ups"),
+        getData<FollowUp[]>("/api/v1/operations/follow-ups?status=due&limit=10"),
       ]);
-      setAppointments(appts ?? []); setQueue(q ?? []); setFollowups(f ?? []);
+      setAppointments(appts ?? []);
+      setRequests(requested ?? []);
+      setQueue(q ?? []); setFollowups(f ?? []);
       setRefreshedAt(new Date());
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The workspace could not be loaded."); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const requests = useMemo(() => appointments.filter((a) => a.status === "requested"), [appointments]);
   const schedule = useMemo(() => [...appointments].sort((a, b) => a.starts_at.localeCompare(b.starts_at)), [appointments]);
   const weekBars = useMemo(() => {
     const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const now = new Date();
+    const dayOfWeek = (now.getDay() + 6) % 7;
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek);
+    const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
+    const thisWeek = appointments.filter((a) => { const d = new Date(a.starts_at); return d >= weekStart && d < weekEnd; });
     const counts = new Map<string, number>(labels.map((l) => [l, 0]));
-    for (const a of appointments) { const d = dayShort(a.starts_at); if (counts.has(d)) counts.set(d, (counts.get(d) ?? 0) + 1); }
+    for (const a of thisWeek) { const d = dayShort(a.starts_at); if (counts.has(d)) counts.set(d, (counts.get(d) ?? 0) + 1); }
     const values = labels.map((l) => counts.get(l) ?? 0);
     const max = Math.max(1, ...values);
     return labels.map((l, i) => ({ label: l, value: values[i], pct: Math.round((values[i] / max) * 100) }));
@@ -134,7 +142,6 @@ export default function DashboardPage() {
       <Link className="kpi-card" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true">👥</span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
       <Link className="kpi-card" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true">🗎</span><div><small>Pending approval</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
       <Link className="kpi-card" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true">✓</span><div><small>Follow-ups due</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
-      <Link className="kpi-card" href="/notifications"><span className="kpi-ico kpi-ico-purple" aria-hidden="true">◔</span><div><small>Alerts</small><strong>View</strong></div></Link>
     </div>
 
     <div className="dash-main-grid" ref={mainRef}>
