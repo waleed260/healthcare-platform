@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, CSSProperties, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import ThemePanel from "./theme-panel";
 import LibraryPanel from "./library-panel";
 import SeoPanel from "./seo-panel";
 import { SiteHeader, SiteFooter } from "../../[clinicSlug]/site-chrome";
 import { themeStyle, buttonClass } from "../../site-theme";
 import type { SiteBrand } from "../../site-theme";
-import { api, csrfToken } from "../_lib/client";
+import { api, csrfToken, writeHeaders as sharedWriteHeaders } from "../_lib/client";
 
 /* ────────────────────────────────────────────────────
    Types
@@ -358,6 +359,7 @@ function DevicePreview({ device, children }: { device: Device; children: (ref: R
    Main editor component
    ──────────────────────────────────────────────────── */
 export default function WebsiteEditorPage() {
+  const router = useRouter();
   /* ── state ── */
   const [websites, setWebsites] = useState<Website[]>([]);
   const [website, setWebsite] = useState<Website | null>(null);
@@ -419,7 +421,9 @@ export default function WebsiteEditorPage() {
   const loadWebsite = useCallback(async (selected: Website) => {
     setBusy("load"); setWebsite(selected);
     try {
-      const [pageRows, versionRows, themeRows] = await Promise.all([request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`), request<ThemeInstance[]>(`/api/v1/websites/${selected.id}/themes`).catch(() => [] as ThemeInstance[])]);
+      const [detail, pageRows, versionRows, themeRows] = await Promise.all([request<Website>(`/api/v1/websites/${selected.id}`).catch(() => null), request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`), request<ThemeInstance[]>(`/api/v1/websites/${selected.id}/themes`).catch(() => [] as ThemeInstance[])]);
+      const ws = detail ?? selected;
+      setWebsite(ws); setWebsites((current) => current.map((w) => w.id === ws.id ? ws : w));
       setVersions(versionRows ?? []); setThemeInstances(themeRows ?? []);
       const allPages = Array.isArray(pageRows) ? pageRows : [];
       allPages.sort((a, b) => a.slug === "home" ? -1 : b.slug === "home" ? 1 : a.title.localeCompare(b.title));
@@ -427,9 +431,9 @@ export default function WebsiteEditorPage() {
       const firstPage = allPages.find((p) => p.id === pageIdRef.current) ?? allPages[0] ?? null;
       pageIdRef.current = firstPage?.id ?? null;
       setPage(firstPage);
-      setSections(firstPage ? (await request<Section[]>(`/api/v1/websites/${selected.id}/pages/${firstPage.id}/sections`)) ?? [] : []);
+      setSections(firstPage ? (await request<Section[]>(`/api/v1/websites/${ws.id}/pages/${firstPage.id}/sections`)) ?? [] : []);
       setSelectedSectionId(null);
-      void validateDraft(selected, allPages);
+      void validateDraft(ws, allPages);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The website could not be loaded."); }
     finally { setBusy(null); setLoading(false); }
   }, [validateDraft]);
@@ -647,7 +651,7 @@ export default function WebsiteEditorPage() {
       {/* ═══ TOP BAR ═══ */}
       <header className="wb-topbar">
         <div className="wb-topbar-left">
-          <button className="wb-icon-btn" onClick={() => { setWebsite(null); void load(); }} title="Exit editor">←</button>
+          <button className="wb-icon-btn" onClick={() => router.back()} title="Exit editor">←</button>
           <h1 className="wb-topbar-title">{website.name}</h1>
           <div className="wb-topbar-context">
             <select className="wb-website-select" value={website.id} onChange={(e) => { const next = websites.find((w) => w.id === e.target.value); if (next) void loadWebsite(next); }}>

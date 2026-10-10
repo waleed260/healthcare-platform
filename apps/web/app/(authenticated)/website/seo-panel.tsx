@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, errorMessage, patch, post } from "../_lib/client";
+import { api, errorMessage, patch, post, writeHeaders } from "../_lib/client";
 import type { SeoSettings, SiteBrand } from "../../site-theme";
 
 type PageRow = { id: string; slug: string; title: string; seo_title: string | null; seo_description: string | null; canonical_url: string | null; noindex: boolean; og_title: string | null; og_description: string | null; version: number };
@@ -50,7 +50,7 @@ export default function SeoPanel({ website, disabled, onSaveSeo }: { website: { 
     const form = new FormData(target);
     void run(async () => { await post(`/api/v1/websites/${website.id}/redirects`, { from_path: String(form.get("from")).trim(), to_path: String(form.get("to")).trim(), status_code: Number(form.get("code")) }); target.reset(); }, "Redirect added.");
   };
-  const removeRedirect = (id: string) => void run(() => api(`/api/v1/websites/${website.id}/redirects/${id}`, { method: "DELETE", headers: { "X-CSRF-Token": document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrf_token="))?.slice(11) ?? "" } }), "Redirect removed.");
+  const removeRedirect = (id: string) => void run(() => api(`/api/v1/websites/${website.id}/redirects/${id}`, { method: "DELETE", headers: writeHeaders() }), "Redirect removed.");
 
   return <section className="detail-card seo-panel" aria-label="SEO, sitemap and redirects">
     <div className="card-heading"><div><p className="eyebrow">SEO</p><h2>Be found</h2></div></div>

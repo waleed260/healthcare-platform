@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
+import { post } from "./_lib/client";
 
 type Session = { display_name?: string; email?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
 type Notification = { id: string; read_at: string | null };
@@ -142,7 +143,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   }, [session]);
 
   const signOut = useCallback(async () => {
-    try { await fetch("/api/v1/auth/logout", { method: "POST", credentials: "include" }); } catch { /* continue */ }
+    try { await post("/api/v1/auth/logout"); } catch { /* continue */ }
     window.location.href = "/login";
   }, []);
 

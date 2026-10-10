@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, apiPage, csrfToken, errorMessage } from "../../_lib/client";
+import { api, apiPage, errorMessage, post, writeHeaders } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
 import MergePatientDrawer from "../../_lib/merge-patient-drawer";
@@ -200,13 +200,11 @@ export default function PatientDetailPage() {
       if (editPhone.trim() !== (patient.normalized_phone ?? "")) body.phone = editPhone.trim() || null;
       if (editDob !== (patient.date_of_birth ?? "")) body.date_of_birth = editDob || null;
       if (Object.keys(body).length === 1) { setEditing(false); return; }
-      const response = await fetch(`/api/v1/patients/${patientId}`, {
-        method: "PATCH", credentials: "include",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+      await api(`/api/v1/patients/${patientId}`, {
+        method: "PATCH",
+        headers: writeHeaders(),
         body: JSON.stringify(body),
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error?.message ?? "The patient details could not be saved.");
       setEditing(false);
       toast.success("Patient details updated.");
       await loadCore();
@@ -218,12 +216,7 @@ export default function PatientDetailPage() {
     const yes = await confirm({ message: "Archive this patient record? This action can be reversed by an administrator.", danger: true });
     if (!yes) return;
     try {
-      const response = await fetch(`/api/v1/patients/${patientId}/archive`, {
-        method: "POST", credentials: "include",
-        headers: { "X-CSRF-Token": csrfToken() },
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error?.message ?? "The patient could not be archived.");
+      await post(`/api/v1/patients/${patientId}/archive`);
       toast.success("Patient archived. Returning to the directory…");
       setTimeout(() => { window.location.href = "/patients"; }, 700);
     } catch (reason) { toast.error(errorMessage(reason, "The patient could not be archived.")); }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { csrfToken, errorMessage } from "../_lib/client";
+import { api, csrfToken, errorMessage } from "../_lib/client";
 
 type Item = { name: string; status: "uploading" | "done" | "error"; detail?: string };
 const KINDS = ["before", "after", "other"] as const;
@@ -20,17 +20,12 @@ export default function MediaUpload({ patientId, onUploaded }: { patientId: stri
       const extMime: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
       const ext = file.name.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
       const mime = file.type || extMime[ext] || "application/octet-stream";
-      const response = await fetch(`/api/v1/patients/${patientId}/media/upload?media_kind=${kind}`, {
+      await api(`/api/v1/patients/${patientId}/media/upload?media_kind=${kind}`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": mime, "X-CSRF-Token": csrfToken() },
         body: file,
       });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-        return { name: file.name, status: "error", detail: payload?.error?.message ?? `HTTP ${response.status}` };
-      }
-      return { name: file.name, status: "done", detail: "pending scan" };
+      return { name: file.name, status: "done" as const, detail: "pending scan" };
     } catch (reason) {
       return { name: file.name, status: "error", detail: errorMessage(reason, "upload failed") };
     }

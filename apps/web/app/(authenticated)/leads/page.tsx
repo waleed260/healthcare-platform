@@ -14,11 +14,7 @@ const activityKinds = ["call", "note", "message", "follow_up"] as const;
 type ActivityKind = (typeof activityKinds)[number];
 const stageLabel = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const dateTime = (value: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
-const errorMessage = async (response: Response, fallback: string) => { const payload = await response.json().catch(() => null) as { error?: { message?: string }; detail?: { error?: { message?: string } } } | null; return payload?.error?.message ?? payload?.detail?.error?.message ?? fallback; };
-async function api<T>(url: string, init?: globalThis.RequestInit): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (!response.ok) throw new Error(await errorMessage(response, "The lead request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
-async function apiPage<T>(url: string): Promise<{ data: T[]; nextCursor: string | null }> { const response = await fetch(url, { credentials: "include", cache: "no-store" }); if (!response.ok) throw new Error(await errorMessage(response, "The lead request could not be completed.")); const payload = await response.json() as { data?: T[]; meta?: { next_cursor?: string | null } }; return { data: payload.data ?? [], nextCursor: payload.meta?.next_cursor ?? null }; }
-import { csrfToken } from "../_lib/client";
-function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
+import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]); const [specialties, setSpecialties] = useState<Specialty[]>([]); const [permissions, setPermissions] = useState<string[]>([]); const [filter, setFilter] = useState("all"); const [showForm, setShowForm] = useState(false); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null); const [nextCursor, setNextCursor] = useState<string | null>(null);

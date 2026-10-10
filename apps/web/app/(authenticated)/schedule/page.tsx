@@ -5,13 +5,12 @@ import type { DragEventHandler } from "react";
 import anime from "animejs";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 import BlockTimeDrawer from "../_lib/block-time-drawer";
-import { csrfToken } from "../_lib/client";
+import { api, writeHeaders } from "../_lib/client";
 
 type Appointment = { id: string; reference: string; branch_id: string; doctor_id: string | null; service_id: string | null; patient_id: string | null; starts_at: string; ends_at: string; status: string; source?: string; version: number };
 type Option = { id: string; name?: string; public_name?: string };
 type ViewMode = "day" | "week" | "month";
 type Session = { permissions?: string[]; clinic_slug?: string | null };
-type RequestOptions = { method?: string; headers?: Record<string, string>; body?: string | Blob | null };
 
 const statuses = ["requested", "confirmed", "arrived", "waiting", "in_consultation", "completed", "cancelled", "no_show", "rescheduled"];
 const statusLabels: Record<string, string> = { requested: "Requested", confirmed: "Confirmed", arrived: "Arrived", waiting: "Waiting", in_consultation: "In consultation", completed: "Completed", cancelled: "Cancelled", no_show: "No-show", rescheduled: "Rescheduled" };
@@ -22,9 +21,6 @@ const addDays = (date: Date, amount: number) => { const result = new Date(date);
 const startOfWeek = (date: Date) => addDays(date, -((date.getDay() + 6) % 7));
 const formatDay = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, options).format(date);
 const formatTime = (value: string) => formatDay(new Date(value), { hour: "numeric", minute: "2-digit" });
-const errorMessage = async (response: Response, fallback: string) => { const payload = await response.json().catch(() => null) as { error?: { message?: string }; detail?: { error?: { message?: string } } } | null; return payload?.error?.message ?? payload?.detail?.error?.message ?? fallback; };
-async function api<T>(url: string, init?: RequestOptions): Promise<T> { const response = await fetch(url, { credentials: "include", cache: "no-store", ...init }); if (response.status === 401) { window.location.href = "/login"; throw new Error("Session expired."); } if (!response.ok) throw new Error(await errorMessage(response, "The schedule request could not be completed.")); const payload = await response.json() as { data?: T }; return payload.data as T; }
-function writeHeaders() { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }; }
 
 function AppointmentCard({ appointment, doctorName, serviceName, onOpen, onDragStart }: { appointment: Appointment; doctorName: string; serviceName: string; onOpen: () => void; onDragStart: DragEventHandler<HTMLButtonElement> }) {
   return <button className={`calendar-appointment ${statusClass(appointment.status)}`} draggable onDragStart={onDragStart} onClick={onOpen} type="button"><strong>{formatTime(appointment.starts_at)}</strong><span>{appointment.reference}</span><small>{doctorName || serviceName || statusLabels[appointment.status]}</small></button>;

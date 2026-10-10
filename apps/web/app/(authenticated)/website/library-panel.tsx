@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, errorMessage, post, patch } from "../_lib/client";
+import { api, errorMessage, post, patch, writeHeaders } from "../_lib/client";
 
 type SiteTemplate = { key: string; name: string; specialty: string; description: string; page_count: number; locked: boolean };
 type PageTemplate = { key: string; name: string; description: string; section_count: number };
@@ -43,7 +43,7 @@ export default function LibraryPanel({ website, pageId, sections, disabled, onCh
   }
 
   const applySite = (template: SiteTemplate) => {
-    if (!window.confirm(`Apply “${template.name}”? Theme, header and footer are replaced; existing pages are kept and missing pages are added.`)) return;
+    if (!window.confirm(`Apply "${template.name}"? Theme, header and footer are replaced; existing pages are kept and missing pages are added.`)) return;
     void run(template.key, () => post(`/api/v1/website-library/websites/${website.id}/apply-site-template`, { template_key: template.key, expected_version: website.version }), `${template.name} applied to the draft.`);
   };
   const addPage = (event: FormEvent<HTMLFormElement>, template: PageTemplate) => {
@@ -51,7 +51,7 @@ export default function LibraryPanel({ website, pageId, sections, disabled, onCh
     const form = new FormData(event.currentTarget);
     const title = String(form.get("title")).trim();
     const slug = String(form.get("slug")).trim().toLowerCase();
-    void run(template.key, () => post(`/api/v1/website-library/websites/${website.id}/pages-from-template`, { template_key: template.key, slug, title }), `Page “${title}” created.`);
+    void run(template.key, () => post(`/api/v1/website-library/websites/${website.id}/pages-from-template`, { template_key: template.key, slug, title }), `Page "${title}" created.`);
   };
   const saveReusable = (event: FormEvent) => {
     event.preventDefault();
@@ -66,7 +66,7 @@ export default function LibraryPanel({ website, pageId, sections, disabled, onCh
     if (name && name !== item.name) void run(item.id, () => patch(`/api/v1/website-library/reusable-sections/${item.id}`, { expected_version: item.version, name }), "Renamed.");
   };
   const removeReusable = (item: Reusable) => {
-    if (window.confirm(`Delete “${item.name}”? ${item.synced_uses} synced use(s) become independent copies.`)) void run(item.id, () => api(`/api/v1/website-library/reusable-sections/${item.id}`, { method: "DELETE", headers: { "X-CSRF-Token": document.cookie.split(";").map((p) => p.trim()).find((p) => p.startsWith("csrf_token="))?.slice(11) ?? "" } }), "Deleted.");
+    if (window.confirm(`Delete "${item.name}"? ${item.synced_uses} synced use(s) become independent copies.`)) void run(item.id, () => api(`/api/v1/website-library/reusable-sections/${item.id}`, { method: "DELETE", headers: writeHeaders() }), "Deleted.");
   };
 
   return <section className="detail-card library-panel" aria-label="Templates and reusable sections">

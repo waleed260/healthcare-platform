@@ -61,6 +61,7 @@ export default function ClinicalPage() {
         const granted = session.permissions ?? [];
         setPermissions(granted);
         const rows = list<Patient>(await api<Patient[]>("/api/v1/patients?limit=100"));
+        rows.sort((a, b) => a.full_name.localeCompare(b.full_name));
         setPatients(rows);
         if (rows[0]) { setPatientId(rows[0].id); await loadPatient(rows[0].id, granted); }
       } catch (reason) { toast.error(errorMessage(reason, "Clinical records could not be loaded.")); }

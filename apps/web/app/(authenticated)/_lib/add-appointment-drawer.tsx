@@ -60,16 +60,12 @@ export default function AddAppointmentDrawer({ open, onClose, clinicSlug, onCrea
       if (form.phone.trim()) body.phone = form.phone.trim();
       if (form.date_of_birth) body.date_of_birth = form.date_of_birth;
 
-      const response = await fetch("/api/v1/public/bookings", {
+      const result = await api<{ reference?: string }>("/api/v1/public/bookings", {
         method: "POST",
-        credentials: "include",
-        cache: "no-store",
         headers: { ...writeHeaders(), "X-Clinic-Slug": clinicSlug, "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(body),
       });
-      const payload = await response.json().catch(() => null) as { data?: { reference?: string }; error?: { message?: string } } | null;
-      if (!response.ok) throw new Error(payload?.error?.message ?? "The appointment could not be created.");
-      toast.success(`Appointment ${payload?.data?.reference ?? ""} created.`);
+      toast.success(`Appointment ${result?.reference ?? ""} created.`);
       onCreated?.();
       onClose();
     } catch (reason) {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage } from "../_lib/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, errorMessage, writeHeaders } from "../_lib/client";
 
 type ToolState = { tool_key: string; state: Record<string, unknown>; version: number; updated_at: string };
 // eslint-disable-next-line no-unused-vars
@@ -27,6 +27,8 @@ export default function ToolsPanel({ patientId, permissions, onError }: Props) {
   const canEdit = permissions.includes("clinical.manage");
   const canRead = permissions.includes("clinical.read");
   const [active, setActive] = useState<string>("dental_chart");
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [states, setStates] = useState<Record<string, ToolState>>({});
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
@@ -39,15 +41,15 @@ export default function ToolsPanel({ patientId, permissions, onError }: Props) {
       const map: Record<string, ToolState> = {};
       (Array.isArray(rows) ? rows : []).forEach((r) => { map[r.tool_key] = r; });
       setStates(map);
-      setDraft((map[active]?.state as Record<string, unknown>) ?? {});
+      setDraft((map[activeRef.current]?.state as Record<string, unknown>) ?? {});
     } catch (reason) { onError(errorMessage(reason, "Clinical tools could not be loaded.")); }
-  }, [patientId, permissions.join(","), active]);
+  }, [patientId, canRead, onError]);
   useEffect(() => { void load(); }, [load]);
 
   const save = async () => {
     setBusy(true); setNotice(null);
     try {
-      const saved = await api<ToolState>(`/api/v1/patients/${patientId}/tool-states/${active}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-Token": document.cookie.split(";").map((p) => p.trim()).find((p) => p.startsWith("csrf_token="))?.slice(11) ?? "" }, body: JSON.stringify({ tool_key: active, state: draft }) });
+      const saved = await api<ToolState>(`/api/v1/patients/${patientId}/tool-states/${active}`, { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ tool_key: active, state: draft }) });
       setStates((s) => ({ ...s, [active]: saved }));
       setDraft((saved.state as Record<string, unknown>) ?? {});
       setNotice("Saved.");
