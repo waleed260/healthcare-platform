@@ -18,6 +18,22 @@ class PublicBookingRequest(BaseModel):
     answers: list["BookingAnswer"] = Field(default_factory=list, max_length=50)
 
 
+class InternalBookingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    branch_id: UUID
+    doctor_id: UUID | None = None
+    service_id: UUID
+    starts_at: datetime
+    patient_id: UUID | None = None
+    full_name: str | None = Field(default=None, max_length=160)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=40)
+    date_of_birth: date | None = None
+    appointment_type: str | None = Field(default=None, max_length=20)
+    payment_method: str | None = Field(default=None, max_length=40)
+
+
 class BookingAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

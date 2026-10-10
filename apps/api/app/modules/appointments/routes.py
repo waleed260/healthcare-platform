@@ -15,7 +15,7 @@ from app.core.security import decode_cursor, encode_cursor, hash_token
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.identity.routes import _error
-from app.modules.appointments.schemas import PublicBookingRequest
+from app.modules.appointments.schemas import InternalBookingRequest, PublicBookingRequest
 from app.modules.appointments.schemas import AppointmentAssignRequest, AppointmentDecisionRequest, AppointmentRescheduleRequest, AppointmentTransitionRequest, PublicCancelRequest, PublicRescheduleRequest
 from app.modules.appointments.availability import AvailabilityInterval, generate_slots
 from app.modules.appointments.state import validate_transition
@@ -411,6 +411,89 @@ def appointment_reschedule(appointment_id: UUID, payload: AppointmentRescheduleR
     return {"data": {"original_appointment_id": appointment_id, "replacement": dict(replacement), "management_secret": management_secret}, "meta": {"request_id": request.state.request_id}}
 
 
+@appointment_router.post("", status_code=status.HTTP_201_CREATED)
+def create_internal_booking(payload: InternalBookingRequest, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
+    if not idempotency_key or len(idempotency_key) > 128:
+        raise _error("INVALID_INPUT", "Idempotency-Key is required.", status.HTTP_400_BAD_REQUEST)
+    session = _staff_authorized(db, session_token, "appointment.create")
+    _csrf(request, session, csrf_token)
+    clinic_id = session["clinic_id"]
+    service = db.execute(text("""
+        SELECT s.id, s.duration_minutes, s.buffer_before_minutes, s.buffer_after_minutes
+        FROM services s
+        JOIN branch_services bs ON bs.clinic_id = s.clinic_id AND bs.service_id = s.id
+        WHERE s.clinic_id = :clinic_id AND s.id = :service_id AND bs.branch_id = :branch_id
+          AND s.status = 'active' AND s.archived_at IS NULL
+    """), {"clinic_id": clinic_id, "service_id": payload.service_id, "branch_id": payload.branch_id}).mappings().one_or_none()
+    branch = db.execute(text("SELECT id, timezone FROM branches WHERE clinic_id = :clinic_id AND id = :branch_id AND status = 'active' AND archived_at IS NULL"), {"clinic_id": clinic_id, "branch_id": payload.branch_id}).mappings().one_or_none()
+    if service is None or branch is None:
+        raise _error("NOT_FOUND", "The requested branch or service is not available.", status.HTTP_404_NOT_FOUND)
+    if payload.starts_at.tzinfo is None:
+        raise _error("INVALID_INPUT", "starts_at must include a timezone offset.", status.HTTP_400_BAD_REQUEST)
+    if payload.doctor_id is None:
+        doctor_id = db.execute(text("""
+            SELECT bd.doctor_id FROM branch_doctors bd
+            JOIN doctor_profiles d ON d.clinic_id = bd.clinic_id AND d.id = bd.doctor_id
+            JOIN doctor_services ds ON ds.clinic_id = bd.clinic_id AND ds.doctor_id = bd.doctor_id
+            WHERE bd.clinic_id = :clinic_id AND bd.branch_id = :branch_id AND ds.service_id = :service_id
+              AND d.status = 'active' AND d.archived_at IS NULL
+            ORDER BY bd.doctor_id LIMIT 1
+        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "service_id": payload.service_id}).scalar_one_or_none()
+    else:
+        doctor_id = db.execute(text("""
+            SELECT bd.doctor_id FROM branch_doctors bd
+            JOIN doctor_profiles d ON d.clinic_id = bd.clinic_id AND d.id = bd.doctor_id
+            JOIN doctor_services ds ON ds.clinic_id = bd.clinic_id AND ds.doctor_id = bd.doctor_id
+            WHERE bd.clinic_id = :clinic_id AND bd.branch_id = :branch_id AND bd.doctor_id = :doctor_id AND ds.service_id = :service_id
+              AND d.status = 'active' AND d.archived_at IS NULL
+        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": payload.doctor_id, "service_id": payload.service_id}).scalar_one_or_none()
+    if doctor_id is None:
+        raise _error("NOT_FOUND", "The requested doctor or service is not available at this branch.", status.HTTP_404_NOT_FOUND)
+    starts_at = payload.starts_at.astimezone(timezone.utc)
+    ends_at = starts_at + timedelta(minutes=service["duration_minutes"])
+    occupancy_start = starts_at - timedelta(minutes=service["buffer_before_minutes"])
+    occupancy_end = ends_at + timedelta(minutes=service["buffer_after_minutes"])
+    _validate_commit_time(db=db, clinic_id=clinic_id, branch_id=payload.branch_id, doctor_id=doctor_id, service_id=payload.service_id, branch_timezone=branch["timezone"], starts_at=starts_at, ends_at=ends_at, occupancy_start=occupancy_start, occupancy_end=occupancy_end, min_notice_minutes=0)
+    if payload.patient_id:
+        patient = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": clinic_id, "id": payload.patient_id}).scalar_one_or_none()
+        if patient is None:
+            raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
+        patient_id = patient
+    elif payload.full_name:
+        normalized_email = _normalize_email(payload.email)
+        normalized_phone = _normalize_phone(payload.phone)
+        patient_id = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone)) ORDER BY created_at LIMIT 1"), {"clinic_id": clinic_id, "email": normalized_email, "phone": normalized_phone}).scalar_one_or_none()
+        if patient_id is None:
+            patient_id = db.execute(text("INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth) VALUES (:clinic_id, :patient_number, :full_name, :email, :phone, :dob) RETURNING id"), {"clinic_id": clinic_id, "patient_number": f"P-{secrets.token_hex(6).upper()}", "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "dob": payload.date_of_birth}).scalar_one()
+    else:
+        raise _error("INVALID_INPUT", "Either patient_id or full_name is required.", status.HTTP_400_BAD_REQUEST)
+    reference = f"BK-{secrets.token_hex(5).upper()}"
+    body_hash = hashlib.sha256(json.dumps(payload.model_dump(mode="json"), sort_keys=True, default=str).encode()).hexdigest()
+    policy = {"duration_minutes": service["duration_minutes"], "buffer_before_minutes": service["buffer_before_minutes"], "buffer_after_minutes": service["buffer_after_minutes"], "branch_timezone": branch["timezone"]}
+    if payload.appointment_type:
+        policy["appointment_type"] = payload.appointment_type
+    if payload.payment_method:
+        policy["payment_method"] = payload.payment_method
+    try:
+        appointment = db.execute(text("""
+            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot)
+            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb))
+            RETURNING id, reference, status
+        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": doctor_id, "service_id": payload.service_id, "patient_id": patient_id, "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "reference": reference, "idempotency_key": idempotency_key, "body_hash": body_hash, "policy": json.dumps(policy)}).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        replay = _replay_idempotent_booking(db, clinic_id, idempotency_key, body_hash, request)
+        if replay:
+            return replay
+        if "no_doctor_overlap" in str(exc):
+            raise _error("APPOINTMENT_CONFLICT", "The selected time is no longer available.", status.HTTP_409_CONFLICT) from exc
+        raise
+    db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, to_status, actor_user_id) VALUES (:clinic_id, :appointment_id, 'confirmed', :actor)"), {"clinic_id": clinic_id, "appointment_id": appointment["id"], "actor": session["user_id"]})
+    _audit(db, request, session, "appointment.create", appointment["id"])
+    db.commit()
+    return {"data": {"reference": appointment["reference"], "status": appointment["status"]}, "meta": {"request_id": request.state.request_id}}
+
+
 @availability_router.get("")
 def public_availability(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), branch_id: UUID = Query(), service_id: UUID = Query(), from_date: date = Query(), to_date: date = Query(), doctor_id: UUID | None = Query(default=None), db: Session = Depends(get_db)) -> dict:
     _validate_availability_range(from_date, to_date)
@@ -536,7 +619,7 @@ def _clock_value(value: object) -> time | None:
     return None
 
 
-def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doctor_id: UUID, service_id: UUID, branch_timezone: str, starts_at: datetime, ends_at: datetime, occupancy_start: datetime, occupancy_end: datetime, exclude_appointment_id: UUID | None = None) -> None:
+def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doctor_id: UUID, service_id: UUID, branch_timezone: str, starts_at: datetime, ends_at: datetime, occupancy_start: datetime, occupancy_end: datetime, exclude_appointment_id: UUID | None = None, min_notice_minutes: int = 120) -> None:
     """Re-evaluate all non-constraint scheduling rules in the booking transaction.
 
     Availability responses are advisory. This check is deliberately repeated immediately
@@ -554,7 +637,7 @@ def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doct
     local_occupancy_start = occupancy_start.astimezone(timezone.utc).astimezone(zone)
     local_occupancy_end = occupancy_end.astimezone(timezone.utc).astimezone(zone)
     today = now_utc.astimezone(zone).date()
-    if start_utc < now_utc + timedelta(minutes=120):
+    if min_notice_minutes > 0 and start_utc < now_utc + timedelta(minutes=min_notice_minutes):
         raise _booking_unavailable("The appointment does not meet the minimum booking notice.")
     if local_start.date() < today or (local_start.date() - today).days > 89:
         raise _booking_unavailable("The appointment is outside the booking window.")

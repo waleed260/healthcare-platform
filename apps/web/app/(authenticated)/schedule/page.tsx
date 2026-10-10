@@ -118,7 +118,6 @@ export default function SchedulePage() {
       <div className="dash-topline">
         <div><p className="eyebrow">CALENDAR · SCOPED CLINIC VIEW</p><h1>Make room for <em>care.</em></h1></div>
         <div className="header-actions">
-          <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
           {can("appointment.create") && <button className="button button-primary" onClick={() => setAddApptOpen(true)}>Add appointment <span>+</span></button>}
           {can("scheduling.manage") && <button className="button button-secondary" onClick={() => setBlockOpen(true)}>Block time <span>▣</span></button>}
         </div>
