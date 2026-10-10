@@ -13,7 +13,7 @@ type Patient = { id: string; full_name: string; patient_number: string };
 type Plan = { id: string; title: string; diagnosis: string | null; status: string; starts_on: string | null; version: number };
 type PlanItem = { id: string; title: string; instructions: string | null; status: string; due_on: string | null; version: number };
 type Prescription = { id: string; medication_name: string; dosage: string | null; frequency: string | null; duration: string | null; status: string; version: number; prescribed_at: string };
-type Consent = { id: string; consent_type: string; status: string; recorded_at: string };
+type Consent = { id: string; consent_type: string; status: string; version: number; recorded_at: string };
 type Media = { id: string; media_kind: string; captured_on: string | null; scan_status: string; approval_status: string; approved_for_website: boolean; version: number };
 type Session = { permissions?: string[] };
 
@@ -241,7 +241,10 @@ export default function ClinicalPage() {
               <article className="invoice-row" key={consent.id}>
                 <div className="invoice-mark">✓</div>
                 <div className="invoice-main"><h3>{consent.consent_type}</h3><small>{new Date(consent.recorded_at).toLocaleString()}</small></div>
-                <div className="invoice-actions"><span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{consent.status}</span></div>
+                <div className="invoice-actions">
+                  <span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{consent.status}</span>
+                  {consent.status === "granted" && can("consent.manage") && <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/consents/${consent.id}/revoke`, { expected_version: consent.version }), "Consent withdrawn.")}>Withdraw</button>}
+                </div>
               </article>
             ))}
             {can("patient.media.write") && <MediaUpload patientId={patientId} onUploaded={() => void run(() => Promise.resolve(), "Upload complete — scanning.")} />}

@@ -79,7 +79,7 @@ export default function ManagePage() {
         has("service.manage") ? api<ServiceTemplate[]>("/api/v1/service-templates?limit=100").catch(() => []) : Promise.resolve([]),
         has("staff.manage") ? api<Invitation[]>("/api/v1/staff/invitations?limit=50").catch(() => []) : Promise.resolve([]),
         has("clinic.read") ? api<FeatureLimit[]>("/api/v1/feature-limits").catch(() => []) : Promise.resolve([]),
-        has("clinic.read") ? api<Subscription>("/api/v1/subscription").catch(() => null) : Promise.resolve(null),
+        has("admin.plan.manage") ? api<Subscription>("/api/v1/subscription").catch(() => null) : Promise.resolve(null),
       ]);
       setServices(serviceRows ?? []);
       setBranches(branchRows ?? []);
@@ -417,7 +417,7 @@ export default function ManagePage() {
             <span className={`pipeline-status ${subscription.status === "active" ? "status-paid" : subscription.status === "cancelled" ? "status-void" : "status-contacted"}`} style={{ marginLeft: 10 }}>{label(subscription.status)}</span>
             {subscription.ends_at && <small style={{ display: "block", marginTop: 4, color: "var(--text-muted, #6b7280)" }}>Ends {new Date(subscription.ends_at).toLocaleDateString()}</small>}
           </div>
-          {subscription.status === "active" && can("clinic.update") && <button className="button button-danger" disabled={busy} onClick={() => void (async () => {
+          {subscription.status === "active" && can("admin.plan.manage") && <button className="button button-danger" disabled={busy} onClick={() => void (async () => {
             const ok = await confirm({ title: "Cancel subscription", message: "Your clinic will lose access to premium features when the current billing period ends. This cannot be undone from the dashboard — contact support to reactivate.", danger: true, confirmLabel: "Cancel plan" });
             if (!ok) return;
             setBusy(true);
