@@ -105,6 +105,29 @@ class CareTeamPolicyUpdate(BaseModel):
     allow_manager_care_team_notes: bool
 
 
+class TransferCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_branch_id: UUID
+    to_branch_id: UUID
+    from_doctor_id: UUID | None = None
+    to_doctor_id: UUID | None = None
+    reason: str = Field(min_length=1, max_length=1000)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class DischargeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    branch_id: UUID
+    discharge_type: str = Field(default="regular", pattern="^(regular|against_advice|referral|transfer)$")
+    diagnosis: str | None = Field(default=None, max_length=2000)
+    treatment_summary: str | None = Field(default=None, max_length=4000)
+    discharge_instructions: str | None = Field(default=None, max_length=4000)
+    follow_up_required: bool = False
+    follow_up_date: date | None = None
+
+
 class VitalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

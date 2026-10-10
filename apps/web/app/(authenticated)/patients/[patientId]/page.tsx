@@ -20,11 +20,15 @@ type Prescription = { id: string; medication_name: string; dosage: string; frequ
 type Invoice = { id: string; invoice_number: string; total_minor: number; paid_minor: number; status: string; issued_at: string; currency: string };
 
 type Vital = { id: string; vital_type: string; label: string | null; value_text: string | null; value_systolic: number | null; value_diastolic: number | null; value_numeric: number | null; unit: string | null; notes: string | null; recorded_at: string; version: number };
+type Transfer = { id: string; from_branch_id: string; to_branch_id: string; from_branch_name: string | null; to_branch_name: string | null; reason: string; notes: string | null; status: string; transferred_at: string | null; created_at: string };
+type Discharge = { id: string; branch_id: string; branch_name: string | null; discharge_type: string; diagnosis: string | null; treatment_summary: string | null; discharge_instructions: string | null; follow_up_required: boolean; follow_up_date: string | null; discharged_at: string; created_at: string };
+type Branch = { id: string; name: string };
 
-type Tab = "overview" | "vitals" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices";
+type Tab = "overview" | "vitals" | "transfers" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices";
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "vitals", label: "Vitals" },
+  { key: "transfers", label: "Transfer / Discharge" },
   { key: "timeline", label: "Timeline" },
   { key: "appointments", label: "Appointments" },
   { key: "notes", label: "Notes" },
@@ -83,6 +87,17 @@ export default function PatientDetailPage() {
   const [addingVital, setAddingVital] = useState(false);
   const [vitalForm, setVitalForm] = useState({ vital_type: "blood_pressure", label: "", value_text: "", value_systolic: "", value_diastolic: "", value_numeric: "", unit: "", notes: "" });
   const [vitalSaving, setVitalSaving] = useState(false);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [transfersLoaded, setTransfersLoaded] = useState(false);
+  const [discharges, setDischarges] = useState<Discharge[]>([]);
+  const [dischargesLoaded, setDischargesLoaded] = useState(false);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [showDischargeForm, setShowDischargeForm] = useState(false);
+  const [transferForm, setTransferForm] = useState({ from_branch_id: "", to_branch_id: "", reason: "", notes: "" });
+  const [dischargeForm, setDischargeForm] = useState({ branch_id: "", discharge_type: "regular", diagnosis: "", treatment_summary: "", discharge_instructions: "", follow_up_required: false, follow_up_date: "" });
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [dischargeSaving, setDischargeSaving] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -219,6 +234,59 @@ export default function PatientDetailPage() {
     } catch (reason) { toast.error(errorMessage(reason, "Vital could not be removed.")); }
   }
 
+  const loadTransfers = useCallback(async () => {
+    try {
+      const [t, d, b] = await Promise.all([
+        api<Transfer[]>(`/api/v1/patients/${patientId}/transfers`),
+        api<Discharge[]>(`/api/v1/patients/${patientId}/discharges`),
+        branches.length ? Promise.resolve(branches) : api<Branch[]>("/api/v1/branches?limit=100"),
+      ]);
+      setTransfers(t ?? []);
+      setTransfersLoaded(true);
+      setDischarges(d ?? []);
+      setDischargesLoaded(true);
+      if (Array.isArray(b)) setBranches(b);
+    } catch (reason) { toast.error(errorMessage(reason, "Transfer data could not be loaded.")); }
+  }, [patientId, toast, branches]);
+
+  async function saveTransfer(e: FormEvent) {
+    e.preventDefault();
+    setTransferSaving(true);
+    try {
+      await api(`/api/v1/patients/${patientId}/transfers`, {
+        method: "POST", headers: writeHeaders(),
+        body: JSON.stringify({ from_branch_id: transferForm.from_branch_id, to_branch_id: transferForm.to_branch_id, reason: transferForm.reason, notes: transferForm.notes || null }),
+      });
+      toast.success("Transfer request submitted.");
+      setShowTransferForm(false);
+      setTransferForm({ from_branch_id: "", to_branch_id: "", reason: "", notes: "" });
+      await loadTransfers();
+    } catch (reason) { toast.error(errorMessage(reason, "Transfer could not be submitted.")); }
+    finally { setTransferSaving(false); }
+  }
+
+  async function saveDischarge(e: FormEvent) {
+    e.preventDefault();
+    setDischargeSaving(true);
+    try {
+      await api(`/api/v1/patients/${patientId}/discharges`, {
+        method: "POST", headers: writeHeaders(),
+        body: JSON.stringify({
+          branch_id: dischargeForm.branch_id, discharge_type: dischargeForm.discharge_type,
+          diagnosis: dischargeForm.diagnosis || null, treatment_summary: dischargeForm.treatment_summary || null,
+          discharge_instructions: dischargeForm.discharge_instructions || null,
+          follow_up_required: dischargeForm.follow_up_required,
+          follow_up_date: dischargeForm.follow_up_date || null,
+        }),
+      });
+      toast.success("Discharge recorded.");
+      setShowDischargeForm(false);
+      setDischargeForm({ branch_id: "", discharge_type: "regular", diagnosis: "", treatment_summary: "", discharge_instructions: "", follow_up_required: false, follow_up_date: "" });
+      await loadTransfers();
+    } catch (reason) { toast.error(errorMessage(reason, "Discharge could not be recorded.")); }
+    finally { setDischargeSaving(false); }
+  }
+
   useEffect(() => {
     if (activeTab === "notes" && !notesLoaded) void loadNotes();
     if (activeTab === "timeline" && !historyLoaded) void loadHistory();
@@ -228,7 +296,8 @@ export default function PatientDetailPage() {
     if (activeTab === "prescriptions" && !prescriptionsLoaded) void loadPrescriptions();
     if (activeTab === "invoices" && !invoicesLoaded) void loadInvoices();
     if (activeTab === "vitals" && !vitalsLoaded) void loadVitals();
-  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals]);
+    if (activeTab === "transfers" && !transfersLoaded) void loadTransfers();
+  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, transfersLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTransfers]);
 
   function startEditing() {
     if (!patient) return;
@@ -475,6 +544,84 @@ export default function PatientDetailPage() {
                   </div>
                 )}
               </section>
+            )}
+
+            {activeTab === "transfers" && (
+              <div className="detail-grid">
+                <section className="detail-card">
+                  <div className="card-heading">
+                    <div><p className="eyebrow">DEPARTMENT TRANSFER</p><h2>Transfer patient</h2></div>
+                    {can("patient.update") && <button className="button button-secondary" type="button" onClick={() => setShowTransferForm(!showTransferForm)}>{showTransferForm ? "Cancel" : "New transfer"} <span>{showTransferForm ? "✕" : "+"}</span></button>}
+                  </div>
+
+                  {showTransferForm && (
+                    <form className="patient-edit-form" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 16, marginBottom: 16 }} onSubmit={(e) => void saveTransfer(e)}>
+                      <label>From branch *<select required value={transferForm.from_branch_id} onChange={(e) => setTransferForm((f) => ({ ...f, from_branch_id: e.target.value }))}><option value="">Select branch</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+                      <label>To branch *<select required value={transferForm.to_branch_id} onChange={(e) => setTransferForm((f) => ({ ...f, to_branch_id: e.target.value }))}><option value="">Select branch</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+                      <label>Reason *<textarea required value={transferForm.reason} onChange={(e) => setTransferForm((f) => ({ ...f, reason: e.target.value }))} placeholder="Reason for transfer" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <label>Notes<textarea value={transferForm.notes} onChange={(e) => setTransferForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Additional notes" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <div className="form-actions"><button className="button button-primary" type="submit" disabled={transferSaving}>{transferSaving ? "Submitting…" : "Submit transfer"}</button></div>
+                    </form>
+                  )}
+
+                  {transfers.length === 0 && !showTransferForm && <div className="dashboard-empty"><strong>No transfers</strong><span>Department transfer requests will appear here.</span></div>}
+                  {transfers.length > 0 && transfers.map((t) => (
+                    <div key={t.id} style={{ padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <strong style={{ fontSize: 13 }}>{t.from_branch_name ?? "—"} → {t.to_branch_name ?? "—"}</strong>
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>{t.reason}</p>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <span className={`pipeline-status status-${t.status === "completed" ? "qualified" : t.status === "rejected" ? "lost" : "new"}`} style={{ fontSize: 10 }}>{t.status}</span>
+                          <small style={{ display: "block", color: "var(--muted)", fontSize: 10, marginTop: 4 }}>{formatDateTime(t.created_at)}</small>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="detail-card">
+                  <div className="card-heading">
+                    <div><p className="eyebrow">DISCHARGE</p><h2>Discharge patient</h2></div>
+                    {can("patient.update") && <button className="button button-secondary" type="button" onClick={() => setShowDischargeForm(!showDischargeForm)}>{showDischargeForm ? "Cancel" : "New discharge"} <span>{showDischargeForm ? "✕" : "+"}</span></button>}
+                  </div>
+
+                  {showDischargeForm && (
+                    <form className="patient-edit-form" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 16, marginBottom: 16 }} onSubmit={(e) => void saveDischarge(e)}>
+                      <label>Branch *<select required value={dischargeForm.branch_id} onChange={(e) => setDischargeForm((f) => ({ ...f, branch_id: e.target.value }))}><option value="">Select branch</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+                      <label>Type<select value={dischargeForm.discharge_type} onChange={(e) => setDischargeForm((f) => ({ ...f, discharge_type: e.target.value }))}><option value="regular">Regular</option><option value="against_advice">Against medical advice</option><option value="referral">Referral</option><option value="transfer">Transfer</option></select></label>
+                      <label>Diagnosis<textarea value={dischargeForm.diagnosis} onChange={(e) => setDischargeForm((f) => ({ ...f, diagnosis: e.target.value }))} placeholder="Final diagnosis" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <label>Treatment summary<textarea value={dischargeForm.treatment_summary} onChange={(e) => setDischargeForm((f) => ({ ...f, treatment_summary: e.target.value }))} placeholder="Summary of treatment provided" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <label>Discharge instructions<textarea value={dischargeForm.discharge_instructions} onChange={(e) => setDischargeForm((f) => ({ ...f, discharge_instructions: e.target.value }))} placeholder="Instructions for patient" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+                        <input type="checkbox" id="follow-up-req" checked={dischargeForm.follow_up_required} onChange={(e) => setDischargeForm((f) => ({ ...f, follow_up_required: e.target.checked }))} />
+                        <label htmlFor="follow-up-req" style={{ margin: 0, fontSize: 12 }}>Follow-up required</label>
+                      </div>
+                      {dischargeForm.follow_up_required && <label>Follow-up date<input type="date" value={dischargeForm.follow_up_date} onChange={(e) => setDischargeForm((f) => ({ ...f, follow_up_date: e.target.value }))} /></label>}
+                      <div className="form-actions"><button className="button button-primary" type="submit" disabled={dischargeSaving}>{dischargeSaving ? "Recording…" : "Record discharge"}</button></div>
+                    </form>
+                  )}
+
+                  {discharges.length === 0 && !showDischargeForm && <div className="dashboard-empty"><strong>No discharges</strong><span>Discharge records will appear here.</span></div>}
+                  {discharges.length > 0 && discharges.map((d) => (
+                    <div key={d.id} style={{ padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <strong style={{ fontSize: 13 }}>{d.branch_name ?? "—"}</strong>
+                          <span className={`pipeline-status status-${d.discharge_type === "regular" ? "qualified" : "contacted"}`} style={{ fontSize: 10, marginLeft: 8 }}>{d.discharge_type.replaceAll("_", " ")}</span>
+                          {d.diagnosis && <p style={{ margin: "4px 0 0", fontSize: 12 }}>{d.diagnosis}</p>}
+                          {d.discharge_instructions && <p style={{ margin: "4px 0 0", fontSize: 11, color: "var(--muted)", fontStyle: "italic" }}>{d.discharge_instructions}</p>}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <small style={{ color: "var(--muted)", fontSize: 10 }}>{formatDateTime(d.discharged_at)}</small>
+                          {d.follow_up_required && <p style={{ margin: "4px 0 0", fontSize: 10, color: "var(--coral)" }}>Follow-up: {d.follow_up_date ?? "TBD"}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              </div>
             )}
 
             {activeTab === "timeline" && (

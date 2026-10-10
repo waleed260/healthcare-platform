@@ -13,7 +13,7 @@ from app.db.tenant import set_tenant_context
 from app.core.security import cursor_payload, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.crm.merge import merge_patients
-from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate, VitalCreate
+from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, DischargeCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate, TransferCreate, VitalCreate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -813,3 +813,85 @@ def vitals_delete(patient_id: UUID, vital_id: UUID, request: Request, db: Sessio
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_vital.delete", entity_type="patient_vital", entity_id=vital_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": {"id": str(vital_id)}, "meta": {"request_id": request.state.request_id}}
+
+
+# ── Patient transfers ───────────────────────────────────────────────────────
+
+
+@router.get("/{patient_id}/transfers")
+def transfer_list(patient_id: UUID, request: Request, limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "patient.read")
+    _require_patient(db, session, patient_id)
+    rows = db.execute(text("""
+        SELECT t.id, t.from_branch_id, t.to_branch_id, t.from_doctor_id, t.to_doctor_id,
+               t.reason, t.notes, t.status, t.transferred_at, t.created_at, t.version,
+               fb.name AS from_branch_name, tb.name AS to_branch_name
+        FROM patient_transfers t
+        LEFT JOIN branches fb ON fb.clinic_id = t.clinic_id AND fb.id = t.from_branch_id
+        LEFT JOIN branches tb ON tb.clinic_id = t.clinic_id AND tb.id = t.to_branch_id
+        WHERE t.clinic_id = :clinic_id AND t.patient_id = :patient_id AND t.archived_at IS NULL
+        ORDER BY t.created_at DESC LIMIT :lim
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "lim": limit}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{patient_id}/transfers", status_code=status.HTTP_201_CREATED)
+def transfer_create(patient_id: UUID, payload: TransferCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    row = db.execute(text("""
+        INSERT INTO patient_transfers (clinic_id, patient_id, from_branch_id, to_branch_id, from_doctor_id, to_doctor_id, reason, notes, requested_by, status)
+        VALUES (:clinic_id, :patient_id, :from_branch_id, :to_branch_id, :from_doctor_id, :to_doctor_id, :reason, :notes, :requested_by, 'pending')
+        RETURNING id, status, created_at, version
+    """), {
+        "clinic_id": session["clinic_id"], "patient_id": patient_id,
+        "from_branch_id": payload.from_branch_id, "to_branch_id": payload.to_branch_id,
+        "from_doctor_id": payload.from_doctor_id, "to_doctor_id": payload.to_doctor_id,
+        "reason": payload.reason, "notes": payload.notes, "requested_by": session["user_id"],
+    }).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_transfer.create", entity_type="patient_transfer", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+# ── Patient discharges ──────────────────────────────────────────────────────
+
+
+@router.get("/{patient_id}/discharges")
+def discharge_list(patient_id: UUID, request: Request, limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "patient.read")
+    _require_patient(db, session, patient_id)
+    rows = db.execute(text("""
+        SELECT d.id, d.branch_id, d.discharge_type, d.diagnosis, d.treatment_summary,
+               d.discharge_instructions, d.follow_up_required, d.follow_up_date,
+               d.discharged_at, d.created_at, d.version,
+               b.name AS branch_name
+        FROM patient_discharges d
+        LEFT JOIN branches b ON b.clinic_id = d.clinic_id AND b.id = d.branch_id
+        WHERE d.clinic_id = :clinic_id AND d.patient_id = :patient_id AND d.archived_at IS NULL
+        ORDER BY d.discharged_at DESC LIMIT :lim
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "lim": limit}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{patient_id}/discharges", status_code=status.HTTP_201_CREATED)
+def discharge_create(patient_id: UUID, payload: DischargeCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    row = db.execute(text("""
+        INSERT INTO patient_discharges (clinic_id, patient_id, branch_id, discharge_type, diagnosis, treatment_summary, discharge_instructions, follow_up_required, follow_up_date, discharged_by)
+        VALUES (:clinic_id, :patient_id, :branch_id, :discharge_type, :diagnosis, :treatment_summary, :discharge_instructions, :follow_up_required, :follow_up_date, :discharged_by)
+        RETURNING id, discharge_type, discharged_at, version
+    """), {
+        "clinic_id": session["clinic_id"], "patient_id": patient_id,
+        "branch_id": payload.branch_id, "discharge_type": payload.discharge_type,
+        "diagnosis": payload.diagnosis, "treatment_summary": payload.treatment_summary,
+        "discharge_instructions": payload.discharge_instructions,
+        "follow_up_required": payload.follow_up_required, "follow_up_date": payload.follow_up_date,
+        "discharged_by": session["user_id"],
+    }).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_discharge.create", entity_type="patient_discharge", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
