@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { api, csrfToken, errorMessage, post, writeHeaders } from "../_lib/client";
+import { api, errorMessage, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 
@@ -15,7 +15,7 @@ function waitDuration(checkedInAt: string): string {
   if (mins < 60) return `${mins}m`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
-async function jsonOrNull(response: Response): Promise<{ data?: unknown; meta?: { next_cursor?: string | null }; error?: { message?: string } } | null> { return response.json().catch(() => null); }
+
 
 export default function QueuePage() {
   const toast = useToast();
@@ -38,17 +38,13 @@ export default function QueuePage() {
     try {
       const params = new URLSearchParams(); if (cursor) params.set("cursor", cursor);
       const url = "/api/v1/operations/queue" + (params.size ? "?" + params.toString() : "");
-      const [sessionResponse, response] = await Promise.all([
-        fetch("/api/v1/auth/me", { credentials: "include", cache: "no-store" }),
-        fetch(url, { credentials: "include", cache: "no-store" }),
+      const [session, entries] = await Promise.all([
+        append ? Promise.resolve(null) : api<{ permissions?: string[] }>("/api/v1/auth/me"),
+        api<QueueEntry[]>(url),
       ]);
-      const session = await jsonOrNull(sessionResponse);
-      const payload = await jsonOrNull(response);
-      if (!sessionResponse.ok) throw new Error(session?.error?.message ?? "Your clinic session could not be checked. Try again.");
-      if (!response.ok) throw new Error(payload?.error?.message ?? "The queue could not be loaded. Try again.");
-      setPermissions((session?.data as { permissions?: string[] } | undefined)?.permissions ?? (session?.data as string[] | undefined) ?? []);
-      setEntries((current) => append ? [...current, ...((payload?.data ?? []) as QueueEntry[])] : (payload?.data ?? []) as QueueEntry[]);
-      setNextCursor(payload?.meta?.next_cursor ?? null);
+      if (session) setPermissions(session.permissions ?? []);
+      setEntries((current) => append ? [...current, ...(entries ?? [])] : (entries ?? []));
+      setNextCursor(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The queue could not be loaded.");
     } finally { setLoading(false); }

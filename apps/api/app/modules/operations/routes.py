@@ -486,19 +486,18 @@ def queue_complete(queue_id: str, payload: QueueCommand, request: Request, db: S
     appointment = db.execute(text("SELECT status FROM appointments WHERE clinic_id = :clinic_id AND id = :appointment_id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]}).mappings().one_or_none()
     if appointment is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
-    if appointment["status"] != "in_consultation":
-        raise _error("INVALID_STATE", "The appointment is not in consultation.", status.HTTP_400_BAD_REQUEST)
     result = db.execute(text("""
         UPDATE queue_entries
         SET status = 'completed', completed_at = now(), version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :id
         RETURNING id, appointment_id, status, completed_at, version
     """), {"clinic_id": session["clinic_id"], "id": queue_id}).mappings().one()
-    db.execute(text("""
-        UPDATE appointments
-        SET status = 'completed', blocks_time = false, status_changed_at = now(), version = version + 1, updated_at = now()
-        WHERE clinic_id = :clinic_id AND id = :appointment_id AND status = 'in_consultation'
-    """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]})
+    if appointment["status"] in ("in_consultation", "waiting", "arrived"):
+        db.execute(text("""
+            UPDATE appointments
+            SET status = 'completed', blocks_time = false, status_changed_at = now(), version = version + 1, updated_at = now()
+            WHERE clinic_id = :clinic_id AND id = :appointment_id AND status IN ('in_consultation', 'waiting', 'arrived')
+        """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]})
     db.execute(text("""
         INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id)
         SELECT :clinic_id, :appointment_id, 'in_consultation', 'completed', :actor

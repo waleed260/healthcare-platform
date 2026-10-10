@@ -52,7 +52,14 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const session = await api<Session>("/api/v1/auth/me");
+      let session: Session | null = null;
+      try {
+        session = await api<Session>("/api/v1/auth/me");
+      } catch {
+        setError("Could not verify your session. Try signing in again.");
+        setLoading(false);
+        return;
+      }
       if (!session?.is_platform_admin) {
         setError("Platform administrator access is required.");
         setLoading(false);
@@ -67,12 +74,12 @@ export default function AdminPage() {
         api<Plan[]>("/api/v1/admin/plans?limit=50").catch(() => [] as Plan[]),
         api<Announcement[]>("/api/v1/admin/announcements?limit=50").catch(() => [] as Announcement[]),
       ]);
-      setClinics(clinicData ?? []);
-      setMetrics(metricsData);
-      setSupport(supportData ?? []);
-      setAudit(auditData ?? []);
-      setPlans(planData ?? []);
-      setAnnouncements(announcementData ?? []);
+      setClinics(Array.isArray(clinicData) ? clinicData : []);
+      setMetrics(metricsData ?? null);
+      setSupport(Array.isArray(supportData) ? supportData : []);
+      setAudit(Array.isArray(auditData) ? auditData : []);
+      setPlans(Array.isArray(planData) ? planData : []);
+      setAnnouncements(Array.isArray(announcementData) ? announcementData : []);
     } catch (reason) {
       setError(errorMessage(reason, "The admin console could not be loaded."));
     } finally {

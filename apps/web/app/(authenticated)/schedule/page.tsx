@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEventHandler } from "react";
 import anime from "animejs";
@@ -7,7 +8,7 @@ import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 import BlockTimeDrawer from "../_lib/block-time-drawer";
 import { api, writeHeaders } from "../_lib/client";
 
-type Appointment = { id: string; reference: string; branch_id: string; doctor_id: string | null; service_id: string | null; patient_id: string | null; starts_at: string; ends_at: string; status: string; source?: string; version: number };
+type Appointment = { id: string; reference: string; branch_id: string; doctor_id: string | null; service_id: string | null; patient_id: string | null; patient_name: string | null; starts_at: string; ends_at: string; status: string; source?: string; version: number };
 type Option = { id: string; name?: string; public_name?: string };
 type ViewMode = "day" | "week" | "month";
 type Session = { permissions?: string[]; clinic_slug?: string | null };
@@ -23,7 +24,7 @@ const formatDay = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.
 const formatTime = (value: string) => formatDay(new Date(value), { hour: "numeric", minute: "2-digit" });
 
 function AppointmentCard({ appointment, doctorName, serviceName, onOpen, onDragStart }: { appointment: Appointment; doctorName: string; serviceName: string; onOpen: () => void; onDragStart: DragEventHandler<HTMLButtonElement> }) {
-  return <button className={`calendar-appointment ${statusClass(appointment.status)}`} draggable onDragStart={onDragStart} onClick={onOpen} type="button"><strong>{formatTime(appointment.starts_at)}</strong><span>{appointment.reference}</span><small>{doctorName || serviceName || statusLabels[appointment.status]}</small></button>;
+  return <button className={`calendar-appointment ${statusClass(appointment.status)}`} draggable onDragStart={onDragStart} onClick={onOpen} type="button"><strong>{formatTime(appointment.starts_at)}</strong><span>{appointment.patient_name ?? appointment.reference}</span><small>{doctorName || serviceName || statusLabels[appointment.status]}</small></button>;
 }
 
 export default function SchedulePage() {
@@ -162,6 +163,7 @@ export default function SchedulePage() {
         <h2>{detail?.reference ?? selected.reference}</h2>
         <p className={`drawer-status ${statusClass(actionStatus ?? "requested")}`}>{statusLabels[actionStatus ?? "requested"]}</p>
         <dl className="appointment-details">
+          <div><dt>Patient</dt><dd>{(detail ?? selected).patient_name ?? "Walk-in"}{(detail ?? selected).patient_id && <><br /><Link className="text-link" href={`/patients/${(detail ?? selected).patient_id}`} style={{ fontSize: "0.8em" }}>View patient →</Link></>}</dd></div>
           <div><dt>When</dt><dd>{formatDay(new Date(detail?.starts_at ?? selected.starts_at), { weekday: "long", month: "short", day: "numeric" })}<br />{formatTime(detail?.starts_at ?? selected.starts_at)} – {formatTime(detail?.ends_at ?? selected.ends_at)}</dd></div>
           <div><dt>Doctor</dt><dd>{names.doctor.get((detail ?? selected).doctor_id ?? "") ?? "Unassigned"}</dd></div>
           <div><dt>Service</dt><dd>{names.service.get((detail ?? selected).service_id ?? "") ?? "Service unavailable"}</dd></div>

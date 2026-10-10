@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
 import PremiumMotion from "../../premium-motion";
+import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 
 type Summary = { today_appointments: number; pending_approvals: number; followups_due: number; waiting_patients: number; no_shows: number };
 type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string };
 type QueueEntry = { id: string; appointment_id: string; status: string; checked_in_at: string | null; priority: number; full_name: string; reference: string; starts_at: string };
 type FollowUp = { id: string; patient_id: string; reason: string; due_at: string; priority: number; status: string };
+type Session = { permissions?: string[]; clinic_slug?: string | null };
 
 function msg(response: Response, payload: unknown): string {
   if (payload && typeof payload === "object" && "error" in payload) {
@@ -39,11 +41,21 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [clinicSlug, setClinicSlug] = useState("");
+  const [addApptOpen, setAddApptOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const summaryResponse = await fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" });
+      const [sessionData, summaryResponse] = await Promise.all([
+        getData<Session>("/api/v1/auth/me"),
+        fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" }),
+      ]);
+      if (sessionData) {
+        setPermissions(sessionData.permissions ?? []);
+        if (sessionData.clinic_slug) setClinicSlug(sessionData.clinic_slug);
+      }
       if (summaryResponse.status === 401) { window.location.href = "/login"; return; }
       const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
       if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
@@ -114,7 +126,7 @@ export default function DashboardPage() {
 
   return <main className="dashboard-overview" id="overview" aria-busy={loading}>
     <PremiumMotion />
-    <div className="dash-topline"><div><p className="eyebrow">Today</p><h1>Today at a <em>glance.</em></h1></div><button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
+    <div className="dash-topline"><div><p className="eyebrow">Today</p><h1>Today at a <em>glance.</em></h1></div><div className="header-actions">{permissions.includes("appointment.create") && <button className="button button-primary" type="button" onClick={() => setAddApptOpen(true)}>Add appointment <span>+</span></button>}<button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
     <div className="kpi-grid" ref={kpiRef} aria-live="polite">
@@ -148,5 +160,6 @@ export default function DashboardPage() {
       <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">📊 TREND</p><h2>Appointments this week</h2></div></div><div className="bar-chart" role="img" aria-label="Appointments by weekday">{weekBars.map((b) => <div className="bar-col" key={b.label}><div className="bar-track"><div className="bar-fill" style={{ height: `${b.pct}%` }} title={`${b.label}: ${b.value}`} /></div><small>{b.label}</small><b>{b.value}</b></div>)}</div></section>
     </div>
     {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
+    {clinicSlug && <AddAppointmentDrawer open={addApptOpen} onClose={() => setAddApptOpen(false)} clinicSlug={clinicSlug} onCreated={() => void load()} />}
   </main>;
 }

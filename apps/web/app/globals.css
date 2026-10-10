@@ -651,10 +651,10 @@ legend{font-size:var(--text-xs)}
 .analytics-card strong{font:600 32px/1.1 'DM Sans',sans-serif;letter-spacing:-.02em;display:block;margin:0 0 4px}
 .analytics-card small{color:var(--muted);font:12px 'DM Mono',monospace}
 .analytics-card .trend-up{color:#43856d}.analytics-card .trend-down{color:#a14937}
-.analytics-chart{background:var(--cream);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:16px}
+.analytics-chart{background:var(--cream);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:16px;overflow:hidden}
 .analytics-chart h3{font:600 15px/1.3 'DM Sans',sans-serif;margin:0 0 16px}
-.bar-chart{display:flex;align-items:flex-end;gap:6px;height:160px;padding:0 4px}
-.bar-chart .chart-bar{flex:1;background:linear-gradient(to top,#274c42,#3d7a6a);border-radius:4px 4px 0 0;min-width:14px;position:relative}
+.bar-chart{display:flex;align-items:flex-end;gap:3px;height:160px;padding:0 4px;overflow-x:auto;overflow-y:visible;padding-bottom:24px}
+.bar-chart .chart-bar{flex:1 0 4px;background:linear-gradient(to top,#274c42,#3d7a6a);border-radius:4px 4px 0 0;min-width:4px;position:relative}
 .bar-chart .chart-bar:hover{background:linear-gradient(to top,#1a3830,#274c42)}
 .bar-chart .chart-bar-label{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font:10px 'DM Mono',monospace;color:var(--muted);white-space:nowrap}
 .bar-chart .chart-bar-value{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font:600 11px 'DM Sans',sans-serif;color:var(--ink);opacity:0;transition:opacity .15s ease}

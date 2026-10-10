@@ -230,7 +230,9 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT id, reference, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, status, source, version, created_at, updated_at
+        SELECT appointments.id, reference, branch_id, doctor_id, service_id, patient_id,
+               (SELECT full_name FROM patients p WHERE p.clinic_id = appointments.clinic_id AND p.id = appointments.patient_id) AS patient_name,
+               starts_at, ends_at, status, source, appointments.version, appointments.created_at, appointments.updated_at
         FROM appointments
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (:branch_id IS NULL OR branch_id = :branch_id)
@@ -258,7 +260,7 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
 def appointment_detail(appointment_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     branch_id = _appointment_branch_id(db, session_token, appointment_id)
     session = _staff_authorized(db, session_token, "appointment.read", branch_id=branch_id)
-    row = db.execute(text("SELECT id, reference, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, source, policy_snapshot, version, created_at, updated_at FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
+    row = db.execute(text("SELECT appointments.id, reference, branch_id, doctor_id, service_id, patient_id, (SELECT full_name FROM patients p WHERE p.clinic_id = appointments.clinic_id AND p.id = appointments.patient_id) AS patient_name, starts_at, ends_at, occupancy_start, occupancy_end, status, source, policy_snapshot, appointments.version, appointments.created_at, appointments.updated_at FROM appointments WHERE clinic_id = :clinic_id AND appointments.id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
     db.commit()

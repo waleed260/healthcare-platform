@@ -53,30 +53,46 @@ export default function SeoPanel({ website, disabled, onSaveSeo }: { website: { 
   const removeRedirect = (id: string) => void run(() => api(`/api/v1/websites/${website.id}/redirects/${id}`, { method: "DELETE", headers: writeHeaders() }), "Redirect removed.");
 
   return <section className="detail-card seo-panel" aria-label="SEO, sitemap and redirects">
-    <div className="card-heading"><div><p className="eyebrow">SEO</p><h2>Be found</h2></div></div>
+    <div className="card-heading"><div><p className="eyebrow">SEARCH ENGINE OPTIMIZATION</p><h2>Be found</h2></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
     {notice && <div className="permission-strip" aria-live="polite"><span className="permission-ok">{notice}</span></div>}
 
-    <fieldset className="theme-group" disabled={disabled || busy}><legend>Site-wide</legend><div className="brand-fields">
-      <label>Allow search engines<input type="checkbox" checked={seo.robots_index ?? true} onChange={(event) => void run(() => onSaveSeo({ ...seo, robots_index: event.target.checked }), "Indexing preference saved.")} /></label>
-      <label>Site name<input maxLength={120} defaultValue={seo.site_name ?? ""} onBlur={(event) => { const next = event.target.value.trim() || null; if (next !== (seo.site_name ?? null)) void run(() => onSaveSeo({ ...seo, site_name: next }), "Site name saved."); }} /></label>
-    </div><p className="field-note">Published sites expose <code>/your-clinic/sitemap.xml</code> and <code>/your-clinic/robots.txt</code> automatically.</p></fieldset>
-
-    <fieldset className="theme-group" disabled={disabled || busy}><legend>Page settings</legend>
-      <label className="font-field">Page<select value={pageId} onChange={(event) => setPageId(event.target.value)}>{pages.map((item) => <option key={item.id} value={item.id}>{item.title} (/{item.slug})</option>)}</select></label>
-      {page && <form key={page.id + page.version} onSubmit={savePage} className="manage-form"><div className="form-grid">
-        <label>SEO title<input name="seo_title" maxLength={160} defaultValue={page.seo_title ?? ""} /></label>
-        <label>Meta description<input name="seo_description" maxLength={320} defaultValue={page.seo_description ?? ""} /></label>
-        <label>Canonical URL<input name="canonical_url" maxLength={500} defaultValue={page.canonical_url ?? ""} placeholder="https://… or /path" /></label>
-        <label>Social title<input name="og_title" maxLength={160} defaultValue={page.og_title ?? ""} /></label>
-        <label>Social description<input name="og_description" maxLength={320} defaultValue={page.og_description ?? ""} /></label>
-        <label>Hide from search (noindex)<input name="noindex" type="checkbox" defaultChecked={page.noindex} /></label>
-      </div><div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Save page SEO</button></div></form>}
+    <fieldset className="theme-group" disabled={disabled || busy}><legend>Site-wide settings</legend>
+      <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input type="checkbox" checked={seo.robots_index ?? true} onChange={(event) => void run(() => onSaveSeo({ ...seo, robots_index: event.target.checked }), "Indexing preference saved.")} style={{ width: "auto" }} />
+          Allow search engines to index
+        </label>
+        <label>Site name<input maxLength={120} defaultValue={seo.site_name ?? ""} onBlur={(event) => { const next = event.target.value.trim() || null; if (next !== (seo.site_name ?? null)) void run(() => onSaveSeo({ ...seo, site_name: next }), "Site name saved."); }} /></label>
+      </div>
+      <p className="field-note">Published sites expose <code>/your-clinic/sitemap.xml</code> and <code>/your-clinic/robots.txt</code> automatically.</p>
     </fieldset>
 
-    <fieldset className="theme-group" disabled={disabled || busy}><legend>Redirects</legend>
-      <form className="theme-row" onSubmit={addRedirect}><input name="from" required placeholder="/old-page" aria-label="From path" pattern="/[A-Za-z0-9\-._~/]*" /><input name="to" required placeholder="/new-page or https://…" aria-label="To" /><select name="code" defaultValue="301" aria-label="Type"><option value="301">301 permanent</option><option value="302">302 temporary</option></select><button className="button button-secondary" type="submit">Add redirect</button></form>
-      {redirects.length === 0 ? <p className="field-note">No redirects yet.</p> : redirects.map((item) => <div className="theme-row" key={item.id}><code>{item.from_path}</code><span>→</span><code>{item.to_path}</code><span className="muted-mono">{item.status_code}</span><button className="text-control" onClick={() => removeRedirect(item.id)}>Remove</button></div>)}
+    <fieldset className="theme-group" disabled={disabled || busy}><legend>Page SEO</legend>
+      <label>Select page<select value={pageId} onChange={(event) => setPageId(event.target.value)} style={{ width: "100%", marginBottom: 12 }}>{pages.map((item) => <option key={item.id} value={item.id}>{item.title} (/{item.slug})</option>)}</select></label>
+      {page && <form key={page.id + page.version} onSubmit={savePage} className="manage-form"><div className="form-grid" style={{ gap: 12 }}>
+        <label>SEO title<input name="seo_title" maxLength={160} defaultValue={page.seo_title ?? ""} placeholder="Page title for search results" /></label>
+        <label>Meta description<textarea name="seo_description" maxLength={320} defaultValue={page.seo_description ?? ""} rows={2} placeholder="Brief description shown in search results" style={{ resize: "vertical" }} /></label>
+        <label>Canonical URL<input name="canonical_url" maxLength={500} defaultValue={page.canonical_url ?? ""} placeholder="https://… or /path" /></label>
+        <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label>Social title<input name="og_title" maxLength={160} defaultValue={page.og_title ?? ""} placeholder="Title for social sharing" /></label>
+          <label>Social description<input name="og_description" maxLength={320} defaultValue={page.og_description ?? ""} placeholder="Description for social sharing" /></label>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input name="noindex" type="checkbox" defaultChecked={page.noindex} style={{ width: "auto" }} />
+          Hide from search engines (noindex)
+        </label>
+      </div><div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Save page SEO <span>↗</span></button></div></form>}
+    </fieldset>
+
+    <fieldset className="theme-group" disabled={disabled || busy}><legend>URL redirects</legend>
+      <form className="form-grid" style={{ gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "end", marginBottom: 12 }} onSubmit={addRedirect}>
+        <label>From<input name="from" required placeholder="/old-page" aria-label="From path" pattern="/[A-Za-z0-9\-._~/]*" /></label>
+        <label>To<input name="to" required placeholder="/new-page or https://…" aria-label="To" /></label>
+        <label>Type<select name="code" defaultValue="301" aria-label="Type"><option value="301">301</option><option value="302">302</option></select></label>
+        <button className="button button-secondary" type="submit" style={{ marginBottom: 2 }}>Add</button>
+      </form>
+      {redirects.length === 0 ? <p className="field-note">No redirects configured yet.</p> : <div style={{ display: "grid", gap: 6 }}>{redirects.map((item) => <div className="theme-row" key={item.id} style={{ background: "var(--paper, #f9f9f6)", padding: "8px 10px", borderRadius: 8, margin: 0 }}><code style={{ fontSize: "0.85em" }}>{item.from_path}</code><span style={{ color: "var(--muted)" }}>→</span><code style={{ fontSize: "0.85em" }}>{item.to_path}</code><span className="muted-mono">{item.status_code}</span><button className="text-control" onClick={() => removeRedirect(item.id)}>Remove</button></div>)}</div>}
     </fieldset>
   </section>;
 }
