@@ -1109,13 +1109,23 @@ export default function WebsiteEditorPage() {
                 <h3>Theme instances</h3>
                 <p className="wb-panel-meta">{themeInstances.length} theme{themeInstances.length !== 1 ? "s" : ""}</p>
                 <div className="wb-version-list">
-                  {themeInstances.map((ti) => (
-                    <div className="wb-version-row" key={ti.id} style={{ borderLeft: ti.status === "live" ? "3px solid var(--wb-accent, #274c42)" : "3px solid transparent" }}>
-                      <div>
-                        <strong>{ti.name}</strong>
-                        <small style={{ textTransform: "capitalize" }}>{ti.status} · v{ti.version}</small>
+                  {themeInstances.map((ti) => {
+                    const snap = (ti.brand_snapshot as Record<string, unknown> | null) ?? {};
+                    const colors = ((snap.theme as Record<string, unknown>)?.colors ?? snap) as Record<string, string>;
+                    return (
+                    <div className="wb-version-row" key={ti.id} style={{ borderLeft: ti.status === "live" ? "3px solid var(--wb-accent, #274c42)" : "3px solid transparent", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                        <div>
+                          <strong>{ti.name}</strong>
+                          <small style={{ textTransform: "capitalize" }}>{ti.status} · v{ti.version} · {ti.updated_at ? new Date(ti.updated_at).toLocaleDateString() : new Date(ti.created_at).toLocaleDateString()}</small>
+                        </div>
+                        <div style={{ display: "flex", gap: 2 }}>
+                          {[colors.primary, colors.accent, colors.background].filter(Boolean).map((c, i) => (
+                            <span key={i} style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", background: c, border: "1px solid rgba(0,0,0,.12)" }} />
+                          ))}
+                        </div>
                       </div>
-                      <div style={{ display: "flex", gap: 4 }}>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                         {ti.status === "draft" && (
                           <button className="wb-btn wb-btn-primary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
                             setBusy("theme"); setError(null);
@@ -1127,8 +1137,36 @@ export default function WebsiteEditorPage() {
                             finally { setBusy(null); }
                           }}>Activate</button>
                         )}
+                        <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                          setBusy("theme"); setError(null);
+                          try {
+                            await updateBrand(snap as Partial<Brand>);
+                            setNotice(`Loaded "${ti.name}" into the editor.`);
+                          } catch (reason) { setError(reason instanceof Error ? reason.message : "Load failed."); }
+                          finally { setBusy(null); }
+                        }}>Load</button>
+                        <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                          setBusy("theme"); setError(null);
+                          try {
+                            const created = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: `${ti.name} (copy)`, brand_snapshot: ti.brand_snapshot }) });
+                            if (created) setThemeInstances((cur) => [...cur, created]);
+                            setNotice(`Duplicated "${ti.name}".`);
+                          } catch (reason) { setError(reason instanceof Error ? reason.message : "Duplicate failed."); }
+                          finally { setBusy(null); }
+                        }}>Duplicate</button>
+                        <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                          const newName = window.prompt("Rename theme", ti.name)?.trim();
+                          if (!newName || newName === ti.name) return;
+                          setBusy("theme"); setError(null);
+                          try {
+                            const updated = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes/${ti.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ name: newName, expected_version: ti.version }) });
+                            if (updated) setThemeInstances((cur) => cur.map((t) => t.id === ti.id ? updated : t));
+                            setNotice(`Renamed to "${newName}".`);
+                          } catch (reason) { setError(reason instanceof Error ? reason.message : "Rename failed."); }
+                          finally { setBusy(null); }
+                        }}>Rename</button>
                         {ti.status !== "live" && (
-                          <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
+                          <button className="wb-btn wb-btn-danger" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
                             setBusy("theme"); setError(null);
                             try {
                               await request(`/api/v1/websites/${website.id}/themes/${ti.id}/archive`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
@@ -1140,7 +1178,8 @@ export default function WebsiteEditorPage() {
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="wb-field-stack" style={{ marginTop: 12, borderTop: "1px solid var(--wb-border, #e5e5e3)", paddingTop: 12 }}>
                   <label>New theme

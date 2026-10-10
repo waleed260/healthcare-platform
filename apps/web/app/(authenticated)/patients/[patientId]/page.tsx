@@ -29,6 +29,31 @@ type PatientPackage = { id: string; name: string; status: string; total_sessions
 type Admission = { id: string; branch_id: string; branch_name: string | null; admitting_doctor_id: string; admitting_doctor_name: string | null; consulting_doctor_id: string | null; consulting_doctor_name: string | null; ward: string | null; bed: string | null; admission_type: string; reason: string; diagnosis_on_admission: string | null; expected_stay_days: number | null; status: string; admitted_at: string; discharged_at: string | null; notes: string | null; version: number; created_at: string };
 
 type Tab = "overview" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
+
+function computeAge(dob: string | null): { years: number; months: number; label: string; category: string } | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - birth.getFullYear();
+  let months = now.getMonth() - birth.getMonth();
+  if (now.getDate() < birth.getDate()) months--;
+  if (months < 0) { years--; months += 12; }
+  const category = years < 2 ? "infant" : years < 13 ? "child" : years < 18 ? "adolescent" : years < 65 ? "adult" : "geriatric";
+  const label = years < 2 ? `${years * 12 + months}mo` : months > 0 ? `${years}y ${months}mo` : `${years}y`;
+  return { years, months, label, category };
+}
+function dobFromAge(ageYears: number): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - ageYears);
+  d.setMonth(0, 1);
+  return d.toISOString().slice(0, 10);
+}
+const AGE_CATEGORY_STYLE: Record<string, { bg: string; fg: string }> = {
+  infant: { bg: "#fef3cd", fg: "#856404" }, child: { bg: "#d4edda", fg: "#155724" },
+  adolescent: { bg: "#d1ecf1", fg: "#0c5460" }, adult: { bg: "#e2e3e5", fg: "#383d41" },
+  geriatric: { bg: "#f8d7da", fg: "#721c24" },
+};
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "appointments", label: "Appointments" },
@@ -71,6 +96,8 @@ export default function PatientDetailPage() {
   const [editEmail, setEditEmail] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editDob, setEditDob] = useState("");
+  const [editAgeMode, setEditAgeMode] = useState(false);
+  const [editAgeYears, setEditAgeYears] = useState("");
   const [editEmergencyName, setEditEmergencyName] = useState("");
   const [editEmergencyPhone, setEditEmergencyPhone] = useState("");
   const [editEmergencyRelation, setEditEmergencyRelation] = useState("");
@@ -407,6 +434,8 @@ export default function PatientDetailPage() {
     setEditEmail(patient.normalized_email ?? "");
     setEditPhone(patient.normalized_phone ?? "");
     setEditDob(patient.date_of_birth ?? "");
+    setEditAgeMode(false);
+    setEditAgeYears("");
     setEditEmergencyName(patient.emergency_contact_name ?? "");
     setEditEmergencyPhone(patient.emergency_contact_phone ?? "");
     setEditEmergencyRelation(patient.emergency_contact_relation ?? "");
@@ -499,7 +528,7 @@ export default function PatientDetailPage() {
             <div>
               <p className="eyebrow">PATIENT RECORD · {patient.patient_number}</p>
               <h1>{patient.full_name}</h1>
-              <p className="patient-status">{statusLabel(patient.status)} · version {patient.version}</p>
+              <p className="patient-status">{statusLabel(patient.status)}{(() => { const age = computeAge(patient.date_of_birth); if (!age) return null; const s = AGE_CATEGORY_STYLE[age.category]; return <> · {age.label} <span style={{ fontSize: "0.72rem", fontWeight: 600, padding: "1px 6px", borderRadius: 3, background: s.bg, color: s.fg, textTransform: "capitalize" }}>{age.category}</span></>; })()} · v{patient.version}</p>
             </div>
             <div className="patient-hero-actions">
               <button className="button button-secondary" type="button" onClick={() => void loadCore()}>Refresh <span>↻</span></button>
@@ -535,7 +564,14 @@ export default function PatientDetailPage() {
                       <label>Full name<input required value={editName} onChange={(e) => setEditName(e.target.value)} /></label>
                       <label>Email<input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="Not recorded" /></label>
                       <label>Phone<input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} placeholder="Not recorded" /></label>
-                      <label>Date of birth<input type="date" value={editDob} onChange={(e) => setEditDob(e.target.value)} /></label>
+                      <div style={{ display: "flex", alignItems: "end", gap: 8 }}>
+                        {editAgeMode ? (
+                          <label style={{ flex: 1 }}>Age (years)<input type="number" min={0} max={150} value={editAgeYears} onChange={(e) => { setEditAgeYears(e.target.value); if (e.target.value) setEditDob(dobFromAge(Number(e.target.value))); }} placeholder="e.g. 35" /></label>
+                        ) : (
+                          <label style={{ flex: 1 }}>Date of birth<input type="date" value={editDob} onChange={(e) => setEditDob(e.target.value)} /></label>
+                        )}
+                        <button type="button" className="text-control" style={{ marginBottom: 4, whiteSpace: "nowrap" }} onClick={() => setEditAgeMode((v) => !v)}>{editAgeMode ? "Enter DOB" : "Enter age"}</button>
+                      </div>
                       <label>Preferred communication
                         <select value={editPreferredComm} onChange={(e) => setEditPreferredComm(e.target.value)}>
                           <option value="phone">Phone</option><option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option>
@@ -556,7 +592,7 @@ export default function PatientDetailPage() {
                     <dl>
                       <div><dt>Email</dt><dd>{patient.normalized_email ?? "Not recorded"}</dd></div>
                       <div><dt>Phone</dt><dd>{patient.normalized_phone ?? "Not recorded"}</dd></div>
-                      <div><dt>Date of birth</dt><dd>{patient.date_of_birth ?? "Not recorded"}</dd></div>
+                      <div><dt>Date of birth</dt><dd>{patient.date_of_birth ?? "Not recorded"}{(() => { const age = computeAge(patient.date_of_birth); if (!age) return null; const s = AGE_CATEGORY_STYLE[age.category]; return <> · {age.label} <span style={{ display: "inline-block", fontSize: "0.7rem", fontWeight: 600, padding: "1px 6px", borderRadius: 3, background: s.bg, color: s.fg, marginLeft: 4, textTransform: "capitalize" }}>{age.category}</span></>; })()}</dd></div>
                       <div><dt>Preferred contact</dt><dd>{patient.preferred_communication ?? "Phone"}</dd></div>
                       {patient.allergies_summary && <div><dt>Allergies</dt><dd style={{ color: "var(--coral)" }}>{patient.allergies_summary}</dd></div>}
                       {patient.contraindications && <div><dt>Contraindications</dt><dd style={{ color: "var(--coral)" }}>{patient.contraindications}</dd></div>}
