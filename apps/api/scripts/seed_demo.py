@@ -37,6 +37,10 @@ def main() -> None:
     app_env = os.environ.get("APP_ENV", "").lower()
     if app_env not in {"local", "test"}:
         raise SystemExit("Refusing to seed: APP_ENV must be local or test")
+    owner_password = os.environ.get("OWNER_PASSWORD")
+    if not owner_password:
+        raise SystemExit("OWNER_PASSWORD must be set to seed the platform owner")
+    owner_email = os.environ.get("OWNER_EMAIL", "vkdeku20@gmail.com").strip().casefold()
 
     today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     with psycopg.connect(connection_url(), row_factory=dict_row) as db:
@@ -167,21 +171,27 @@ def main() -> None:
                         """, (ident(f"form-response-{clinic_number}"), clinic_id, patient_ids[0], form_id, '{"graft_count": 2500, "donor_area": "Occipital"}'))
                 except psycopg.errors.UndefinedTable:
                     pass
-            owner_password = os.environ.get("OWNER_PASSWORD", "Deku@12345678")
-            owner_email = os.environ.get("OWNER_EMAIL", "vkdeku20@gmail.com")
             first_clinic_id = ident("clinic-a")
             first_branch_id = ident("branch-a")
+            owner_user_id = ident("owner-user")
+            cur.execute(
+                "SELECT id FROM users WHERE normalized_email = %s AND id <> %s",
+                (owner_email, owner_user_id),
+            )
+            if cur.fetchone():
+                raise SystemExit("Cannot seed platform owner: OWNER_EMAIL is already in use by another user")
             cur.execute("""
                 INSERT INTO users (id, clinic_id, normalized_email, display_name, password_hash, status, is_platform_admin)
                 VALUES (%s, %s, %s, 'Platform Owner', %s, 'active', true)
-                ON CONFLICT (normalized_email) DO UPDATE
-                  SET password_hash = EXCLUDED.password_hash,
+                ON CONFLICT (id) DO UPDATE
+                  SET normalized_email = EXCLUDED.normalized_email,
+                      password_hash = EXCLUDED.password_hash,
                       status = 'active',
                       is_platform_admin = true,
                       clinic_id = EXCLUDED.clinic_id,
                       version = users.version + 1
                 RETURNING id
-            """, (ident("owner-user"), first_clinic_id, owner_email.strip().casefold(), hash_password(owner_password)))
+            """, (owner_user_id, first_clinic_id, owner_email, hash_password(owner_password)))
             owner_row = cur.fetchone()
             if owner_row:
                 owner_user_id = owner_row["id"] if isinstance(owner_row, dict) else owner_row[0]
@@ -197,7 +207,7 @@ def main() -> None:
         db.commit()
     print("Seeded two synthetic clinics: demo-collision-a and demo-collision-b")
     print(f"Synthetic login password: {PASSWORD}")
-    print(f"Owner login: {owner_email} / {owner_password}")
+    print(f"Owner login email: {owner_email}")
 
 
 if __name__ == "__main__":
