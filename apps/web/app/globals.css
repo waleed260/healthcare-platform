@@ -684,3 +684,21 @@ legend{font-size:var(--text-xs)}
 .chart-bar{animation:none!important}
 .skeleton{animation:none!important}
 }
+
+/* Button polish — round corners, transitions, click effects */
+.button{border-radius:10px;transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+.button:active:not(:disabled){transform:scale(.96)}
+.button:focus-visible{outline:2px solid var(--leaf);outline-offset:2px}
+.button-primary{border-radius:10px;transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+.button-primary:hover:not(:disabled){box-shadow:0 4px 14px rgba(39,76,66,.25);filter:brightness(1.08)}
+.button-primary:active:not(:disabled){transform:scale(.96);box-shadow:none}
+.button-secondary{border-radius:10px;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.button-secondary:hover:not(:disabled){border-color:var(--leaf);background:rgba(39,76,66,.04)}
+.button-secondary:active:not(:disabled){transform:scale(.96)}
+.button-danger{border-radius:10px}
+.ghost-button{border-radius:8px;transition:background .15s ease,transform .15s ease}
+.ghost-button:hover:not(:disabled){background:rgba(39,76,66,.06)}
+.ghost-button:active:not(:disabled){transform:scale(.95)}
+.queue-action{border-radius:10px}
+.queue-remove{color:var(--muted);font-size:0.75rem;padding:4px 8px}
+.queue-remove:hover:not(:disabled){color:#b84f38;background:rgba(184,79,56,.08)}

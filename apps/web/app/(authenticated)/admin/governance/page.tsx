@@ -2,19 +2,10 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
+import { api, errorMessage, post, writeHeaders } from "../../_lib/client";
 
 type Policy = { id: string; name: string; jurisdiction: string; rules: Record<string, unknown>; approved_by: string | null; approved_at: string | null; active: boolean; created_at: string };
 type Clinic = { id: string; name: string; slug: string; status: string };
-
-function csrf(): string {
-  return document.cookie.split("; ").find((item) => item.startsWith("csrf_token="))?.split("=")[1] ?? "";
-}
-
-async function read(response: Response): Promise<any> {
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.error?.message ?? "The governance workspace could not complete that request.");
-  return payload.data;
-}
 
 export default function GovernancePage() {
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -32,15 +23,15 @@ export default function GovernancePage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [policyResponse, clinicResponse] = await Promise.all([
-        fetch("/api/v1/admin/retention-policies", { credentials: "include", cache: "no-store" }),
-        fetch("/api/v1/admin/clinics", { credentials: "include", cache: "no-store" }),
+      const [policyData, clinicData] = await Promise.all([
+        api<Policy[]>("/api/v1/admin/retention-policies").catch(() => [] as Policy[]),
+        api<Clinic[]>("/api/v1/admin/clinics").catch(() => [] as Clinic[]),
       ]);
-      const [policyData, clinicData] = await Promise.all([read(policyResponse), read(clinicResponse)]);
-      setPolicies((policyData ?? []) as Policy[]); setClinics((clinicData ?? []) as Clinic[]);
-      setSelectedClinic((current) => current || clinicData?.[0]?.id || "");
-      setSelectedPolicy((current) => current || policyData?.find((item: Policy) => item.active)?.id || "");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "The governance workspace could not be loaded."); }
+      const pList = policyData ?? []; const cList = clinicData ?? [];
+      setPolicies(pList); setClinics(cList);
+      setSelectedClinic((current) => current || cList[0]?.id || "");
+      setSelectedPolicy((current) => current || pList.find((item) => item.active)?.id || "");
+    } catch (reason) { setError(errorMessage(reason, "The governance workspace could not be loaded.")); }
     finally { setLoading(false); }
   }, []);
 
@@ -51,7 +42,7 @@ export default function GovernancePage() {
     try {
       let parsedRules: Record<string, unknown>;
       try { parsedRules = JSON.parse(rules) as Record<string, unknown>; } catch { throw new Error("Retention rules must be valid JSON."); }
-      await read(await fetch("/api/v1/admin/retention-policies", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() }, body: JSON.stringify({ name, jurisdiction, rules: parsedRules }) }));
+      await post("/api/v1/admin/retention-policies", { name, jurisdiction, rules: parsedRules });
       setName(""); setJurisdiction(""); setNotice("Policy created inactive. A separate approval is required before assignment."); await load();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The policy could not be created."); }
     finally { setWorking(false); }
@@ -59,14 +50,14 @@ export default function GovernancePage() {
 
   async function approvePolicy(policyId: string) {
     setWorking(true); setError(null); setNotice(null);
-    try { await read(await fetch(`/api/v1/admin/retention-policies/${policyId}/approve`, { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrf() } })); setNotice("Policy approved and available for explicit clinic assignment."); await load(); }
+    try { await post(`/api/v1/admin/retention-policies/${policyId}/approve`); setNotice("Policy approved and available for explicit clinic assignment."); await load(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The policy could not be approved."); }
     finally { setWorking(false); }
   }
 
   async function assignPolicy(event: FormEvent) {
     event.preventDefault(); setWorking(true); setError(null); setNotice(null);
-    try { await read(await fetch(`/api/v1/admin/clinics/${selectedClinic}/retention-policy`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf() }, body: JSON.stringify({ policy_id: selectedPolicy }) })); setNotice("Approved retention policy assigned to the clinic."); await load(); }
+    try { await api(`/api/v1/admin/clinics/${selectedClinic}/retention-policy`, { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ policy_id: selectedPolicy }) }); setNotice("Approved retention policy assigned to the clinic."); await load(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The policy could not be assigned."); }
     finally { setWorking(false); }
   }

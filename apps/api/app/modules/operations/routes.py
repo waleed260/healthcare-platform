@@ -527,6 +527,22 @@ def queue_reorder(queue_id: str, payload: QueueReorder, request: Request, db: Se
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
 
 
+@router.delete("/queue/{queue_id}")
+def queue_remove(queue_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    _, queue = _queue_context(db, session_token, queue_id)
+    session = _write_authorized(db, request, session_token, "queue.manage", csrf_token, branch_id=queue["branch_id"])
+    deleted = db.execute(text("""
+        DELETE FROM queue_entries
+        WHERE clinic_id = :clinic_id AND id = :id
+        RETURNING id
+    """), {"clinic_id": session["clinic_id"], "id": queue_id}).mappings().one_or_none()
+    if deleted is None:
+        raise _error("NOT_FOUND", "Queue entry not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="queue.remove", entity_type="queue_entry", entity_id=queue["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": {"id": str(deleted["id"]), "removed": True}, "meta": {"request_id": request.state.request_id}}
+
+
 @router.get("/follow-ups")
 def follow_up_list(request: Request, priority_filter: str | None = Query(default=None, alias="priority", max_length=20), status_filter: str | None = Query(default=None, alias="status", max_length=20), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "followup.read")

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { csrfToken } from "../_lib/client";
+import { api, csrfToken, errorMessage, post, writeHeaders } from "../_lib/client";
+import { useToast } from "../_lib/toast";
+import { useConfirm } from "../_lib/confirm";
 
 type QueueEntry = { id: string; appointment_id: string; status: "waiting" | "in_consultation"; checked_in_at: string; priority: number; full_name: string; reference: string; starts_at: string; version: number };
 
@@ -16,6 +18,8 @@ function waitDuration(checkedInAt: string): string {
 async function jsonOrNull(response: Response): Promise<{ data?: unknown; meta?: { next_cursor?: string | null }; error?: { message?: string } } | null> { return response.json().catch(() => null); }
 
 export default function QueuePage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,25 +64,33 @@ export default function QueuePage() {
     setWorking(entry.id); setError(null); setNotice(null);
     const action = entry.status === "waiting" ? "start" : "complete";
     try {
-      const response = await fetch(`/api/v1/operations/queue/${entry.id}/${action}`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }, body: JSON.stringify({ expected_version: entry.version }) });
-      const payload = await jsonOrNull(response);
-      if (!response.ok) throw new Error(payload?.error?.message ?? "The queue entry changed. Refresh and try again.");
+      await post(`/api/v1/operations/queue/${entry.id}/${action}`, { expected_version: entry.version });
       setNotice(entry.status === "waiting" ? `${entry.full_name} is now in consultation.` : `${entry.full_name}'s consultation is complete.`);
       await load();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "The queue action could not be completed."); }
+    } catch (reason) { setError(errorMessage(reason, "The queue action could not be completed.")); }
     finally { setWorking(null); }
   }
 
   async function reorder(entry: QueueEntry) {
     setWorking(entry.id); setError(null); setNotice(null);
     try {
-      const response = await fetch(`/api/v1/operations/queue/${entry.id}/reorder`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }, body: JSON.stringify({ expected_version: entry.version, priority: reorderPriority, priority_reason: reorderReason || "Priority updated" }) });
-      const payload = await jsonOrNull(response);
-      if (!response.ok) throw new Error(payload?.error?.message ?? "Priority could not be updated.");
+      await post(`/api/v1/operations/queue/${entry.id}/reorder`, { expected_version: entry.version, priority: reorderPriority, priority_reason: reorderReason || "Priority updated" });
       setNotice(`${entry.full_name}'s priority updated to ${reorderPriority}.`);
       setReorderTarget(null); setReorderPriority(0); setReorderReason("");
       await load();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Priority could not be updated."); }
+    } catch (reason) { setError(errorMessage(reason, "Priority could not be updated.")); }
+    finally { setWorking(null); }
+  }
+
+  async function remove(entry: QueueEntry) {
+    const ok = await confirm({ title: "Remove from queue", message: `Remove ${entry.full_name} from the queue? The appointment will remain on the schedule.`, danger: true, confirmLabel: "Remove" });
+    if (!ok) return;
+    setWorking(entry.id); setError(null); setNotice(null);
+    try {
+      await api(`/api/v1/operations/queue/${entry.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: entry.version }) });
+      toast.success(`${entry.full_name} removed from the queue.`);
+      await load();
+    } catch (reason) { setError(errorMessage(reason, "The queue entry could not be removed.")); }
     finally { setWorking(null); }
   }
 
@@ -115,6 +127,7 @@ export default function QueuePage() {
         <div className="queue-actions">
           {canManage && <button className="ghost-button" type="button" onClick={() => { setReorderTarget(reorderTarget === entry.id ? null : entry.id); setReorderPriority(entry.priority); setReorderReason(""); }} title="Set priority">P</button>}
           <button className="button queue-action" type="button" onClick={() => void advance(entry)} disabled={!canManage || working === entry.id} title={!canManage ? "Requires queue.manage" : undefined}>{working === entry.id ? "Working…" : entry.status === "waiting" ? "Start consultation" : "Complete"}<span>→</span></button>
+          {canManage && <button className="ghost-button queue-remove" type="button" onClick={() => void remove(entry)} disabled={working === entry.id} title="Remove from queue">✕</button>}
         </div>
         {reorderTarget === entry.id && <div className="reorder-inline">
           <label>Priority<input type="number" min={0} max={100} value={reorderPriority} onChange={(e) => setReorderPriority(Number(e.target.value))} /></label>

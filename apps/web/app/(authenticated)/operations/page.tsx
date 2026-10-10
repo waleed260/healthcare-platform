@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { csrfToken } from "../_lib/client";
+import { csrfToken, errorMessage, post } from "../_lib/client";
 import FollowUpDrawer from "../_lib/follow-up-drawer";
 
 type FollowUp = { id: string; patient_id?: string; reason: string; due_at: string; priority: string; status: string; version: number };
@@ -86,15 +86,10 @@ export default function OperationsPage() {
     setWorking(item.id);
     setError(null); setNotice(null);
     try {
-      const response = await fetch(`/api/v1/operations/follow-ups/${item.id}/complete`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
-        body: JSON.stringify({ expected_version: item.version }),
-      });
-      const payload = await response.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
-      if (!response.ok) throw new Error(message(response, payload));
+      await post(`/api/v1/operations/follow-ups/${item.id}/complete`, { expected_version: item.version });
       setNotice("Follow-up completed and removed from the active queue."); await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The follow-up could not be completed.");
+      setError(errorMessage(reason, "The follow-up could not be completed."));
     } finally {
       setWorking(null);
     }
@@ -104,15 +99,10 @@ export default function OperationsPage() {
     if (item.read_at) return;
     setWorking(item.id);
     try {
-      const response = await fetch("/api/v1/operations/notifications/read", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
-        body: JSON.stringify({ notification_ids: [item.id] }),
-      });
-      const payload = await response.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
-      if (!response.ok) throw new Error(message(response, payload));
+      await post("/api/v1/operations/notifications/read", { notification_ids: [item.id] });
       setNotifications((current) => current.map((entry) => entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry)); setNotice("Notification marked as read.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The notification could not be marked read.");
+      setError(errorMessage(reason, "The notification could not be marked read."));
     } finally {
       setWorking(null);
     }
@@ -152,12 +142,7 @@ export default function OperationsPage() {
         applicationServerKey: decodeApplicationServerKey(pushKey),
       });
       const json = subscription.toJSON();
-      const response = await fetch("/api/v1/operations/notifications/push-subscriptions", {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
-        body: JSON.stringify({ endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(message(response, payload));
+      await post("/api/v1/operations/notifications/push-subscriptions", { endpoint: json.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth });
       setPushState("on");
     } catch (reason) {
       setPushState("error");

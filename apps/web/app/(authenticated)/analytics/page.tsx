@@ -19,7 +19,7 @@ const RANGES = [
 type Range = (typeof RANGES)[number]["id"];
 
 function money(minor: number): string {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(minor / 100);
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: "PKR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(minor / 100);
 }
 
 function shortDate(iso: string): string {

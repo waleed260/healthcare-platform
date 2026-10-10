@@ -189,13 +189,13 @@ export default function AdminPage() {
         </div>
         <div className="report-hero-card">
           <span className="eyebrow">APPOINTMENTS</span>
-          <strong>{metrics.telemetry.appointments.total}</strong>
-          <p>{metrics.telemetry.appointments.completed} completed · {metrics.telemetry.appointments.cancelled} cancelled</p>
+          <strong>{metrics.telemetry?.appointments?.total ?? 0}</strong>
+          <p>{metrics.telemetry?.appointments?.completed ?? 0} completed · {metrics.telemetry?.appointments?.cancelled ?? 0} cancelled</p>
         </div>
-        <div className={`report-hero-card ${metrics.background_jobs.failed > 0 ? "report-hero-warm" : ""}`}>
+        <div className={`report-hero-card ${(metrics.background_jobs?.failed ?? 0) > 0 ? "report-hero-warm" : ""}`}>
           <span className="eyebrow">BACKGROUND JOBS</span>
-          <strong>{metrics.background_jobs.queued + metrics.background_jobs.running}</strong>
-          <p>{metrics.background_jobs.queued} queued · {metrics.background_jobs.failed} failed</p>
+          <strong>{(metrics.background_jobs?.queued ?? 0) + (metrics.background_jobs?.running ?? 0)}</strong>
+          <p>{metrics.background_jobs?.queued ?? 0} queued · {metrics.background_jobs?.failed ?? 0} failed</p>
         </div>
       </div>}
 
@@ -233,39 +233,39 @@ export default function AdminPage() {
         <section className="surface-card report-card">
           <div className="surface-card-heading"><div><p className="eyebrow">DATABASE</p><h2>Connection pool</h2></div></div>
           <div className="report-health-grid">
-            <div><strong>{metrics.database_pool.size}</strong><span>pool size</span></div>
-            <div><strong>{metrics.database_pool.checked_out}</strong><span>checked out</span></div>
-            <div><strong>{metrics.database_pool.overflow}</strong><span>overflow</span></div>
+            <div><strong>{metrics.database_pool?.size ?? 0}</strong><span>pool size</span></div>
+            <div><strong>{metrics.database_pool?.checked_out ?? 0}</strong><span>checked out</span></div>
+            <div><strong>{metrics.database_pool?.overflow ?? 0}</strong><span>overflow</span></div>
           </div>
         </section>
 
         <section className="surface-card report-card">
           <div className="surface-card-heading"><div><p className="eyebrow">BILLING HEALTH</p><h2>Subscription status</h2></div></div>
           <div className="report-health-grid">
-            <div><strong>{metrics.billing.active ?? 0}</strong><span>active</span></div>
-            <div><strong>{metrics.billing.trialing ?? 0}</strong><span>trialing</span></div>
-            <div><strong>{metrics.billing.past_due ?? 0}</strong><span>past due</span></div>
-            <div><strong>{metrics.billing.cancelled ?? 0}</strong><span>cancelled</span></div>
+            <div><strong>{metrics.billing?.active ?? 0}</strong><span>active</span></div>
+            <div><strong>{metrics.billing?.trialing ?? 0}</strong><span>trialing</span></div>
+            <div><strong>{metrics.billing?.past_due ?? 0}</strong><span>past due</span></div>
+            <div><strong>{metrics.billing?.cancelled ?? 0}</strong><span>cancelled</span></div>
           </div>
         </section>
 
         <section className="surface-card report-card">
           <div className="surface-card-heading"><div><p className="eyebrow">CARE FLOW</p><h2>Appointments</h2></div></div>
           <div className="report-health-grid">
-            <div><strong>{metrics.telemetry.appointments.requested}</strong><span>requested</span></div>
-            <div><strong>{metrics.telemetry.appointments.confirmed}</strong><span>confirmed</span></div>
-            <div><strong>{metrics.telemetry.appointments.completed}</strong><span>completed</span></div>
-            <div><strong>{metrics.telemetry.appointments.cancelled}</strong><span>cancelled</span></div>
+            <div><strong>{metrics.telemetry?.appointments?.requested ?? 0}</strong><span>requested</span></div>
+            <div><strong>{metrics.telemetry?.appointments?.confirmed ?? 0}</strong><span>confirmed</span></div>
+            <div><strong>{metrics.telemetry?.appointments?.completed ?? 0}</strong><span>completed</span></div>
+            <div><strong>{metrics.telemetry?.appointments?.cancelled ?? 0}</strong><span>cancelled</span></div>
           </div>
         </section>
 
         <section className="surface-card report-card">
           <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONS</p><h2>Background health</h2></div></div>
           <div className="report-health-grid">
-            <div><strong>{metrics.telemetry.scan_backlog}</strong><span>scan backlog</span></div>
-            <div><strong>{metrics.telemetry.storage_failures}</strong><span>storage failures</span></div>
-            <div><strong>{metrics.telemetry.publish_failures}</strong><span>publish failures</span></div>
-            <div><strong>{metrics.billing.none ?? 0}</strong><span>no subscription</span></div>
+            <div><strong>{metrics.telemetry?.scan_backlog ?? 0}</strong><span>scan backlog</span></div>
+            <div><strong>{metrics.telemetry?.storage_failures ?? 0}</strong><span>storage failures</span></div>
+            <div><strong>{metrics.telemetry?.publish_failures ?? 0}</strong><span>publish failures</span></div>
+            <div><strong>{metrics.billing?.none ?? 0}</strong><span>no subscription</span></div>
           </div>
         </section>
       </div>}
