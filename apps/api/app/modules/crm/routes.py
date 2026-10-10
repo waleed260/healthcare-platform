@@ -13,7 +13,7 @@ from app.db.tenant import set_tenant_context
 from app.core.security import cursor_payload, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.crm.merge import merge_patients
-from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate
+from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate, VitalCreate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -758,3 +758,58 @@ def consent_revoke(patient_id: UUID, consent_id: UUID, payload: ConsentRevoke, r
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="consent.revoke", entity_type="consent_record", entity_id=consent_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+# ── Patient vitals ──────────────────────────────────────────────────────────
+
+
+@router.get("/{patient_id}/vitals")
+def vitals_list(patient_id: UUID, request: Request, vital_type: str | None = Query(default=None, max_length=40), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "patient.read")
+    _require_patient(db, session, patient_id)
+    rows = db.execute(text("""
+        SELECT id, vital_type, label, value_text, value_systolic, value_diastolic, value_numeric, unit, notes, recorded_at, recorded_by, version
+        FROM patient_vitals
+        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL
+          AND (:vital_type IS NULL OR vital_type = :vital_type)
+        ORDER BY recorded_at DESC
+        LIMIT :lim
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "vital_type": vital_type, "lim": limit}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{patient_id}/vitals", status_code=status.HTTP_201_CREATED)
+def vitals_create(patient_id: UUID, payload: VitalCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    row = db.execute(text("""
+        INSERT INTO patient_vitals (clinic_id, patient_id, vital_type, label, value_text, value_systolic, value_diastolic, value_numeric, unit, notes, recorded_by)
+        VALUES (:clinic_id, :patient_id, :vital_type, :label, :value_text, :value_systolic, :value_diastolic, :value_numeric, :unit, :notes, :recorded_by)
+        RETURNING id, vital_type, label, value_text, value_systolic, value_diastolic, value_numeric, unit, notes, recorded_at, version
+    """), {
+        "clinic_id": session["clinic_id"], "patient_id": patient_id, "vital_type": payload.vital_type,
+        "label": payload.label, "value_text": payload.value_text,
+        "value_systolic": payload.value_systolic, "value_diastolic": payload.value_diastolic,
+        "value_numeric": payload.value_numeric, "unit": payload.unit,
+        "notes": payload.notes, "recorded_by": session["user_id"],
+    }).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_vital.create", entity_type="patient_vital", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.delete("/{patient_id}/vitals/{vital_id}")
+def vitals_delete(patient_id: UUID, vital_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    row = db.execute(text("""
+        UPDATE patient_vitals SET archived_at = now(), updated_at = now()
+        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id AND archived_at IS NULL
+        RETURNING id
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "id": vital_id}).scalar_one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Vital record not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_vital.delete", entity_type="patient_vital", entity_id=vital_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": {"id": str(vital_id)}, "meta": {"request_id": request.state.request_id}}

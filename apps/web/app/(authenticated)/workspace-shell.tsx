@@ -22,6 +22,8 @@ const navGroups: NavGroup[] = [
     { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
   ]},
   { key: "clinical", label: "CLINICAL", items: [
+    { href: "/doctors", label: "Doctors", icon: "⚕", permission: "doctor.read" },
+    { href: "/branches", label: "Branches", icon: "⌂", permission: "branch.read" },
     { href: "/clinical", label: "Clinical", icon: "✚", permission: "clinical.read" },
   ]},
   { key: "business", label: "BUSINESS", items: [

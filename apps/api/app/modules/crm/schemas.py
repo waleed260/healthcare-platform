@@ -103,3 +103,16 @@ class CareTeamPolicyUpdate(BaseModel):
 
     expected_version: int = Field(ge=0)
     allow_manager_care_team_notes: bool
+
+
+class VitalCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vital_type: str = Field(max_length=40, pattern="^(blood_pressure|condition|procedure|allergy|temperature|heart_rate|weight|height|note)$")
+    label: str | None = Field(default=None, max_length=200)
+    value_text: str | None = Field(default=None, max_length=1000)
+    value_systolic: int | None = None
+    value_diastolic: int | None = None
+    value_numeric: float | None = None
+    unit: str | None = Field(default=None, max_length=20)
+    notes: str | None = Field(default=None, max_length=2000)

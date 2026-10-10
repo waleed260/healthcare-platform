@@ -702,3 +702,8 @@ legend{font-size:var(--text-xs)}
 .queue-action{border-radius:10px}
 .queue-remove{color:var(--muted);font-size:0.75rem;padding:4px 8px}
 .queue-remove:hover:not(:disabled){color:#b84f38;background:rgba(184,79,56,.08)}
+
+/* Doctors page */
+.doctors-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin-top:16px}
+.doctor-card{padding:20px}
+.doctor-avatar{width:36px;height:36px;border-radius:50%;background:var(--leaf);color:white;display:grid;place-items:center;font:600 14px/1 'DM Sans',sans-serif;flex-shrink:0}

@@ -19,9 +19,12 @@ type Consent = { id: string; consent_type: string; status: string; version: stri
 type Prescription = { id: string; medication_name: string; dosage: string; frequency: string; duration_days: number | null; status: string; created_at: string };
 type Invoice = { id: string; invoice_number: string; total_minor: number; paid_minor: number; status: string; issued_at: string; currency: string };
 
-type Tab = "overview" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices";
+type Vital = { id: string; vital_type: string; label: string | null; value_text: string | null; value_systolic: number | null; value_diastolic: number | null; value_numeric: number | null; unit: string | null; notes: string | null; recorded_at: string; version: number };
+
+type Tab = "overview" | "vitals" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices";
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "vitals", label: "Vitals" },
   { key: "timeline", label: "Timeline" },
   { key: "appointments", label: "Appointments" },
   { key: "notes", label: "Notes" },
@@ -75,6 +78,11 @@ export default function PatientDetailPage() {
   const [prescriptionsLoaded, setPrescriptionsLoaded] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [invoicesLoaded, setInvoicesLoaded] = useState(false);
+  const [vitals, setVitals] = useState<Vital[]>([]);
+  const [vitalsLoaded, setVitalsLoaded] = useState(false);
+  const [addingVital, setAddingVital] = useState(false);
+  const [vitalForm, setVitalForm] = useState({ vital_type: "blood_pressure", label: "", value_text: "", value_systolic: "", value_diastolic: "", value_numeric: "", unit: "", notes: "" });
+  const [vitalSaving, setVitalSaving] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -170,6 +178,47 @@ export default function PatientDetailPage() {
     } catch (reason) { toast.error(errorMessage(reason, "Invoices could not be loaded.")); }
   }, [patientId, toast]);
 
+  const loadVitals = useCallback(async () => {
+    try {
+      const data = await api<Vital[]>(`/api/v1/patients/${patientId}/vitals`);
+      setVitals(data ?? []);
+      setVitalsLoaded(true);
+    } catch (reason) { toast.error(errorMessage(reason, "Vitals could not be loaded.")); }
+  }, [patientId, toast]);
+
+  async function saveVital(e: FormEvent) {
+    e.preventDefault();
+    setVitalSaving(true);
+    try {
+      const body: Record<string, unknown> = { vital_type: vitalForm.vital_type };
+      if (vitalForm.label.trim()) body.label = vitalForm.label.trim();
+      if (vitalForm.value_text.trim()) body.value_text = vitalForm.value_text.trim();
+      if (vitalForm.value_systolic) body.value_systolic = Number(vitalForm.value_systolic);
+      if (vitalForm.value_diastolic) body.value_diastolic = Number(vitalForm.value_diastolic);
+      if (vitalForm.value_numeric) body.value_numeric = Number(vitalForm.value_numeric);
+      if (vitalForm.unit.trim()) body.unit = vitalForm.unit.trim();
+      if (vitalForm.notes.trim()) body.notes = vitalForm.notes.trim();
+      await api(`/api/v1/patients/${patientId}/vitals`, {
+        method: "POST", headers: writeHeaders(), body: JSON.stringify(body),
+      });
+      toast.success("Vital recorded.");
+      setAddingVital(false);
+      setVitalForm({ vital_type: "blood_pressure", label: "", value_text: "", value_systolic: "", value_diastolic: "", value_numeric: "", unit: "", notes: "" });
+      await loadVitals();
+    } catch (reason) { toast.error(errorMessage(reason, "Vital could not be saved.")); }
+    finally { setVitalSaving(false); }
+  }
+
+  async function deleteVital(v: Vital) {
+    const yes = await confirm({ message: `Remove this ${v.vital_type.replaceAll("_", " ")} record?`, danger: true });
+    if (!yes) return;
+    try {
+      await api(`/api/v1/patients/${patientId}/vitals/${v.id}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Vital removed.");
+      await loadVitals();
+    } catch (reason) { toast.error(errorMessage(reason, "Vital could not be removed.")); }
+  }
+
   useEffect(() => {
     if (activeTab === "notes" && !notesLoaded) void loadNotes();
     if (activeTab === "timeline" && !historyLoaded) void loadHistory();
@@ -178,7 +227,8 @@ export default function PatientDetailPage() {
     if (activeTab === "consents" && !consentsLoaded) void loadConsents();
     if (activeTab === "prescriptions" && !prescriptionsLoaded) void loadPrescriptions();
     if (activeTab === "invoices" && !invoicesLoaded) void loadInvoices();
-  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices]);
+    if (activeTab === "vitals" && !vitalsLoaded) void loadVitals();
+  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals]);
 
   function startEditing() {
     if (!patient) return;
@@ -349,6 +399,82 @@ export default function PatientDetailPage() {
                   </dl>
                 </section>
               </div>
+            )}
+
+            {activeTab === "vitals" && (
+              <section className="detail-card">
+                <div className="card-heading">
+                  <div><p className="eyebrow">HEALTH RECORD</p><h2>Patient vitals</h2></div>
+                  {can("patient.update") && <button className="button button-primary" type="button" onClick={() => setAddingVital(true)}>Add vital <span>+</span></button>}
+                </div>
+
+                {addingVital && (
+                  <form className="patient-edit-form" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 16, marginBottom: 16 }} onSubmit={(e) => void saveVital(e)}>
+                    <label>Type
+                      <select value={vitalForm.vital_type} onChange={(e) => setVitalForm((f) => ({ ...f, vital_type: e.target.value }))}>
+                        <option value="blood_pressure">Blood Pressure</option>
+                        <option value="condition">Condition / Disease</option>
+                        <option value="procedure">Previous Procedure</option>
+                        <option value="allergy">Allergy</option>
+                        <option value="temperature">Temperature</option>
+                        <option value="heart_rate">Heart Rate</option>
+                        <option value="weight">Weight</option>
+                        <option value="height">Height</option>
+                        <option value="note">General Note</option>
+                      </select>
+                    </label>
+                    {vitalForm.vital_type === "blood_pressure" && <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        <label>Systolic (mmHg)<input type="number" value={vitalForm.value_systolic} onChange={(e) => setVitalForm((f) => ({ ...f, value_systolic: e.target.value }))} placeholder="120" /></label>
+                        <label>Diastolic (mmHg)<input type="number" value={vitalForm.value_diastolic} onChange={(e) => setVitalForm((f) => ({ ...f, value_diastolic: e.target.value }))} placeholder="80" /></label>
+                      </div>
+                    </>}
+                    {["temperature", "heart_rate", "weight", "height"].includes(vitalForm.vital_type) && <>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8 }}>
+                        <label>Value<input type="number" step="any" value={vitalForm.value_numeric} onChange={(e) => setVitalForm((f) => ({ ...f, value_numeric: e.target.value }))} placeholder="e.g. 98.6" /></label>
+                        <label>Unit<input value={vitalForm.unit} onChange={(e) => setVitalForm((f) => ({ ...f, unit: e.target.value }))} placeholder={vitalForm.vital_type === "temperature" ? "°F" : vitalForm.vital_type === "weight" ? "kg" : vitalForm.vital_type === "height" ? "cm" : "bpm"} /></label>
+                      </div>
+                    </>}
+                    {["condition", "procedure", "allergy"].includes(vitalForm.vital_type) && <>
+                      <label>Name / Label<input value={vitalForm.label} onChange={(e) => setVitalForm((f) => ({ ...f, label: e.target.value }))} placeholder={vitalForm.vital_type === "condition" ? "e.g. Diabetes Type 2" : vitalForm.vital_type === "procedure" ? "e.g. Appendectomy" : "e.g. Penicillin"} /></label>
+                      <label>Details<input value={vitalForm.value_text} onChange={(e) => setVitalForm((f) => ({ ...f, value_text: e.target.value }))} placeholder="Additional details" /></label>
+                    </>}
+                    {vitalForm.vital_type === "note" && <label>Note<textarea value={vitalForm.notes} onChange={(e) => setVitalForm((f) => ({ ...f, notes: e.target.value }))} placeholder="General health note" rows={3} style={{ width: "100%", resize: "vertical" }} /></label>}
+                    {!["note", "condition", "procedure", "allergy"].includes(vitalForm.vital_type) && <label>Notes<input value={vitalForm.notes} onChange={(e) => setVitalForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" /></label>}
+                    <div className="form-actions">
+                      <button className="button button-primary" type="submit" disabled={vitalSaving}>{vitalSaving ? "Saving…" : "Save"}</button>
+                      <button className="ghost-button" type="button" onClick={() => setAddingVital(false)}>Cancel</button>
+                    </div>
+                  </form>
+                )}
+
+                {vitals.length === 0 && !addingVital && (
+                  <div className="dashboard-empty"><strong>No vitals recorded</strong><span>Add blood pressure, conditions, allergies, and procedures here.</span></div>
+                )}
+
+                {vitals.length > 0 && (
+                  <div className="vitals-list">
+                    {vitals.map((v) => (
+                      <div className="vital-row" key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span className={`pipeline-status status-${v.vital_type === "blood_pressure" ? "qualified" : v.vital_type === "condition" ? "contacted" : v.vital_type === "allergy" ? "lost" : "new"}`} style={{ fontSize: 10 }}>{v.vital_type.replaceAll("_", " ")}</span>
+                            {v.label && <strong style={{ fontSize: 13 }}>{v.label}</strong>}
+                          </div>
+                          {v.vital_type === "blood_pressure" && v.value_systolic != null && <p style={{ margin: 0, fontSize: 20, fontFamily: "Fraunces, serif", fontWeight: 500 }}>{v.value_systolic}/{v.value_diastolic} <small style={{ fontSize: 11, color: "var(--muted)" }}>mmHg</small></p>}
+                          {v.value_numeric != null && <p style={{ margin: 0, fontSize: 18, fontFamily: "Fraunces, serif", fontWeight: 500 }}>{v.value_numeric} <small style={{ fontSize: 11, color: "var(--muted)" }}>{v.unit ?? ""}</small></p>}
+                          {v.value_text && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>{v.value_text}</p>}
+                          {v.notes && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>{v.notes}</p>}
+                        </div>
+                        <div style={{ textAlign: "right", minWidth: 100 }}>
+                          <small style={{ color: "var(--muted)", fontSize: 10, display: "block" }}>{formatDateTime(v.recorded_at)}</small>
+                          {can("patient.update") && <button className="ghost-button" type="button" style={{ fontSize: 10, color: "var(--coral)", padding: "2px 6px", marginTop: 4 }} onClick={() => void deleteVital(v)}>Remove</button>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
 
             {activeTab === "timeline" && (
