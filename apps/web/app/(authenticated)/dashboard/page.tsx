@@ -5,6 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
 import PremiumMotion from "../../premium-motion";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
+import AddPatientDrawer from "../_lib/add-patient-drawer";
+import BlockTimeDrawer from "../_lib/block-time-drawer";
+import FollowUpDrawer from "../_lib/follow-up-drawer";
 
 type Summary = { today_appointments: number; pending_approvals: number; followups_due: number; waiting_patients: number; no_shows: number };
 type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string };
@@ -45,6 +48,9 @@ export default function DashboardPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [clinicSlug, setClinicSlug] = useState("");
   const [addApptOpen, setAddApptOpen] = useState(false);
+  const [addPatientOpen, setAddPatientOpen] = useState(false);
+  const [blockTimeOpen, setBlockTimeOpen] = useState(false);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -76,7 +82,11 @@ export default function DashboardPage() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const schedule = useMemo(() => [...appointments].sort((a, b) => a.starts_at.localeCompare(b.starts_at)), [appointments]);
+  const schedule = useMemo(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return appointments.filter((a) => a.starts_at.slice(0, 10) === todayStr).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [appointments]);
   const weekBars = useMemo(() => {
     const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const now = new Date();
@@ -153,7 +163,7 @@ export default function DashboardPage() {
         <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">NOW</p><h2>Live patient queue</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
           {loading && queue.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading…</strong></div> : queue.length === 0 ? <div className="dashboard-empty"><strong>Queue is empty</strong><span>No one is waiting right now.</span></div> : <div className="queue-list">{queue.slice(0, 5).map((e, i) => <div className="queue-row" key={e.id}><span className="queue-num">{String(i + 1).padStart(2, "0")}</span><div className="queue-main"><strong>{e.full_name}</strong><small>{e.checked_in_at ? `in ${time(e.checked_in_at)}` : e.reference}</small></div><span className={`queue-state state-${e.status.replaceAll("_", "-")}`}>{e.status.replaceAll("_", " ")}</span><Link className="queue-action" href="/queue">Start →</Link></div>)}</div>}
         </section>
-        <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">⚡ QUICK ACTIONS</p><h2>Do it now</h2></div></div><div className="quick-grid"><Link className="quick-btn" href="/schedule">＋ Add appointment <span>→</span></Link><Link className="quick-btn" href="/patients">👤 Add patient <span>→</span></Link><Link className="quick-btn" href="/schedule">⏱ Block time <span>→</span></Link><Link className="quick-btn" href="/operations">🗎 Create follow-up <span>→</span></Link></div></section>
+        <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">⚡ QUICK ACTIONS</p><h2>Do it now</h2></div></div><div className="quick-grid"><button className="quick-btn" type="button" onClick={() => setAddApptOpen(true)}>＋ Add appointment <span>→</span></button><button className="quick-btn" type="button" onClick={() => setAddPatientOpen(true)}>👤 Add patient <span>→</span></button><button className="quick-btn" type="button" onClick={() => setBlockTimeOpen(true)}>⏱ Block time <span>→</span></button><button className="quick-btn" type="button" onClick={() => setFollowUpOpen(true)}>🗎 Create follow-up <span>→</span></button></div></section>
       </div>
     </div>
 
@@ -168,5 +178,8 @@ export default function DashboardPage() {
     </div>
     {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
     {clinicSlug && <AddAppointmentDrawer open={addApptOpen} onClose={() => setAddApptOpen(false)} clinicSlug={clinicSlug} onCreated={() => void load()} />}
+    <AddPatientDrawer open={addPatientOpen} onClose={() => setAddPatientOpen(false)} onCreated={() => void load()} />
+    <BlockTimeDrawer open={blockTimeOpen} onClose={() => setBlockTimeOpen(false)} onCreated={() => void load()} />
+    <FollowUpDrawer open={followUpOpen} onClose={() => setFollowUpOpen(false)} onCreated={() => void load()} />
   </main>;
 }

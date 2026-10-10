@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { api, errorMessage, writeHeaders } from "../../_lib/client";
+import { api, errorMessage, post, writeHeaders } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
+import { useConfirm } from "../../_lib/confirm";
+
+type LeaveBlock = { id: string; doctor_id: string; branch_id: string | null; starts_at: string; ends_at: string; reason: string; created_at: string };
 
 type Service = { id: string; name: string; category: string | null; duration_minutes: number; amount_minor: number | null; currency: string | null; status: string };
 type Branch = { id: string; name: string; code: string; status: string };
@@ -29,6 +32,7 @@ const bookingColor: Record<string, string> = { accepting: "var(--leaf)", paused:
 export default function DoctorDetailPage() {
   const { doctorId } = useParams<{ doctorId: string }>();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +40,22 @@ export default function DoctorDetailPage() {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"overview" | "services" | "branches" | "schedule">("overview");
+
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [ruleBranch, setRuleBranch] = useState("");
+  const [ruleWeekday, setRuleWeekday] = useState(1);
+  const [ruleStart, setRuleStart] = useState("09:00");
+  const [ruleEnd, setRuleEnd] = useState("17:00");
+  const [ruleFrom, setRuleFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [ruleTo, setRuleTo] = useState("");
+  const [ruleCadence, setRuleCadence] = useState(15);
+
+  const [leaves, setLeaves] = useState<LeaveBlock[]>([]);
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [leaveStart, setLeaveStart] = useState("");
+  const [leaveEnd, setLeaveEnd] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveBranch, setLeaveBranch] = useState("");
 
   const [editName, setEditName] = useState("");
   const [editSpecialty, setEditSpecialty] = useState("");
@@ -52,9 +72,13 @@ export default function DoctorDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const d = await api<Doctor>(`/api/v1/doctors/${doctorId}`);
+      const [d, lb] = await Promise.all([
+        api<Doctor>(`/api/v1/doctors/${doctorId}`),
+        api<LeaveBlock[]>(`/api/v1/scheduling/leave-blocks`).catch(() => [] as LeaveBlock[]),
+      ]);
       if (!d) throw new Error("Not found");
       setDoctor(d);
+      setLeaves((lb ?? []).filter((l) => l.doctor_id === doctorId));
     } catch (reason) {
       setError(errorMessage(reason, "Doctor could not be loaded."));
     } finally {
@@ -63,6 +87,66 @@ export default function DoctorDetailPage() {
   }, [doctorId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function addRule(e: FormEvent) {
+    e.preventDefault();
+    if (!doctor || !ruleBranch) return;
+    setBusy(true);
+    try {
+      await post("/api/v1/scheduling/availability-rules", {
+        branch_id: ruleBranch, doctor_id: doctorId, weekday: ruleWeekday,
+        starts_at: ruleStart + ":00", ends_at: ruleEnd + ":00",
+        effective_from: ruleFrom, effective_to: ruleTo || null,
+        slot_cadence_minutes: ruleCadence,
+      });
+      toast.success("Availability rule added.");
+      setShowRuleForm(false);
+      await load();
+    } catch (reason) { toast.error(errorMessage(reason, "Could not add rule.")); }
+    finally { setBusy(false); }
+  }
+
+  async function deleteRule(ruleId: string) {
+    if (!(await confirm({ message: "Delete this availability rule?", danger: true }))) return;
+    setBusy(true);
+    try {
+      await api(`/api/v1/scheduling/availability-rules/${ruleId}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Rule deleted.");
+      await load();
+    } catch (reason) { toast.error(errorMessage(reason, "Could not delete rule.")); }
+    finally { setBusy(false); }
+  }
+
+  async function addLeave(e: FormEvent) {
+    e.preventDefault();
+    if (!leaveStart || !leaveEnd || !leaveReason.trim()) return;
+    setBusy(true);
+    try {
+      await post("/api/v1/scheduling/leave-blocks", {
+        doctor_id: doctorId,
+        branch_id: leaveBranch || null,
+        starts_at: new Date(leaveStart).toISOString(),
+        ends_at: new Date(leaveEnd).toISOString(),
+        reason: leaveReason.trim(),
+      });
+      toast.success("Leave block added.");
+      setShowLeaveForm(false);
+      setLeaveStart(""); setLeaveEnd(""); setLeaveReason(""); setLeaveBranch("");
+      await load();
+    } catch (reason) { toast.error(errorMessage(reason, "Could not add leave.")); }
+    finally { setBusy(false); }
+  }
+
+  async function deleteLeave(blockId: string) {
+    if (!(await confirm({ message: "Delete this leave block?", danger: true }))) return;
+    setBusy(true);
+    try {
+      await api(`/api/v1/scheduling/leave-blocks/${blockId}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Leave block deleted.");
+      await load();
+    } catch (reason) { toast.error(errorMessage(reason, "Could not delete leave.")); }
+    finally { setBusy(false); }
+  }
 
   function startEdit() {
     if (!doctor) return;
@@ -248,13 +332,48 @@ export default function DoctorDetailPage() {
         </div>
       )}
 
-      {tab === "schedule" && (
+      {tab === "schedule" && (<>
         <div className="doctor-detail-card surface-card">
           <div className="surface-card-heading">
             <div><p className="eyebrow">WORKING HOURS</p><h2>Availability ({doctor.availability.length} rules)</h2></div>
+            <button className="button button-primary" type="button" onClick={() => { setRuleBranch(doctor.branches[0]?.id ?? ""); setShowRuleForm(!showRuleForm); }}>
+              {showRuleForm ? "Cancel" : "Add rule"} <span>{showRuleForm ? "×" : "+"}</span>
+            </button>
           </div>
+
+          {showRuleForm && (
+            <form onSubmit={(e) => void addRule(e)} style={{ padding: "16px 0", borderBottom: "1px solid var(--line)" }}>
+              <div className="form-grid">
+                <label>Branch *
+                  <select required value={ruleBranch} onChange={(e) => setRuleBranch(e.target.value)}>
+                    <option value="">Select branch</option>
+                    {doctor.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </label>
+                <label>Weekday *
+                  <select value={ruleWeekday} onChange={(e) => setRuleWeekday(Number(e.target.value))}>
+                    {weekdays.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                </label>
+                <label>Start time *<input type="time" required value={ruleStart} onChange={(e) => setRuleStart(e.target.value)} /></label>
+                <label>End time *<input type="time" required value={ruleEnd} onChange={(e) => setRuleEnd(e.target.value)} /></label>
+                <label>Effective from *<input type="date" required value={ruleFrom} onChange={(e) => setRuleFrom(e.target.value)} /></label>
+                <label>Effective to<input type="date" value={ruleTo} onChange={(e) => setRuleTo(e.target.value)} /></label>
+                <label>Slot cadence (min)
+                  <select value={ruleCadence} onChange={(e) => setRuleCadence(Number(e.target.value))}>
+                    {[5, 10, 15, 20, 30, 45, 60].map((v) => <option key={v} value={v}>{v} min</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="form-actions">
+                <button className="button button-secondary" type="button" onClick={() => setShowRuleForm(false)}>Cancel</button>
+                <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add rule"}</button>
+              </div>
+            </form>
+          )}
+
           {doctor.availability.length === 0 ? (
-            <div className="dashboard-empty"><strong>No availability rules</strong><span>Set up availability from the Schedule management section.</span></div>
+            <div className="dashboard-empty"><strong>No availability rules</strong><span>Click &quot;Add rule&quot; to set up working hours.</span></div>
           ) : (
             <div>
               {weekdays.map((day, idx) => {
@@ -265,10 +384,11 @@ export default function DoctorDetailPage() {
                     <strong style={{ fontSize: 13, minWidth: 90, display: "inline-block" }}>{day}</strong>
                     <div style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
                       {rules.map((r) => (
-                        <span key={r.id} style={{ fontSize: 12, color: "var(--fg)" }}>
+                        <span key={r.id} style={{ fontSize: 12, color: "var(--fg)", display: "inline-flex", alignItems: "center", gap: 6 }}>
                           {fmtTime(r.starts_at)} – {fmtTime(r.ends_at)}
-                          <span style={{ color: "var(--muted)", marginLeft: 8 }}>{r.branch_name}</span>
-                          <span style={{ color: "var(--muted)", marginLeft: 8 }}>({r.slot_cadence_minutes}min slots)</span>
+                          <span style={{ color: "var(--muted)" }}>{r.branch_name}</span>
+                          <span style={{ color: "var(--muted)" }}>({r.slot_cadence_minutes}min slots)</span>
+                          <button className="ghost-button" type="button" style={{ fontSize: 11, color: "var(--coral)", padding: "2px 6px" }} onClick={() => void deleteRule(r.id)} disabled={busy}>×</button>
                         </span>
                       ))}
                     </div>
@@ -278,7 +398,55 @@ export default function DoctorDetailPage() {
             </div>
           )}
         </div>
-      )}
+
+        <div className="doctor-detail-card surface-card" style={{ marginTop: 16 }}>
+          <div className="surface-card-heading">
+            <div><p className="eyebrow">TIME OFF</p><h2>Leave blocks ({leaves.length})</h2></div>
+            <button className="button button-secondary" type="button" onClick={() => setShowLeaveForm(!showLeaveForm)}>
+              {showLeaveForm ? "Cancel" : "Add leave"} <span>{showLeaveForm ? "×" : "+"}</span>
+            </button>
+          </div>
+
+          {showLeaveForm && (
+            <form onSubmit={(e) => void addLeave(e)} style={{ padding: "16px 0", borderBottom: "1px solid var(--line)" }}>
+              <div className="form-grid">
+                <label>Start *<input type="datetime-local" required value={leaveStart} onChange={(e) => setLeaveStart(e.target.value)} /></label>
+                <label>End *<input type="datetime-local" required value={leaveEnd} onChange={(e) => setLeaveEnd(e.target.value)} /></label>
+                <label>Reason *<input required minLength={1} maxLength={500} value={leaveReason} onChange={(e) => setLeaveReason(e.target.value)} placeholder="e.g. Annual leave, Conference" /></label>
+                <label>Branch (optional)
+                  <select value={leaveBranch} onChange={(e) => setLeaveBranch(e.target.value)}>
+                    <option value="">All branches</option>
+                    {doctor.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="form-actions">
+                <button className="button button-secondary" type="button" onClick={() => setShowLeaveForm(false)}>Cancel</button>
+                <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add leave"}</button>
+              </div>
+            </form>
+          )}
+
+          {leaves.length === 0 ? (
+            <div className="dashboard-empty"><strong>No leave blocks</strong><span>Schedule time off for this doctor.</span></div>
+          ) : (
+            <div>
+              {leaves.map((l) => (
+                <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--line)" }}>
+                  <div>
+                    <strong style={{ fontSize: 13 }}>{l.reason}</strong>
+                    <small style={{ display: "block", fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                      {fmtDate(l.starts_at)} – {fmtDate(l.ends_at)}
+                      {l.branch_id && doctor.branches.find((b) => b.id === l.branch_id) && <> · {doctor.branches.find((b) => b.id === l.branch_id)!.name}</>}
+                    </small>
+                  </div>
+                  <button className="ghost-button" type="button" style={{ fontSize: 11, color: "var(--coral)" }} onClick={() => void deleteLeave(l.id)} disabled={busy}>Delete</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </>)}
     </section>
   );
 }
