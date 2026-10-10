@@ -118,8 +118,14 @@ class DoctorCreate(BaseModel):
     public_name: str = Field(min_length=1, max_length=160)
     specialty: str | None = Field(default=None, max_length=160)
     registration: str | None = Field(default=None, max_length=120)
+    license_number: str | None = Field(default=None, max_length=120)
     bio: str | None = Field(default=None, max_length=5000)
+    phone: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=200)
     consultation_duration_minutes: int = Field(gt=0, le=1440)
+    booking_status: Literal["accepting", "paused", "not_accepting"] = "accepting"
+    room_id: UUID | None = None
+    notes: str | None = Field(default=None, max_length=5000)
 
 
 class DoctorUpdate(BaseModel):
@@ -129,12 +135,18 @@ class DoctorUpdate(BaseModel):
     public_name: str | None = Field(default=None, min_length=1, max_length=160)
     specialty: str | None = Field(default=None, max_length=160)
     registration: str | None = Field(default=None, max_length=120)
+    license_number: str | None = Field(default=None, max_length=120)
     bio: str | None = Field(default=None, max_length=5000)
+    phone: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=200)
     consultation_duration_minutes: int | None = Field(default=None, gt=0, le=1440)
+    booking_status: Literal["accepting", "paused", "not_accepting"] | None = None
+    room_id: UUID | None = None
+    notes: str | None = Field(default=None, max_length=5000)
 
     @model_validator(mode="after")
     def require_change(self):
-        if not any(getattr(self, field) is not None for field in ("public_name", "specialty", "registration", "bio", "consultation_duration_minutes")):
+        if not any(getattr(self, field) is not None for field in ("public_name", "specialty", "registration", "license_number", "bio", "phone", "email", "consultation_duration_minutes", "booking_status", "room_id", "notes")):
             raise ValueError("at least one doctor field must be supplied")
         return self
 

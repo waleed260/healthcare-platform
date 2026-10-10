@@ -137,6 +137,39 @@ class DischargeCreate(BaseModel):
     follow_up_date: date | None = None
 
 
+class AdmissionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    branch_id: UUID
+    admitting_doctor_id: UUID
+    consulting_doctor_id: UUID | None = None
+    ward: str | None = Field(default=None, max_length=100)
+    bed: str | None = Field(default=None, max_length=50)
+    admission_type: str = Field(default="elective", pattern="^(elective|emergency|transfer|observation)$")
+    reason: str = Field(min_length=1, max_length=2000)
+    diagnosis_on_admission: str | None = Field(default=None, max_length=2000)
+    expected_stay_days: int | None = Field(default=None, ge=1, le=365)
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+class AdmissionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    ward: str | None = Field(default=None, max_length=100)
+    bed: str | None = Field(default=None, max_length=50)
+    consulting_doctor_id: UUID | None = None
+    diagnosis_on_admission: str | None = Field(default=None, max_length=2000)
+    expected_stay_days: int | None = Field(default=None, ge=1, le=365)
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+class AdmissionDischarge(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class VitalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

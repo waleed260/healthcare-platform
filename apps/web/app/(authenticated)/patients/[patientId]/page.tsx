@@ -26,8 +26,9 @@ type Branch = { id: string; name: string };
 
 type TreatmentPlan = { id: string; title: string; diagnosis: string | null; status: string; starts_on: string | null; ends_on: string | null; version: number; created_at: string };
 type PatientPackage = { id: string; name: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number; purchased_at: string; expires_at: string };
+type Admission = { id: string; branch_id: string; branch_name: string | null; admitting_doctor_id: string; admitting_doctor_name: string | null; consulting_doctor_id: string | null; consulting_doctor_name: string | null; ward: string | null; bed: string | null; admission_type: string; reason: string; diagnosis_on_admission: string | null; expected_stay_days: number | null; status: string; admitted_at: string; discharged_at: string | null; notes: string | null; version: number; created_at: string };
 
-type Tab = "overview" | "vitals" | "transfers" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
+type Tab = "overview" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "appointments", label: "Appointments" },
@@ -39,6 +40,7 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "documents", label: "Documents" },
   { key: "consents", label: "Consents" },
   { key: "notes", label: "Notes" },
+  { key: "admissions", label: "Admissions" },
   { key: "transfers", label: "Transfer / Discharge" },
   { key: "timeline", label: "Timeline" },
 ];
@@ -113,6 +115,12 @@ export default function PatientDetailPage() {
   const [treatmentsLoaded, setTreatmentsLoaded] = useState(false);
   const [packages, setPackages] = useState<PatientPackage[]>([]);
   const [packagesLoaded, setPackagesLoaded] = useState(false);
+  const [admissions, setAdmissions] = useState<Admission[]>([]);
+  const [admissionsLoaded, setAdmissionsLoaded] = useState(false);
+  const [showAdmissionForm, setShowAdmissionForm] = useState(false);
+  const [admissionForm, setAdmissionForm] = useState({ branch_id: "", admitting_doctor_id: "", ward: "", bed: "", admission_type: "elective", reason: "", diagnosis_on_admission: "", expected_stay_days: "", notes: "" });
+  const [admissionSaving, setAdmissionSaving] = useState(false);
+  const [doctors, setDoctors] = useState<{ id: string; public_name: string }[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -332,6 +340,52 @@ export default function PatientDetailPage() {
     finally { setDischargeSaving(false); }
   }
 
+  const loadAdmissions = useCallback(async () => {
+    try {
+      const [a, b, d] = await Promise.all([
+        api<Admission[]>(`/api/v1/patients/${patientId}/admissions`),
+        branches.length ? Promise.resolve(branches) : api<Branch[]>("/api/v1/branches?limit=100"),
+        doctors.length ? Promise.resolve(doctors) : api<{ id: string; public_name: string }[]>("/api/v1/doctors?limit=100").catch(() => []),
+      ]);
+      setAdmissions(a ?? []);
+      setAdmissionsLoaded(true);
+      if (Array.isArray(b)) setBranches(b);
+      if (Array.isArray(d)) setDoctors(d);
+    } catch (reason) { toast.error(errorMessage(reason, "Admissions could not be loaded.")); }
+  }, [patientId, toast, branches, doctors]);
+
+  async function saveAdmission(e: FormEvent) {
+    e.preventDefault();
+    setAdmissionSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        branch_id: admissionForm.branch_id,
+        admitting_doctor_id: admissionForm.admitting_doctor_id,
+        admission_type: admissionForm.admission_type,
+        reason: admissionForm.reason,
+      };
+      if (admissionForm.ward) body.ward = admissionForm.ward;
+      if (admissionForm.bed) body.bed = admissionForm.bed;
+      if (admissionForm.diagnosis_on_admission) body.diagnosis_on_admission = admissionForm.diagnosis_on_admission;
+      if (admissionForm.expected_stay_days) body.expected_stay_days = parseInt(admissionForm.expected_stay_days, 10);
+      if (admissionForm.notes) body.notes = admissionForm.notes;
+      await api(`/api/v1/patients/${patientId}/admissions`, { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) });
+      toast.success("Patient admitted.");
+      setShowAdmissionForm(false);
+      setAdmissionForm({ branch_id: "", admitting_doctor_id: "", ward: "", bed: "", admission_type: "elective", reason: "", diagnosis_on_admission: "", expected_stay_days: "", notes: "" });
+      await loadAdmissions();
+    } catch (reason) { toast.error(errorMessage(reason, "Admission could not be created.")); }
+    finally { setAdmissionSaving(false); }
+  }
+
+  async function dischargeAdmission(adm: Admission) {
+    try {
+      await api(`/api/v1/patients/${patientId}/admissions/${adm.id}/discharge`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: adm.version }) });
+      toast.success("Patient discharged.");
+      await loadAdmissions();
+    } catch (reason) { toast.error(errorMessage(reason, "Could not discharge.")); }
+  }
+
   useEffect(() => {
     if (activeTab === "notes" && !notesLoaded) void loadNotes();
     if (activeTab === "timeline" && !historyLoaded) void loadHistory();
@@ -344,7 +398,8 @@ export default function PatientDetailPage() {
     if (activeTab === "treatments" && !treatmentsLoaded) void loadTreatments();
     if (activeTab === "packages" && !packagesLoaded) void loadPackages();
     if (activeTab === "transfers" && !transfersLoaded) void loadTransfers();
-  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers]);
+    if (activeTab === "admissions" && !admissionsLoaded) void loadAdmissions();
+  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, admissionsLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers, loadAdmissions]);
 
   function startEditing() {
     if (!patient) return;
@@ -679,6 +734,62 @@ export default function PatientDetailPage() {
                           </p>
                           <small style={{ color: "var(--muted)", fontSize: 10 }}>{pkg.used_sessions} used</small>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === "admissions" && (
+              <section className="detail-card">
+                <div className="card-heading">
+                  <div><p className="eyebrow">INPATIENT</p><h2>Admissions</h2></div>
+                  {can("patient.update") && <button className="button button-secondary" type="button" onClick={() => setShowAdmissionForm(!showAdmissionForm)}>{showAdmissionForm ? "Cancel" : "Admit patient"} <span>{showAdmissionForm ? "✕" : "+"}</span></button>}
+                </div>
+                {showAdmissionForm && (
+                  <form className="surface-card" style={{ marginBottom: 16 }} onSubmit={(e) => void saveAdmission(e)}>
+                    <div className="form-grid">
+                      <label>Branch *<select required value={admissionForm.branch_id} onChange={(e) => setAdmissionForm({ ...admissionForm, branch_id: e.target.value })}><option value="">Select branch</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+                      <label>Admitting doctor *<select required value={admissionForm.admitting_doctor_id} onChange={(e) => setAdmissionForm({ ...admissionForm, admitting_doctor_id: e.target.value })}><option value="">Select doctor</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.public_name}</option>)}</select></label>
+                      <label>Admission type<select value={admissionForm.admission_type} onChange={(e) => setAdmissionForm({ ...admissionForm, admission_type: e.target.value })}><option value="elective">Elective</option><option value="emergency">Emergency</option><option value="transfer">Transfer</option><option value="observation">Observation</option></select></label>
+                      <label>Ward<input value={admissionForm.ward} onChange={(e) => setAdmissionForm({ ...admissionForm, ward: e.target.value })} placeholder="e.g. Ward A" /></label>
+                      <label>Bed<input value={admissionForm.bed} onChange={(e) => setAdmissionForm({ ...admissionForm, bed: e.target.value })} placeholder="e.g. Bed 3" /></label>
+                      <label>Expected stay (days)<input type="number" min={1} value={admissionForm.expected_stay_days} onChange={(e) => setAdmissionForm({ ...admissionForm, expected_stay_days: e.target.value })} /></label>
+                      <label style={{ gridColumn: "1 / -1" }}>Reason *<textarea required value={admissionForm.reason} onChange={(e) => setAdmissionForm({ ...admissionForm, reason: e.target.value })} rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                      <label style={{ gridColumn: "1 / -1" }}>Diagnosis on admission<textarea value={admissionForm.diagnosis_on_admission} onChange={(e) => setAdmissionForm({ ...admissionForm, diagnosis_on_admission: e.target.value })} rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+                    </div>
+                    <div className="form-actions"><button className="button button-primary" type="submit" disabled={admissionSaving}>{admissionSaving ? "Admitting…" : "Admit patient"}</button></div>
+                  </form>
+                )}
+                {!admissionsLoaded ? (
+                  <div className="dashboard-empty" role="status"><strong>Loading admissions…</strong></div>
+                ) : admissions.length === 0 && !showAdmissionForm ? (
+                  <div className="dashboard-empty"><strong>No admissions</strong><span>Admission records will appear here.</span></div>
+                ) : (
+                  <div>
+                    {admissions.map((adm) => (
+                      <div key={adm.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span className={`pipeline-status status-${adm.status}`} style={{ fontSize: 10 }}>{statusLabel(adm.status)}</span>
+                            <span style={{ fontSize: 10, color: "var(--muted)", background: "var(--line)", padding: "1px 6px", borderRadius: 4 }}>{statusLabel(adm.admission_type)}</span>
+                            {adm.branch_name && <span style={{ fontSize: 12, color: "var(--muted)" }}>{adm.branch_name}</span>}
+                          </div>
+                          <p style={{ margin: "4px 0 0", fontSize: 13 }}>{adm.reason}</p>
+                          <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 11, color: "var(--muted)", flexWrap: "wrap" }}>
+                            {adm.admitting_doctor_name && <span>Dr. {adm.admitting_doctor_name}</span>}
+                            {adm.ward && <span>Ward: {adm.ward}</span>}
+                            {adm.bed && <span>Bed: {adm.bed}</span>}
+                            <span>Admitted {formatDateTime(adm.admitted_at)}</span>
+                            {adm.discharged_at && <span>Discharged {formatDateTime(adm.discharged_at)}</span>}
+                            {adm.expected_stay_days && <span>Expected stay: {adm.expected_stay_days} days</span>}
+                          </div>
+                          {adm.diagnosis_on_admission && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>Dx: {adm.diagnosis_on_admission}</p>}
+                        </div>
+                        {adm.status === "admitted" && can("patient.update") && (
+                          <button className="button button-secondary" style={{ fontSize: 11, padding: "4px 10px" }} type="button" onClick={() => void dischargeAdmission(adm)}>Discharge</button>
+                        )}
                       </div>
                     ))}
                   </div>

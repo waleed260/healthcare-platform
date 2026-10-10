@@ -231,7 +231,9 @@ def list_doctors(request: Request, cursor: str | None = Query(default=None, max_
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT id, public_name, specialty, registration, verification_status, bio, consultation_duration_minutes, status, version, created_at, updated_at
+        SELECT id, public_name, specialty, registration, license_number, verification_status,
+               bio, phone, email, consultation_duration_minutes, booking_status, room_id, notes,
+               status, version, created_at, updated_at
         FROM doctor_profiles
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
@@ -250,7 +252,14 @@ def list_doctors(request: Request, cursor: str | None = Query(default=None, max_
 @catalog_router.post("/doctors", status_code=status.HTTP_201_CREATED)
 def create_doctor(payload: DoctorCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "doctor.manage", csrf_token)
-    row = db.execute(text("INSERT INTO doctor_profiles (clinic_id, public_name, specialty, registration, bio, consultation_duration_minutes) VALUES (:clinic_id, :public_name, :specialty, :registration, :bio, :duration) RETURNING id, public_name, specialty, registration, verification_status, bio, consultation_duration_minutes, status, version"), {"clinic_id": session["clinic_id"], "duration": payload.consultation_duration_minutes, **payload.model_dump(exclude={"consultation_duration_minutes"})}).mappings().one()
+    row = db.execute(text("""
+        INSERT INTO doctor_profiles (clinic_id, public_name, specialty, registration, license_number,
+                                     bio, phone, email, consultation_duration_minutes, booking_status, room_id, notes)
+        VALUES (:clinic_id, :public_name, :specialty, :registration, :license_number,
+                :bio, :phone, :email, :duration, :booking_status, :room_id, :notes)
+        RETURNING id, public_name, specialty, registration, license_number, verification_status,
+                  bio, phone, email, consultation_duration_minutes, booking_status, room_id, notes, status, version
+    """), {"clinic_id": session["clinic_id"], "duration": payload.consultation_duration_minutes, **payload.model_dump(exclude={"consultation_duration_minutes"})}).mappings().one()
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -263,13 +272,13 @@ def update_doctor(doctor_id: str, payload: DoctorUpdate, request: Request, db: S
         raise _error("INVALID_INPUT", "Doctor name cannot be cleared.", status.HTTP_400_BAD_REQUEST)
     if "public_name" in values:
         values["public_name"] = values["public_name"].strip()
-    fields = ("public_name", "specialty", "registration", "bio", "consultation_duration_minutes")
     row = db.execute(text(f"""
         UPDATE doctor_profiles SET {', '.join(f'{field} = :{field}' for field in values)}, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :doctor_id AND archived_at IS NULL AND version = :expected_version
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
                OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id))
-        RETURNING id, public_name, specialty, registration, verification_status, bio, consultation_duration_minutes, status, version, updated_at
+        RETURNING id, public_name, specialty, registration, license_number, verification_status,
+                  bio, phone, email, consultation_duration_minutes, booking_status, room_id, notes, status, version, updated_at
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
     if row is None:
         exists = db.execute(text("""
@@ -284,6 +293,51 @@ def update_doctor(doctor_id: str, payload: DoctorUpdate, request: Request, db: S
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="doctor.update", entity_type="doctor_profile", entity_id=row["id"], outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"fields": sorted(values)})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@catalog_router.get("/doctors/{doctor_id}")
+def doctor_detail(doctor_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "doctor.read")
+    row = db.execute(text("""
+        SELECT d.id, d.public_name, d.specialty, d.registration, d.license_number,
+               d.verification_status, d.bio, d.phone, d.email,
+               d.consultation_duration_minutes, d.booking_status, d.room_id, d.notes,
+               d.status, d.version, d.created_at, d.updated_at,
+               (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = d.clinic_id AND a.doctor_id = d.id AND a.archived_at IS NULL) AS total_appointments,
+               (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = d.clinic_id AND a.doctor_id = d.id AND a.archived_at IS NULL AND a.status NOT IN ('cancelled', 'completed', 'no_show') AND a.starts_at >= now()) AS upcoming_appointments,
+               (SELECT COUNT(DISTINCT a.patient_id) FROM appointments a WHERE a.clinic_id = d.clinic_id AND a.doctor_id = d.id AND a.archived_at IS NULL AND a.patient_id IS NOT NULL) AS total_patients
+        FROM doctor_profiles d
+        WHERE d.clinic_id = :clinic_id AND d.id = CAST(:doctor_id AS uuid) AND d.archived_at IS NULL
+          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = d.id AND s.user_id = :user_id))
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
+    services = db.execute(text("""
+        SELECT s.id, s.name, s.category, s.duration_minutes, s.amount_minor, s.currency, s.status
+        FROM doctor_services ds
+        JOIN services s ON s.clinic_id = ds.clinic_id AND s.id = ds.service_id
+        WHERE ds.clinic_id = :clinic_id AND ds.doctor_id = CAST(:doctor_id AS uuid) AND s.archived_at IS NULL
+        ORDER BY s.name
+    """), {"clinic_id": session["clinic_id"], "doctor_id": doctor_id}).mappings().all()
+    branches = db.execute(text("""
+        SELECT b.id, b.name, b.code, b.status
+        FROM branch_doctors bd
+        JOIN branches b ON b.clinic_id = bd.clinic_id AND b.id = bd.branch_id
+        WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = CAST(:doctor_id AS uuid) AND b.archived_at IS NULL
+        ORDER BY b.name
+    """), {"clinic_id": session["clinic_id"], "doctor_id": doctor_id}).mappings().all()
+    availability = db.execute(text("""
+        SELECT ar.id, ar.branch_id, b.name AS branch_name, ar.weekday, ar.starts_at, ar.ends_at,
+               ar.slot_cadence_minutes, ar.effective_from, ar.effective_to
+        FROM availability_rules ar
+        JOIN branches b ON b.clinic_id = ar.clinic_id AND b.id = ar.branch_id
+        WHERE ar.clinic_id = :clinic_id AND ar.doctor_id = CAST(:doctor_id AS uuid)
+          AND (ar.effective_to IS NULL OR ar.effective_to >= CURRENT_DATE)
+        ORDER BY ar.weekday, ar.starts_at
+    """), {"clinic_id": session["clinic_id"], "doctor_id": doctor_id}).mappings().all()
+    db.commit()
+    return {"data": {**dict(row), "services": [dict(s) for s in services], "branches": [dict(b) for b in branches], "availability": [dict(a) for a in availability]}, "meta": {"request_id": request.state.request_id}}
 
 
 @catalog_router.post("/doctors/{doctor_id}/status")
@@ -567,8 +621,9 @@ def list_branch_doctors(branch_id: str, request: Request, cursor: str | None = Q
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT d.id, d.public_name, d.specialty, d.registration, d.verification_status,
-               d.bio, d.consultation_duration_minutes, d.status
+        SELECT d.id, d.public_name, d.specialty, d.registration, d.license_number,
+               d.verification_status, d.bio, d.phone, d.email,
+               d.consultation_duration_minutes, d.booking_status, d.status
         FROM branch_doctors bd
         JOIN doctor_profiles d ON d.clinic_id = bd.clinic_id AND d.id = bd.doctor_id
         WHERE bd.clinic_id = :clinic_id AND bd.branch_id = :branch_id AND d.archived_at IS NULL

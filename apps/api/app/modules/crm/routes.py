@@ -13,7 +13,7 @@ from app.db.tenant import set_tenant_context
 from app.core.security import cursor_payload, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.crm.merge import merge_patients
-from app.modules.crm.schemas import CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, DischargeCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate, TransferCreate, VitalCreate
+from app.modules.crm.schemas import AdmissionCreate, AdmissionDischarge, AdmissionUpdate, CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, DischargeCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate, TransferCreate, VitalCreate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -898,5 +898,98 @@ def discharge_create(patient_id: UUID, payload: DischargeCreate, request: Reques
         "discharged_by": session["user_id"],
     }).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_discharge.create", entity_type="patient_discharge", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+# ── Patient admissions ──────────────────────────────────────────────────────
+
+
+@router.get("/{patient_id}/admissions")
+def admission_list(patient_id: UUID, request: Request, limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "patient.read")
+    _require_patient(db, session, patient_id)
+    rows = db.execute(text("""
+        SELECT a.id, a.branch_id, b.name AS branch_name,
+               a.admitting_doctor_id, d.public_name AS admitting_doctor_name,
+               a.consulting_doctor_id, cd.public_name AS consulting_doctor_name,
+               a.ward, a.bed, a.admission_type, a.reason, a.diagnosis_on_admission,
+               a.expected_stay_days, a.status, a.admitted_at, a.discharged_at,
+               a.notes, a.version, a.created_at
+        FROM patient_admissions a
+        LEFT JOIN branches b ON b.clinic_id = a.clinic_id AND b.id = a.branch_id
+        LEFT JOIN doctor_profiles d ON d.clinic_id = a.clinic_id AND d.id = a.admitting_doctor_id
+        LEFT JOIN doctor_profiles cd ON cd.clinic_id = a.clinic_id AND cd.id = a.consulting_doctor_id
+        WHERE a.clinic_id = :clinic_id AND a.patient_id = :patient_id AND a.archived_at IS NULL
+        ORDER BY a.admitted_at DESC LIMIT :lim
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "lim": limit}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{patient_id}/admissions", status_code=status.HTTP_201_CREATED)
+def admission_create(patient_id: UUID, payload: AdmissionCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    active = db.execute(text("SELECT id FROM patient_admissions WHERE clinic_id = :clinic_id AND patient_id = :pid AND status = 'admitted' AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "pid": patient_id}).scalar_one_or_none()
+    if active is not None:
+        raise _error("CONFLICT", "Patient already has an active admission.", status.HTTP_409_CONFLICT)
+    row = db.execute(text("""
+        INSERT INTO patient_admissions (clinic_id, patient_id, branch_id, admitting_doctor_id, consulting_doctor_id,
+                                        ward, bed, admission_type, reason, diagnosis_on_admission, expected_stay_days, notes, created_by)
+        VALUES (:clinic_id, :patient_id, :branch_id, :admitting_doctor_id, :consulting_doctor_id,
+                :ward, :bed, :admission_type, :reason, :diagnosis_on_admission, :expected_stay_days, :notes, :created_by)
+        RETURNING id, status, admitted_at, version
+    """), {
+        "clinic_id": session["clinic_id"], "patient_id": patient_id,
+        "branch_id": payload.branch_id, "admitting_doctor_id": payload.admitting_doctor_id,
+        "consulting_doctor_id": payload.consulting_doctor_id,
+        "ward": payload.ward, "bed": payload.bed, "admission_type": payload.admission_type,
+        "reason": payload.reason, "diagnosis_on_admission": payload.diagnosis_on_admission,
+        "expected_stay_days": payload.expected_stay_days, "notes": payload.notes,
+        "created_by": session["user_id"],
+    }).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_admission.create", entity_type="patient_admission", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.patch("/{patient_id}/admissions/{admission_id}")
+def admission_update(patient_id: UUID, admission_id: UUID, payload: AdmissionUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    current = db.execute(text("SELECT version, status FROM patient_admissions WHERE clinic_id = :clinic_id AND id = :id AND patient_id = :pid AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": admission_id, "pid": patient_id}).mappings().one_or_none()
+    if current is None:
+        raise _error("NOT_FOUND", "Admission not found.", status.HTTP_404_NOT_FOUND)
+    if current["status"] != "admitted":
+        raise _error("FORBIDDEN", "Only active admissions can be updated.", status.HTTP_403_FORBIDDEN)
+    if current["version"] != payload.expected_version:
+        raise _error("VERSION_CONFLICT", "Admission changed before update.", status.HTTP_409_CONFLICT)
+    values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
+    if not values:
+        raise _error("INVALID_INPUT", "At least one field is required.", status.HTTP_400_BAD_REQUEST)
+    updates = [f"{field} = :{field}" for field in values]
+    row = db.execute(text(f"""
+        UPDATE patient_admissions SET {', '.join(updates)}, version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND id = :id
+        RETURNING id, ward, bed, consulting_doctor_id, diagnosis_on_admission, expected_stay_days, notes, status, version, updated_at
+    """), {"clinic_id": session["clinic_id"], "id": admission_id, **values}).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_admission.update", entity_type="patient_admission", entity_id=admission_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{patient_id}/admissions/{admission_id}/discharge")
+def admission_discharge(patient_id: UUID, admission_id: UUID, payload: AdmissionDischarge, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "patient.update", csrf_token)
+    _require_patient(db, session, patient_id)
+    row = db.execute(text("""
+        UPDATE patient_admissions SET status = 'discharged', discharged_at = now(), version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND id = :id AND patient_id = :pid AND status = 'admitted' AND version = :expected_version
+        RETURNING id, status, discharged_at, version
+    """), {"clinic_id": session["clinic_id"], "id": admission_id, "pid": patient_id, "expected_version": payload.expected_version}).mappings().one_or_none()
+    if row is None:
+        raise _error("VERSION_CONFLICT", "Admission not found, already discharged, or changed.", status.HTTP_409_CONFLICT)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_admission.discharge", entity_type="patient_admission", entity_id=admission_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}

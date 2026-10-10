@@ -11,6 +11,9 @@ type Doctor = {
   specialty: string | null;
   status: string;
   consultation_duration_minutes: number | null;
+  booking_status: string;
+  license_number: string | null;
+  phone: string | null;
 };
 type Appointment = {
   id: string;
@@ -24,6 +27,8 @@ type Appointment = {
 const time = (v: string) =>
   new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(v));
 const statusClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
+const bookingColor: Record<string, string> = { accepting: "var(--leaf)", paused: "#e0a458", not_accepting: "var(--coral)" };
+const bookingLabel: Record<string, string> = { accepting: "Accepting", paused: "Paused", not_accepting: "Closed" };
 
 export default function DoctorsPage() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -137,8 +142,15 @@ export default function DoctorsPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                       <span className="doctor-avatar">{doc.public_name.charAt(0).toUpperCase()}</span>
                       <div>
-                        <h3 style={{ margin: 0, fontSize: 15 }}>{doc.public_name}</h3>
-                        {doc.specialty && <small style={{ color: "var(--muted)", fontSize: 11 }}>{doc.specialty}</small>}
+                        <h3 style={{ margin: 0, fontSize: 15 }}>
+                          <Link href={`/doctors/${doc.id}`} style={{ color: "inherit", textDecoration: "none" }} onClick={(e) => e.stopPropagation()}>
+                            {doc.public_name}
+                          </Link>
+                        </h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {doc.specialty && <small style={{ color: "var(--muted)", fontSize: 11 }}>{doc.specialty}</small>}
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: bookingColor[doc.booking_status] ?? "var(--muted)" }} title={bookingLabel[doc.booking_status] ?? doc.booking_status} />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -162,6 +174,8 @@ export default function DoctorsPage() {
 
                 {isExpanded && (
                   <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+                    {doc.phone && <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Phone: {doc.phone}</p>}
+                    {doc.license_number && <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>License: {doc.license_number}</p>}
                     <p className="eyebrow" style={{ marginBottom: 8 }}>TODAY&apos;S SCHEDULE</p>
                     {todayAppts.length === 0 ? (
                       <p style={{ color: "var(--muted)", fontSize: 12 }}>No appointments today.</p>
@@ -199,6 +213,12 @@ export default function DoctorsPage() {
                         ))}
                       </div>
                     </>}
+
+                    <div style={{ marginTop: 12 }}>
+                      <Link className="button button-secondary" href={`/doctors/${doc.id}`} style={{ fontSize: 11, padding: "4px 12px" }}>
+                        View full profile →
+                      </Link>
+                    </div>
                   </div>
                 )}
               </article>
@@ -217,7 +237,9 @@ export default function DoctorsPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span className="doctor-avatar" style={{ background: "var(--muted)" }}>{doc.public_name.charAt(0).toUpperCase()}</span>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: 15 }}>{doc.public_name}</h3>
+                      <h3 style={{ margin: 0, fontSize: 15 }}>
+                        <Link href={`/doctors/${doc.id}`} style={{ color: "inherit", textDecoration: "none" }}>{doc.public_name}</Link>
+                      </h3>
                       {doc.specialty && <small style={{ color: "var(--muted)", fontSize: 11 }}>{doc.specialty}</small>}
                     </div>
                   </div>
