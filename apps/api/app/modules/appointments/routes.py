@@ -158,6 +158,7 @@ def public_management_cancel(reference: str, payload: PublicCancelRequest, reque
     except ValueError as exc:
         raise _error("INVALID_TRANSITION", "This appointment cannot be cancelled.", status.HTTP_400_BAD_REQUEST) from exc
     db.execute(text("UPDATE appointments SET status = 'cancelled', blocks_time = false, cancellation_reason = :reason, status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": clinic_id, "id": appointment["id"], "reason": payload.reason})
+    db.execute(text("UPDATE queue_entries SET status = 'cancelled', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :id AND status IN ('waiting', 'in_consultation')"), {"clinic_id": clinic_id, "id": appointment["id"]})
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, reason) VALUES (:clinic_id, :id, :from_status, 'cancelled', :reason)"), {"clinic_id": clinic_id, "id": appointment["id"], "from_status": appointment["status"], "reason": payload.reason})
     db.execute(text("UPDATE booking_management_tokens SET revoked_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :id"), {"clinic_id": clinic_id, "id": appointment["id"]})
     record_event(db, clinic_id=clinic_id, actor_user_id=None, action="public_appointment.cancel", entity_type="appointment", entity_id=appointment["id"], outcome="success", request_id=UUID(request.state.request_id))
@@ -317,6 +318,8 @@ def appointment_transition(appointment_id: UUID, payload: AppointmentTransitionR
     blocks_time = payload.to_status not in {"cancelled", "rescheduled", "no_show"}
     reason = ": ".join(value for value in (payload.reason_code, payload.note) if value)
     updated = db.execute(text("UPDATE appointments SET status = :status, blocks_time = :blocks_time, cancellation_reason = :reason, status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, status, version, status_changed_at"), {"clinic_id": session["clinic_id"], "id": appointment_id, "status": payload.to_status, "blocks_time": blocks_time, "reason": reason or None}).mappings().one()
+    if payload.to_status in {"cancelled", "rescheduled", "no_show"}:
+        db.execute(text("UPDATE queue_entries SET status = 'cancelled', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :id AND status IN ('waiting', 'in_consultation')"), {"clinic_id": session["clinic_id"], "id": appointment_id})
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id, reason) VALUES (:clinic_id, :id, :from_status, :to_status, :actor, :reason)"), {"clinic_id": session["clinic_id"], "id": appointment_id, "from_status": row["status"], "to_status": payload.to_status, "actor": session["user_id"], "reason": reason or None})
     _audit(db, request, session, f"appointment.{payload.to_status}", appointment_id)
     db.commit()

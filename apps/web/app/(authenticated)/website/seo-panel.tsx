@@ -10,6 +10,11 @@ type RedirectRow = { id: string; from_path: string; to_path: string; status_code
 // eslint-disable-next-line no-unused-vars
 type SaveSeo = (seo: SeoSettings) => Promise<void>;
 
+function completeness(page: PageRow | undefined): number {
+  if (!page) return 0;
+  return [page.seo_title, page.seo_description, page.canonical_url].filter(Boolean).length;
+}
+
 export default function SeoPanel({ website, disabled, onSaveSeo }: { website: { id: string; brand?: SiteBrand }; disabled: boolean; onSaveSeo: SaveSeo }) {
   const [pages, setPages] = useState<PageRow[]>([]);
   const [redirects, setRedirects] = useState<RedirectRow[]>([]);
@@ -52,47 +57,79 @@ export default function SeoPanel({ website, disabled, onSaveSeo }: { website: { 
   };
   const removeRedirect = (id: string) => void run(() => api(`/api/v1/websites/${website.id}/redirects/${id}`, { method: "DELETE", headers: writeHeaders() }), "Redirect removed.");
 
+  const filled = completeness(page);
+
   return <section className="detail-card seo-panel" aria-label="SEO, sitemap and redirects">
     <div className="card-heading"><div><p className="eyebrow">SEARCH ENGINE OPTIMIZATION</p><h2>Be found</h2></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
     {notice && <div className="permission-strip" aria-live="polite"><span className="permission-ok">{notice}</span></div>}
 
-    <fieldset className="theme-group" disabled={disabled || busy}><legend>Site-wide settings</legend>
-      <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input type="checkbox" checked={seo.robots_index ?? true} onChange={(event) => void run(() => onSaveSeo({ ...seo, robots_index: event.target.checked }), "Indexing preference saved.")} style={{ width: "auto" }} />
+    {/* ─── Site-wide ─── */}
+    <div className="seo-section">
+      <div className="seo-section-header seo-header-leaf">
+        <span className="seo-section-icon">◎</span>
+        <span className="seo-section-label">Site-wide</span>
+        <span className="seo-badge">{seo.robots_index !== false ? "Indexed" : "No-index"}</span>
+      </div>
+      <fieldset className="seo-section-body" disabled={disabled || busy}>
+        <label className="seo-check-label">
+          <input type="checkbox" checked={seo.robots_index ?? true} onChange={(event) => void run(() => onSaveSeo({ ...seo, robots_index: event.target.checked }), "Indexing preference saved.")} />
           Allow search engines to index
         </label>
         <label>Site name<input maxLength={120} defaultValue={seo.site_name ?? ""} onBlur={(event) => { const next = event.target.value.trim() || null; if (next !== (seo.site_name ?? null)) void run(() => onSaveSeo({ ...seo, site_name: next }), "Site name saved."); }} /></label>
+        <p className="field-note">Published sites expose <code>/your-clinic/sitemap.xml</code> and <code>/your-clinic/robots.txt</code> automatically.</p>
+      </fieldset>
+    </div>
+
+    {/* ─── Page SEO ─── */}
+    <div className="seo-section">
+      <div className="seo-section-header seo-header-blue">
+        <span className="seo-section-icon">⌕</span>
+        <span className="seo-section-label">Page SEO</span>
+        {page && <span className="seo-badge">{filled}/3 fields</span>}
       </div>
-      <p className="field-note">Published sites expose <code>/your-clinic/sitemap.xml</code> and <code>/your-clinic/robots.txt</code> automatically.</p>
-    </fieldset>
+      <div className="seo-section-body">
+        <label>Select page<select value={pageId} onChange={(event) => setPageId(event.target.value)}>{pages.map((item) => <option key={item.id} value={item.id}>{item.title} (/{item.slug})</option>)}</select></label>
+        {page && <form key={page.id + page.version} onSubmit={savePage} className="seo-page-form">
+          <label>SEO title<input name="seo_title" maxLength={160} defaultValue={page.seo_title ?? ""} placeholder="Page title for search results" /></label>
+          <label>Meta description<textarea name="seo_description" maxLength={320} defaultValue={page.seo_description ?? ""} rows={2} placeholder="Brief description shown in search results" /></label>
+          <label>Canonical URL<input name="canonical_url" maxLength={500} defaultValue={page.canonical_url ?? ""} placeholder="https://… or /path" /></label>
+          <div className="seo-social-row">
+            <label>Social title<input name="og_title" maxLength={160} defaultValue={page.og_title ?? ""} placeholder="Title for social sharing" /></label>
+            <label>Social description<input name="og_description" maxLength={320} defaultValue={page.og_description ?? ""} placeholder="Description for social" /></label>
+          </div>
+          <label className="seo-check-label">
+            <input name="noindex" type="checkbox" defaultChecked={page.noindex} />
+            Hide from search engines (noindex)
+          </label>
+          <div className="seo-form-actions"><button className="button button-primary" type="submit" disabled={busy}>Save page SEO <span>↗</span></button></div>
+        </form>}
+      </div>
+    </div>
 
-    <fieldset className="theme-group" disabled={disabled || busy}><legend>Page SEO</legend>
-      <label>Select page<select value={pageId} onChange={(event) => setPageId(event.target.value)} style={{ width: "100%", marginBottom: 12 }}>{pages.map((item) => <option key={item.id} value={item.id}>{item.title} (/{item.slug})</option>)}</select></label>
-      {page && <form key={page.id + page.version} onSubmit={savePage} className="manage-form"><div className="form-grid" style={{ gap: 12 }}>
-        <label>SEO title<input name="seo_title" maxLength={160} defaultValue={page.seo_title ?? ""} placeholder="Page title for search results" /></label>
-        <label>Meta description<textarea name="seo_description" maxLength={320} defaultValue={page.seo_description ?? ""} rows={2} placeholder="Brief description shown in search results" style={{ resize: "vertical" }} /></label>
-        <label>Canonical URL<input name="canonical_url" maxLength={500} defaultValue={page.canonical_url ?? ""} placeholder="https://… or /path" /></label>
-        <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <label>Social title<input name="og_title" maxLength={160} defaultValue={page.og_title ?? ""} placeholder="Title for social sharing" /></label>
-          <label>Social description<input name="og_description" maxLength={320} defaultValue={page.og_description ?? ""} placeholder="Description for social sharing" /></label>
-        </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input name="noindex" type="checkbox" defaultChecked={page.noindex} style={{ width: "auto" }} />
-          Hide from search engines (noindex)
-        </label>
-      </div><div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Save page SEO <span>↗</span></button></div></form>}
-    </fieldset>
-
-    <fieldset className="theme-group" disabled={disabled || busy}><legend>URL redirects</legend>
-      <form className="form-grid" style={{ gridTemplateColumns: "1fr 1fr auto auto", gap: 8, alignItems: "end", marginBottom: 12 }} onSubmit={addRedirect}>
-        <label>From<input name="from" required placeholder="/old-page" aria-label="From path" pattern="/[A-Za-z0-9\-._~/]*" /></label>
-        <label>To<input name="to" required placeholder="/new-page or https://…" aria-label="To" /></label>
-        <label>Type<select name="code" defaultValue="301" aria-label="Type"><option value="301">301</option><option value="302">302</option></select></label>
-        <button className="button button-secondary" type="submit" style={{ marginBottom: 2 }}>Add</button>
-      </form>
-      {redirects.length === 0 ? <p className="field-note">No redirects configured yet.</p> : <div style={{ display: "grid", gap: 6 }}>{redirects.map((item) => <div className="theme-row" key={item.id} style={{ background: "var(--paper, #f9f9f6)", padding: "8px 10px", borderRadius: 8, margin: 0 }}><code style={{ fontSize: "0.85em" }}>{item.from_path}</code><span style={{ color: "var(--muted)" }}>→</span><code style={{ fontSize: "0.85em" }}>{item.to_path}</code><span className="muted-mono">{item.status_code}</span><button className="text-control" onClick={() => removeRedirect(item.id)}>Remove</button></div>)}</div>}
-    </fieldset>
+    {/* ─── Redirects ─── */}
+    <div className="seo-section">
+      <div className="seo-section-header seo-header-amber">
+        <span className="seo-section-icon">↻</span>
+        <span className="seo-section-label">Redirects</span>
+        <span className="seo-badge">{redirects.length}</span>
+      </div>
+      <div className="seo-section-body">
+        <form className="seo-redirect-form" onSubmit={addRedirect}>
+          <fieldset disabled={disabled || busy} style={{ border: 0, padding: 0, margin: 0 }}>
+            <label>From<input name="from" required placeholder="/old-page" aria-label="From path" pattern="/[A-Za-z0-9\-._~/]*" /></label>
+            <label>To<input name="to" required placeholder="/new-page or https://…" aria-label="To" /></label>
+            <div className="seo-redirect-row">
+              <label>Type<select name="code" defaultValue="301" aria-label="Type"><option value="301">301</option><option value="302">302</option></select></label>
+              <button className="button button-secondary" type="submit">Add</button>
+            </div>
+          </fieldset>
+        </form>
+        {redirects.length === 0 ? <p className="field-note">No redirects configured yet.</p> : <div className="seo-redirect-list">{redirects.map((item) => <div className="redirect-item" key={item.id}>
+          <div className="redirect-item-paths"><code>{item.from_path}</code><span className="redirect-arrow">→</span><code>{item.to_path}</code></div>
+          <div className="redirect-item-meta"><span className="muted-mono">{item.status_code}</span><button className="text-control" onClick={() => removeRedirect(item.id)} disabled={disabled || busy}>Remove</button></div>
+        </div>)}</div>}
+      </div>
+    </div>
   </section>;
 }

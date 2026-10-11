@@ -155,6 +155,14 @@ async def http_error_handler(request: Request, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"error": error, "meta": {"request_id": getattr(request.state, "request_id", str(uuid4()))}})
 
 
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    import logging
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    logging.getLogger("healthcare.error").exception("unhandled_exception request_id=%s exc_type=%s", request_id, type(exc).__name__)
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again.", "fields": None}, "meta": {"request_id": request_id}})
+
+
 
 
 @app.get("/health/live", tags=["system"])

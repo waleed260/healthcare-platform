@@ -461,7 +461,9 @@ def queue_start(queue_id: str, payload: QueueCommand, request: Request, db: Sess
     if appointment is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
     if appointment["status"] != "waiting":
-        raise _error("INVALID_STATE", "The appointment is not waiting for consultation.", status.HTTP_400_BAD_REQUEST)
+        db.execute(text("UPDATE queue_entries SET status = 'cancelled', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND status IN ('waiting', 'in_consultation')"), {"clinic_id": session["clinic_id"], "id": queue_id})
+        db.commit()
+        raise _error("STALE_QUEUE_ENTRY", f"This appointment is now '{appointment['status']}' and has been removed from the queue.", status.HTTP_409_CONFLICT)
     result = db.execute(text("""
         UPDATE queue_entries
         SET status = 'in_consultation', started_at = now(), version = version + 1, updated_at = now()
@@ -486,6 +488,10 @@ def queue_complete(queue_id: str, payload: QueueCommand, request: Request, db: S
     appointment = db.execute(text("SELECT status FROM appointments WHERE clinic_id = :clinic_id AND id = :appointment_id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]}).mappings().one_or_none()
     if appointment is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
+    if appointment["status"] in ("cancelled", "rescheduled", "no_show"):
+        db.execute(text("UPDATE queue_entries SET status = 'cancelled', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND status IN ('waiting', 'in_consultation')"), {"clinic_id": session["clinic_id"], "id": queue_id})
+        db.commit()
+        raise _error("STALE_QUEUE_ENTRY", f"This appointment is now '{appointment['status']}' and has been removed from the queue.", status.HTTP_409_CONFLICT)
     result = db.execute(text("""
         UPDATE queue_entries
         SET status = 'completed', completed_at = now(), version = version + 1, updated_at = now()

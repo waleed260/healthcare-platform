@@ -63,7 +63,11 @@ export default function QueuePage() {
       await post(`/api/v1/operations/queue/${entry.id}/${action}`, { expected_version: entry.version });
       setNotice(entry.status === "waiting" ? `${entry.full_name} is now in consultation.` : `${entry.full_name}'s consultation is complete.`);
       await load();
-    } catch (reason) { setError(errorMessage(reason, "The queue action could not be completed.")); }
+    } catch (reason) {
+      const msg = errorMessage(reason, "The queue action could not be completed.");
+      if (msg.includes("removed from the queue")) { setNotice(msg); } else { setError(msg); }
+      await load();
+    }
     finally { setWorking(null); }
   }
 
@@ -74,7 +78,7 @@ export default function QueuePage() {
       setNotice(`${entry.full_name}'s priority updated to ${reorderPriority}.`);
       setReorderTarget(null); setReorderPriority(0); setReorderReason("");
       await load();
-    } catch (reason) { setError(errorMessage(reason, "Priority could not be updated.")); }
+    } catch (reason) { setError(errorMessage(reason, "Priority could not be updated.")); await load(); }
     finally { setWorking(null); }
   }
 
@@ -86,7 +90,7 @@ export default function QueuePage() {
       await api(`/api/v1/operations/queue/${entry.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: entry.version }) });
       toast.success(`${entry.full_name} removed from the queue.`);
       await load();
-    } catch (reason) { setError(errorMessage(reason, "The queue entry could not be removed.")); }
+    } catch (reason) { setError(errorMessage(reason, "The queue entry could not be removed.")); await load(); }
     finally { setWorking(null); }
   }
 
