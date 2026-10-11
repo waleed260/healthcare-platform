@@ -76,10 +76,10 @@ export default function ManagePage() {
         has("staff.read") ? api<Role[]>("/api/v1/staff/roles?limit=100") : Promise.resolve([]),
         has("specialty.read") ? api<Specialty[]>("/api/v1/specialties/library") : Promise.resolve([]),
         has("clinic.read") ? api<Upgrade[]>("/api/v1/upgrade-requests") : Promise.resolve([]),
-        has("service.manage") ? api<ServiceTemplate[]>("/api/v1/service-templates?limit=100").catch(() => []) : Promise.resolve([]),
+        has("service.manage") ? api<ServiceTemplate[]>("/api/v1/catalog/service-templates?limit=100").catch(() => []) : Promise.resolve([]),
         has("staff.manage") ? api<Invitation[]>("/api/v1/staff/invitations?limit=50").catch(() => []) : Promise.resolve([]),
-        has("clinic.read") ? api<FeatureLimit[]>("/api/v1/feature-limits").catch(() => []) : Promise.resolve([]),
-        has("admin.plan.manage") ? api<Subscription>("/api/v1/subscription").catch(() => null) : Promise.resolve(null),
+        has("clinic.read") ? api<FeatureLimit[]>("/api/v1/governance/feature-limits").catch(() => []) : Promise.resolve([]),
+        has("admin.plan.manage") ? api<Subscription>("/api/v1/governance/subscription").catch(() => null) : Promise.resolve(null),
       ]);
       setServices(serviceRows ?? []);
       setBranches(branchRows ?? []);
@@ -422,7 +422,7 @@ export default function ManagePage() {
             if (!ok) return;
             setBusy(true);
             try {
-              await api("/api/v1/subscription", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ plan_code: subscription.code, status: "cancelled" }) });
+              await api("/api/v1/governance/subscription", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ plan_code: subscription.code, status: "cancelled" }) });
               toast.success("Subscription cancelled. Access continues until the end of the current period.");
               await load();
             } catch (reason) { toast.error(errorMessage(reason, "The subscription could not be cancelled.")); }

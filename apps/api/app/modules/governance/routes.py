@@ -59,6 +59,29 @@ def _patient_visible_to_user(db: Session, session: dict, patient_id: UUID) -> bo
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "patient_id": patient_id}).scalar_one())
 
 
+@router.get("/feature-limits")
+def feature_limits_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "clinic.read")
+    rows = db.execute(text("""
+        SELECT fl.feature_code AS feature,
+               COALESCE(u.usage_count, 0) AS current_usage,
+               fl.limit_value
+        FROM clinic_subscriptions cs
+        JOIN feature_limits fl ON fl.plan_id = cs.plan_id AND fl.enabled = true
+        LEFT JOIN clinic_feature_usage u
+            ON u.clinic_id = cs.clinic_id
+           AND u.feature_code = fl.feature_code
+           AND u.period_start = date_trunc('month', now())::date
+        WHERE cs.clinic_id = :clinic_id
+          AND cs.status IN ('trialing', 'active')
+          AND cs.starts_at <= now()
+          AND (cs.ends_at IS NULL OR cs.ends_at > now())
+        ORDER BY fl.feature_code
+    """), {"clinic_id": session["clinic_id"]}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
 @router.get("/subscription")
 def subscription_get(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "admin.plan.manage")
