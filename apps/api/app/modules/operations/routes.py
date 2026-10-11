@@ -109,7 +109,7 @@ def _follow_up_context(db: Session, session_token: str | None, follow_up_id: str
         LEFT JOIN branches b ON b.clinic_id = a.clinic_id AND b.id = a.branch_id
         WHERE f.clinic_id = :clinic_id AND f.id = :follow_up_id AND p.archived_at IS NULL
           AND (a.id IS NULL OR (a.archived_at IS NULL AND b.status = 'active' AND b.archived_at IS NULL))
-        FOR UPDATE
+        FOR UPDATE OF f
     """), {"clinic_id": session["clinic_id"], "follow_up_id": follow_up_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Follow-up task not found.", status.HTTP_404_NOT_FOUND)
