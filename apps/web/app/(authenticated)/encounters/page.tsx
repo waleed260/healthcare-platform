@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
 import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
@@ -18,15 +19,23 @@ type Doctor = { id: string; public_name: string };
 type Patient = { id: string; full_name: string; mrn: string | null };
 
 const encounterTypes = ["general", "emergency", "dental", "dermatology", "hair", "skin", "follow_up", "procedure"] as const;
-const statusLabel = (v: string) => v === "in_review" ? "In Review" : v.charAt(0).toUpperCase() + v.slice(1);
+const statusLabels: Record<string, string> = {
+  all: "All", draft: "Draft", in_progress: "In Progress", ready_for_discharge: "Ready", discharged: "Discharged", finalized: "Finalized", referred: "Referred", transferred: "Transferred",
+};
+const statusLabel = (v: string) => statusLabels[v] ?? v.charAt(0).toUpperCase() + v.slice(1);
 const fmtDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v));
 const fmtDateTime = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
 const typeLabel = (v: string) => v.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
-const statusColor: Record<string, string> = { draft: "#e0a458", in_review: "var(--accent)", finalized: "var(--leaf)" };
+const statusColor: Record<string, string> = {
+  draft: "#e0a458", in_progress: "var(--accent)", ready_for_discharge: "#5886b4",
+  discharged: "var(--leaf)", finalized: "#3c5149", referred: "#8468a8", transferred: "#4c7d91",
+};
+const filterTabs = ["all", "draft", "in_progress", "ready_for_discharge", "discharged", "finalized"];
 
 export default function EncountersPage() {
   const toast = useToast();
   const confirm = useConfirm();
+  const searchParams = useSearchParams();
 
   const [encounters, setEncounters] = useState<Encounter[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -42,6 +51,27 @@ export default function EncountersPage() {
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [encType, setEncType] = useState<string>("general");
   const [complaint, setComplaint] = useState("");
+  const [appointmentId, setAppointmentId] = useState<string | null>(null);
+
+  const startHandled = useRef(false);
+  useEffect(() => {
+    if (startHandled.current) return;
+    if (searchParams.get("start") !== "1") return;
+    startHandled.current = true;
+    setShowForm(true);
+    const apptId = searchParams.get("appointment_id");
+    const doctorId = searchParams.get("doctor_id");
+    const patientId = searchParams.get("patient_id");
+    const type = searchParams.get("type");
+    if (apptId) setAppointmentId(apptId);
+    if (doctorId) setSelectedDoctor(doctorId);
+    if (type && encounterTypes.includes(type as typeof encounterTypes[number])) setEncType(type);
+    if (patientId) {
+      void api<Patient>(`/api/v1/patients/${patientId}`).then((p) => {
+        if (p) setSelectedPatient(p);
+      }).catch(() => {});
+    }
+  }, [searchParams]);
 
   const loadEncounters = useCallback(async () => {
     setLoading(true);
@@ -84,12 +114,14 @@ export default function EncountersPage() {
         encounter_type: encType,
       };
       if (complaint.trim()) body.chief_complaint = complaint.trim();
+      if (appointmentId) body.appointment_id = appointmentId;
       const result = await api<{ id: string }>("/api/v1/encounters", { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) });
       toast.success("Encounter created.");
       setShowForm(false);
       setSelectedPatient(null);
       setPatientSearch("");
       setComplaint("");
+      setAppointmentId(null);
       if (result?.id) {
         window.location.href = `/encounters/${result.id}`;
       } else {
@@ -123,9 +155,8 @@ export default function EncountersPage() {
     anime({ targets: listRef.current.querySelectorAll(".enc-row"), opacity: [0, 1], translateY: [16, 0], duration: 400, delay: anime.stagger(30, { start: 60 }), easing: "easeOutCubic" });
   }, [loading, encounters.length]);
 
-  const drafts = encounters.filter((e) => e.status === "draft").length;
-  const reviews = encounters.filter((e) => e.status === "in_review").length;
-  const finalized = encounters.filter((e) => e.status === "finalized").length;
+  const counts: Record<string, number> = {};
+  for (const e of encounters) counts[e.status] = (counts[e.status] ?? 0) + 1;
 
   return (
     <section className="dash-content">
@@ -142,16 +173,16 @@ export default function EncountersPage() {
       {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
 
       <div className="billing-summary">
-        <div><span className="eyebrow">DRAFTS</span><strong style={{ color: drafts > 0 ? "#e0a458" : undefined }}>{drafts}</strong></div>
-        <div><span className="eyebrow">IN REVIEW</span><strong>{reviews}</strong></div>
-        <div><span className="eyebrow">FINALIZED</span><strong>{finalized}</strong></div>
+        <div><span className="eyebrow">DRAFTS</span><strong style={{ color: (counts.draft ?? 0) > 0 ? "#e0a458" : undefined }}>{counts.draft ?? 0}</strong></div>
+        <div><span className="eyebrow">IN PROGRESS</span><strong>{counts.in_progress ?? 0}</strong></div>
+        <div><span className="eyebrow">DISCHARGED</span><strong>{counts.discharged ?? 0}</strong></div>
         <div><span className="eyebrow">TOTAL</span><strong>{encounters.length}</strong></div>
       </div>
 
       <div className="pipeline-toolbar">
         <div className="pipeline-tabs" role="tablist">
-          {["all", "draft", "in_review", "finalized"].map((s) => (
-            <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{statusLabel(s === "all" ? "all" : s)}</button>
+          {filterTabs.map((s) => (
+            <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{statusLabel(s)}</button>
           ))}
         </div>
       </div>
@@ -225,8 +256,8 @@ export default function EncountersPage() {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <Link className="button button-secondary" href={`/encounters/${enc.id}`} style={{ fontSize: 11, padding: "4px 10px" }}>{enc.status === "finalized" ? "View" : "Edit"}</Link>
-                  {enc.status !== "finalized" && (
+                  <Link className="button button-secondary" href={`/encounters/${enc.id}`} style={{ fontSize: 11, padding: "4px 10px" }}>{["finalized", "discharged"].includes(enc.status) ? "View" : "Edit"}</Link>
+                  {!["finalized", "discharged"].includes(enc.status) && (
                     <button className="ghost-button" style={{ fontSize: 10, color: "var(--coral)", padding: "2px 6px" }} type="button" onClick={() => void deleteEncounter(enc)}>Delete</button>
                   )}
                 </div>

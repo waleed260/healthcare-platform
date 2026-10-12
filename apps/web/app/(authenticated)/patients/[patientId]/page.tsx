@@ -28,7 +28,9 @@ type TreatmentPlan = { id: string; title: string; diagnosis: string | null; stat
 type PatientPackage = { id: string; name: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number; purchased_at: string; expires_at: string };
 type Admission = { id: string; branch_id: string; branch_name: string | null; admitting_doctor_id: string; admitting_doctor_name: string | null; consulting_doctor_id: string | null; consulting_doctor_name: string | null; ward: string | null; bed: string | null; admission_type: string; reason: string; diagnosis_on_admission: string | null; expected_stay_days: number | null; status: string; admitted_at: string; discharged_at: string | null; notes: string | null; version: number; created_at: string };
 
-type Tab = "overview" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
+type Tab = "overview" | "encounters" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
+
+type PatientEncounter = { id: string; encounter_type: string; status: string; chief_complaint: string | null; diagnosis: string | null; doctor_name: string; created_at: string; finalized_at: string | null };
 
 function computeAge(dob: string | null): { years: number; months: number; label: string; category: string } | null {
   if (!dob) return null;
@@ -57,6 +59,7 @@ const AGE_CATEGORY_STYLE: Record<string, { bg: string; fg: string }> = {
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "appointments", label: "Appointments" },
+  { key: "encounters", label: "Encounters" },
   { key: "vitals", label: "Vitals" },
   { key: "treatments", label: "Treatments" },
   { key: "prescriptions", label: "Prescriptions" },
@@ -142,6 +145,8 @@ export default function PatientDetailPage() {
   const [treatmentsLoaded, setTreatmentsLoaded] = useState(false);
   const [packages, setPackages] = useState<PatientPackage[]>([]);
   const [packagesLoaded, setPackagesLoaded] = useState(false);
+  const [patientEncounters, setPatientEncounters] = useState<PatientEncounter[]>([]);
+  const [encountersLoaded, setEncountersLoaded] = useState(false);
   const [admissions, setAdmissions] = useState<Admission[]>([]);
   const [admissionsLoaded, setAdmissionsLoaded] = useState(false);
   const [showAdmissionForm, setShowAdmissionForm] = useState(false);
@@ -367,6 +372,14 @@ export default function PatientDetailPage() {
     finally { setDischargeSaving(false); }
   }
 
+  const loadEncounters = useCallback(async () => {
+    try {
+      const page = await apiPage<PatientEncounter>(`/api/v1/encounters?patient_id=${patientId}&limit=100`);
+      setPatientEncounters(page.data);
+      setEncountersLoaded(true);
+    } catch (reason) { toast.error(errorMessage(reason, "Encounters could not be loaded.")); }
+  }, [patientId, toast]);
+
   const loadAdmissions = useCallback(async () => {
     try {
       const [a, b, d] = await Promise.all([
@@ -426,7 +439,8 @@ export default function PatientDetailPage() {
     if (activeTab === "packages" && !packagesLoaded) void loadPackages();
     if (activeTab === "transfers" && !transfersLoaded) void loadTransfers();
     if (activeTab === "admissions" && !admissionsLoaded) void loadAdmissions();
-  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, admissionsLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers, loadAdmissions]);
+    if (activeTab === "encounters" && !encountersLoaded) void loadEncounters();
+  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, admissionsLoaded, encountersLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers, loadAdmissions, loadEncounters]);
 
   function startEditing() {
     if (!patient) return;
@@ -963,6 +977,38 @@ export default function PatientDetailPage() {
                         </div>
                         <span className={`pipeline-status status-${a.status}`}>{statusLabel(a.status)}</span>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === "encounters" && (
+              <section className="detail-card">
+                <div className="card-heading">
+                  <div><p className="eyebrow">CLINICAL</p><h2>Encounters</h2></div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span className="directory-count">{patientEncounters.length} records</span>
+                    {can("clinical.manage") && <Link className="button button-secondary" href={`/encounters?start=1&patient_id=${patientId}`} style={{ fontSize: 11, padding: "4px 10px" }}>New encounter</Link>}
+                  </div>
+                </div>
+                {!encountersLoaded ? (
+                  <div className="dashboard-empty" role="status"><strong>Loading encounters…</strong></div>
+                ) : patientEncounters.length === 0 ? (
+                  <div className="dashboard-empty"><strong>No encounters</strong><span>No clinical encounters recorded for this patient.</span></div>
+                ) : (
+                  <div className="appointment-list-table">
+                    {patientEncounters.map((enc) => (
+                      <Link className="appointment-list-row" key={enc.id} href={`/encounters/${enc.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <strong>{statusLabel(enc.encounter_type)}</strong>
+                            <span style={{ fontSize: 10, padding: "1px 8px", borderRadius: 10, background: ({ draft: "#e0a458", in_progress: "var(--accent)", ready_for_discharge: "#5886b4", discharged: "var(--leaf)", finalized: "#3c5149", referred: "#8468a8", transferred: "#4c7d91" })[enc.status] ?? "var(--line)", color: "#fff" }}>{statusLabel(enc.status)}</span>
+                          </div>
+                          {enc.chief_complaint && <small style={{ color: "var(--muted)" }}>{enc.chief_complaint.slice(0, 80)}</small>}
+                          <small style={{ display: "block", color: "var(--muted)" }}>Dr. {enc.doctor_name} · {formatDate(enc.created_at)}{enc.diagnosis ? ` · Dx: ${enc.diagnosis.slice(0, 40)}` : ""}</small>
+                        </div>
+                      </Link>
                     ))}
                   </div>
                 )}

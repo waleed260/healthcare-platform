@@ -133,7 +133,7 @@ def item_update(plan_id: UUID, item_id: UUID, payload: TreatmentPlanItemUpdate, 
 def prescription_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "clinical.read")
     rows = db.execute(text("""
-        SELECT id, patient_id, appointment_id, prescribed_by_user_id, medication_name, dosage, frequency,
+        SELECT id, patient_id, appointment_id, encounter_id, prescribed_by_user_id, medication_name, dosage, frequency,
                duration, instructions, status, version, prescribed_at, updated_at
         FROM prescriptions WHERE clinic_id = :clinic_id AND patient_id = :patient_id
         ORDER BY prescribed_at DESC, id DESC
@@ -153,9 +153,9 @@ def prescription_create(patient_id: UUID, payload: PrescriptionCreate, request: 
         if appointment_ok is None:
             raise _error("NOT_FOUND", "The appointment is not associated with this patient.", status.HTTP_404_NOT_FOUND)
     row = db.execute(text("""
-        INSERT INTO prescriptions (clinic_id, patient_id, appointment_id, prescribed_by_user_id, medication_name, dosage, frequency, duration, instructions)
-        VALUES (:clinic_id, :patient_id, :appointment_id, :user_id, :medication_name, :dosage, :frequency, :duration, :instructions)
-        RETURNING id, patient_id, appointment_id, prescribed_by_user_id, medication_name, dosage, frequency, duration, instructions, status, version, prescribed_at, updated_at
+        INSERT INTO prescriptions (clinic_id, patient_id, appointment_id, encounter_id, prescribed_by_user_id, medication_name, dosage, frequency, duration, instructions)
+        VALUES (:clinic_id, :patient_id, :appointment_id, :encounter_id, :user_id, :medication_name, :dosage, :frequency, :duration, :instructions)
+        RETURNING id, patient_id, appointment_id, encounter_id, prescribed_by_user_id, medication_name, dosage, frequency, duration, instructions, status, version, prescribed_at, updated_at
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "user_id": session["user_id"], **payload.model_dump()}).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="prescription.create", entity_type="prescription", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
     db.commit()

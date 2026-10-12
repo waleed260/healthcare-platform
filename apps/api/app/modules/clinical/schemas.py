@@ -53,6 +53,7 @@ class PrescriptionCreate(BaseModel):
 
     medication_name: str = Field(min_length=1, max_length=200)
     appointment_id: UUID | None = None
+    encounter_id: UUID | None = None
     dosage: str | None = Field(default=None, max_length=200)
     frequency: str | None = Field(default=None, max_length=200)
     duration: str | None = Field(default=None, max_length=200)

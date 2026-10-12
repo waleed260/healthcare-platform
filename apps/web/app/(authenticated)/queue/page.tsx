@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import anime from "animejs";
 import { api, apiPage, errorMessage, post, writeHeaders } from "../_lib/client";
@@ -194,6 +195,7 @@ export default function QueuePage() {
         <div className="queue-actions">
           {canManage && <button className="ghost-button" type="button" onClick={() => { setReorderTarget(reorderTarget === entry.id ? null : entry.id); setReorderPriority(entry.priority); setReorderReason(""); }} title="Set priority">P</button>}
           <button className="button queue-action" type="button" onClick={() => void advance(entry)} disabled={!canManage || working === entry.id} title={!canManage ? "Requires queue.manage" : undefined}>{working === entry.id ? "Working…" : entry.status === "waiting" ? "Start consultation" : "Complete"}<span>→</span></button>
+          {entry.status === "in_consultation" && <Link className="button button-secondary" href={`/encounters?start=1&appointment_id=${entry.appointment_id}`} style={{ fontSize: 11, padding: "4px 10px" }}>Start encounter</Link>}
           {canManage && <button className="ghost-button queue-remove" type="button" onClick={() => void remove(entry)} disabled={working === entry.id} title="Remove from queue">✕</button>}
         </div>
         {reorderTarget === entry.id && <div className="reorder-inline">
