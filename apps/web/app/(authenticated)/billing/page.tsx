@@ -7,18 +7,15 @@ import anime from "animejs";
 import { api, apiPage, post, money, label, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
+import { useClinicCurrency } from "../_lib/clinic-context";
 import Pagination, { usePagination } from "../_lib/pagination";
 import ProviderSelect from "./provider-select";
-
-type Patient = { id: string; full_name: string; patient_number: string };
-type Service = { id: string; name: string; price_minor: number; duration_minutes: number };
-type Doctor = { id: string; public_name: string };
-type Invoice = { id: string; patient_id: string; invoice_number: string; currency: string; subtotal_minor: number; discount_minor: number; tax_minor: number; total_minor: number; paid_minor: number; status: string; issued_at: string; notes: string | null; version: number };
-type InvoiceDetail = Invoice & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
+import type { PatientRef, InvoiceSummary, ServiceRef, SessionInfo } from "@contracts/entities";
+type InvoiceDetail = InvoiceSummary & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
 type InvoiceLine = { id: string; service_id: string | null; provider_id: string | null; provider_name: string | null; description: string; quantity: number; unit_price_minor: number; tax_minor: number; line_total_minor: number };
 type Payment = { id: string; amount_minor: number; currency: string; method: string; reference: string | null; paid_at: string };
 type Refund = { id: string; amount_minor: number; currency: string; reason: string; method: string; reference: string | null; created_at: string };
-type Session = { permissions?: string[] };
+type Session = SessionInfo;
 type LineInput = { description: string; quantity: number; unitPrice: string; taxMinor: number; serviceId: string; providerId: string };
 type Appointment = { id: string; patient_id: string; service_id: string | null; doctor_id: string | null; status: string; starts_at: string };
 
@@ -26,12 +23,13 @@ const emptyLine = (): LineInput => ({ description: "", quantity: 1, unitPrice: "
 const formatDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
 
 export default function BillingPage() {
+  const clinicCurrency = useClinicCurrency();
   const searchParams = useSearchParams();
   const toast = useToast();
   const confirm = useConfirm();
 
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
+  const [patients, setPatients] = useState<PatientRef[]>([]);
+  const [services, setServices] = useState<ServiceRef[]>([]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +37,7 @@ export default function BillingPage() {
   // Invoice form state
   const [showForm, setShowForm] = useState(false);
   const [patientId, setPatientId] = useState("");
-  const [currency, setCurrency] = useState("PKR");
+  const [currency, setCurrency] = useState(clinicCurrency);
   const [discountMinor, setDiscountMinor] = useState(0);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineInput[]>([emptyLine()]);
@@ -68,9 +66,9 @@ export default function BillingPage() {
   const invoiceFetcher = useCallback(async (cursor: string | null, limit: number) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (cursor) params.set("cursor", cursor);
-    return apiPage<Invoice>(`/api/v1/invoices?${params.toString()}`);
+    return apiPage<InvoiceSummary>(`/api/v1/invoices?${params.toString()}`);
   }, []);
-  const { items: invoices, loading: pageLoading, hasMore, load: loadMore, reload, pageSize, changePageSize } = usePagination<Invoice>(invoiceFetcher);
+  const { items: invoices, loading: pageLoading, hasMore, error: pageError, load: loadMore, reload, pageSize, changePageSize } = usePagination<InvoiceSummary>(invoiceFetcher);
 
   const loadMeta = useCallback(async () => {
     setLoading(true);
@@ -78,12 +76,12 @@ export default function BillingPage() {
     try {
       const [session, patientRows] = await Promise.all([
         api<Session>("/api/v1/auth/me"),
-        api<Patient[]>("/api/v1/patients?limit=200"),
+        api<PatientRef[]>("/api/v1/patients?limit=200"),
       ]);
       setPermissions(session.permissions ?? []);
       setPatients(patientRows ?? []);
       try {
-        const svc = await api<Service[]>("/api/v1/services?limit=200");
+        const svc = await api<ServiceRef[]>("/api/v1/services?limit=200");
         setServices(Array.isArray(svc) ? svc : []);
       } catch { setServices([]); }
     } catch (reason) {
@@ -106,7 +104,7 @@ export default function BillingPage() {
         if (appt.patient_id) setPatientId(appt.patient_id);
         const svc = services.find((s) => s.id === appt.service_id);
         if (svc) {
-          setLines([{ description: svc.name, quantity: 1, unitPrice: (svc.price_minor / 100).toFixed(2), taxMinor: 0, serviceId: svc.id, providerId: appt.doctor_id ?? "" }]);
+          setLines([{ description: svc.name, quantity: 1, unitPrice: ((svc.amount_minor ?? 0) / 100).toFixed(2), taxMinor: 0, serviceId: svc.id, providerId: appt.doctor_id ?? "" }]);
         }
         setShowForm(true);
       } catch { /* appointment might not be accessible */ }
@@ -124,7 +122,7 @@ export default function BillingPage() {
   function applyService(index: number, serviceId: string) {
     const svc = services.find((s) => s.id === serviceId);
     if (!svc) { updateLine(index, "serviceId", ""); return; }
-    setLines((prev) => prev.map((l, i) => i === index ? { ...l, serviceId, description: svc.name, unitPrice: (svc.price_minor / 100).toFixed(2) } : l));
+    setLines((prev) => prev.map((l, i) => i === index ? { ...l, serviceId, description: svc.name, unitPrice: ((svc.amount_minor ?? 0) / 100).toFixed(2) } : l));
   }
 
   // Live totals
@@ -393,7 +391,7 @@ export default function BillingPage() {
             })}
           </div>
         )}
-        {(hasMore || invoices.length > 0) && <Pagination hasMore={hasMore} loading={pageLoading} total={invoices.length} onLoadMore={() => void loadMore()} pageSize={pageSize} onPageSizeChange={changePageSize} />}
+        {(hasMore || invoices.length > 0) && <Pagination hasMore={hasMore} loading={pageLoading} error={pageError} total={invoices.length} onLoadMore={() => void loadMore()} pageSize={pageSize} onPageSizeChange={changePageSize} />}
       </section>
 
       {/* Invoice detail drawer */}

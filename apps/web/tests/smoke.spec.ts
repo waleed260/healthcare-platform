@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
+import type { SessionInfo, PatientSummary } from "@contracts/entities";
 
 const clinic = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -9,7 +10,15 @@ const clinic = {
   status: "active",
   timezone: "UTC",
   locale: "en-US",
+  default_currency: "PKR",
   version: 1,
+};
+
+const syntheticSession: SessionInfo = {
+  user_id: "synthetic-user",
+  clinic_id: clinic.id,
+  display_name: "Synthetic Staff",
+  permissions: ["queue.read", "queue.manage", "appointment.read", "appointment.approve", "appointment.check_in", "appointment.cancel", "appointment.reschedule", "appointment.manage", "patient.read", "patient.archive", "website.read", "website.edit", "website.publish"],
 };
 
 async function installSyntheticApi(page: Page): Promise<void> {
@@ -21,7 +30,7 @@ async function installSyntheticApi(page: Page): Promise<void> {
       data = { completed: false, completed_at: null, steps: {}, ready_to_complete: false };
     }
     if (path.endsWith("/auth/me")) {
-      data = { user_id: "synthetic-user", clinic_id: clinic.id, display_name: "Synthetic Staff", permissions: ["queue.read", "queue.manage", "appointment.read", "appointment.approve", "appointment.check_in", "appointment.cancel", "appointment.reschedule", "appointment.manage", "patient.read", "patient.archive", "website.read", "website.edit", "website.publish"] };
+      data = syntheticSession;
     }
     if (path.endsWith("/dashboard-summary")) {
       data = { today_appointments: 0, pending_approvals: 0, followups_due: 0, waiting_patients: 0, no_shows: 0 };
@@ -87,7 +96,7 @@ test.describe("core responsive browser flows", () => {
     await page.route("**/api/v1/patients*", async (route) => {
       const hasCursor = Boolean(new URL(route.request().url()).searchParams.get("cursor"));
       if (hasCursor) cursorRequests += 1;
-      const patient = hasCursor
+      const patient: PatientSummary = hasCursor
         ? { id: "patient-2", patient_number: "SYN-0002", full_name: "Synthetic Second", normalized_email: null, normalized_phone: null, status: "active", version: 1 }
         : { id: "patient-1", patient_number: "SYN-0001", full_name: "Synthetic First", normalized_email: null, normalized_phone: null, status: "active", version: 1 };
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [patient], meta: { next_cursor: hasCursor ? null : "synthetic-next-cursor" } }) });

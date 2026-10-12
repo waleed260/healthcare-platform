@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
-import { api, errorMessage } from "../_lib/client";
+import { api, errorMessage, money } from "../_lib/client";
 import { useToast } from "../_lib/toast";
+import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Session = { permissions?: string[] };
 type DailyStat = { date: string; appointments: number; new_patients: number; revenue_minor: number; no_shows: number };
@@ -18,10 +19,6 @@ const RANGES = [
 ] as const;
 type Range = (typeof RANGES)[number]["id"];
 
-function money(minor: number): string {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "PKR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(minor / 100);
-}
-
 function shortDate(iso: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(iso));
 }
@@ -33,6 +30,7 @@ function pctChange(current: number, previous: number): { label: string; up: bool
 }
 
 export default function AnalyticsPage() {
+  const clinicCurrency = useClinicCurrency();
   const [range, setRange] = useState<Range>("30d");
   const [daily, setDaily] = useState<DailyStat[]>([]);
   const [channels, setChannels] = useState<ChannelStat[]>([]);
@@ -50,16 +48,23 @@ export default function AnalyticsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [dailyData, channelData, funnelData, serviceData] = await Promise.all([
-        api<DailyStat[]>(`/api/v1/operations/analytics/daily?range=${range}`).catch(() => [] as DailyStat[]),
-        api<ChannelStat[]>(`/api/v1/operations/analytics/channels?range=${range}`).catch(() => [] as ChannelStat[]),
-        api<FunnelStep[]>(`/api/v1/operations/analytics/funnel?range=${range}`).catch(() => [] as FunnelStep[]),
-        api<TopService[]>(`/api/v1/operations/analytics/top-services?range=${range}`).catch(() => [] as TopService[]),
+      const results = await Promise.allSettled([
+        api<DailyStat[]>(`/api/v1/operations/analytics/daily?range=${range}`),
+        api<ChannelStat[]>(`/api/v1/operations/analytics/channels?range=${range}`),
+        api<FunnelStep[]>(`/api/v1/operations/analytics/funnel?range=${range}`),
+        api<TopService[]>(`/api/v1/operations/analytics/top-services?range=${range}`),
       ]);
-      setDaily(dailyData ?? []);
-      setChannels(channelData ?? []);
-      setFunnel(funnelData ?? []);
-      setTopServices(serviceData ?? []);
+      const val = <T,>(r: PromiseSettledResult<T | null>, fallback: T): T => r.status === "fulfilled" ? (r.value ?? fallback) : fallback;
+      setDaily(val(results[0], []));
+      setChannels(val(results[1], []));
+      setFunnel(val(results[2], []));
+      setTopServices(val(results[3], []));
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length === results.length) {
+        setError(errorMessage((failed[0] as PromiseRejectedResult).reason, "Analytics could not be loaded."));
+      } else if (failed.length > 0) {
+        setError(`${failed.length} of ${results.length} analytics sections could not be loaded.`);
+      }
     } catch (reason) {
       setError(errorMessage(reason, "Analytics could not be loaded."));
     } finally {
@@ -157,7 +162,7 @@ export default function AnalyticsPage() {
       </div>
       <div className="analytics-card">
         <p className="eyebrow">REVENUE</p>
-        <strong>{money(totals.revenue)}</strong>
+        <strong>{money(totals.revenue, clinicCurrency)}</strong>
         <small className={totals.revenueTrend.up ? "trend-up" : "trend-down"}>{totals.revenueTrend.label} vs prior period</small>
       </div>
       <div className="analytics-card">
@@ -239,13 +244,13 @@ export default function AnalyticsPage() {
             <div className="invoice-mark" style={{ fontSize: "0.85rem", fontWeight: 600 }}>#{i + 1}</div>
             <div className="invoice-main">
               <h3>{s.name}</h3>
-              <p>{s.count} appointment{s.count !== 1 ? "s" : ""} · {money(s.revenue_minor)} revenue</p>
+              <p>{s.count} appointment{s.count !== 1 ? "s" : ""} · {money(s.revenue_minor, clinicCurrency)} revenue</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 80, height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}>
                 <div style={{ width: `${Math.max(5, (s.count / Math.max(1, topServices[0]?.count ?? 1)) * 100)}%`, height: "100%", background: "linear-gradient(90deg,#274c42,#3d7a6a)", borderRadius: 3, transition: "width .6s ease" }} />
               </div>
-              <span className="muted-mono" style={{ fontSize: "0.72rem" }}>{money(s.revenue_minor)}</span>
+              <span className="muted-mono" style={{ fontSize: "0.72rem" }}>{money(s.revenue_minor, clinicCurrency)}</span>
             </div>
           </article>)}
         </div>}

@@ -17,6 +17,9 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "paths": {
+      "@contracts/*": ["../../packages/contracts/*"]
+    },
     "plugins": [
       {
         "name": "next"

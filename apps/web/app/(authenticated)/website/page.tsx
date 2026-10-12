@@ -9,7 +9,7 @@ import SeoPanel from "./seo-panel";
 import { SiteHeader, SiteFooter } from "../../[clinicSlug]/site-chrome";
 import { themeStyle, buttonClass } from "../../site-theme";
 import type { SiteBrand } from "../../site-theme";
-import { api, csrfToken, writeHeaders as sharedWriteHeaders } from "../_lib/client";
+import { api, csrfToken } from "../_lib/client";
 
 /* ────────────────────────────────────────────────────
    Types
@@ -24,7 +24,6 @@ type Version = { id: string; version_number: number; published_at?: string | nul
 type Domain = { hostname: string; observed_status: string };
 type Validation = { valid: boolean; code: string | null; message: string | null };
 type Session = { permissions?: string[]; clinic_slug?: string | null };
-type RequestOptions = { method?: string; headers?: Record<string, string>; body?: string | Blob | null };
 
 /* ────────────────────────────────────────────────────
    Constants
@@ -112,53 +111,51 @@ type RightTab = "design" | "content" | "page" | "seo" | "library" | "history" | 
 /* ────────────────────────────────────────────────────
    Helpers
    ──────────────────────────────────────────────────── */
-async function request<T>(url: string, init?: RequestOptions): Promise<T> {
-  return api<T>(url, init);
-}
 function writeHeaders(extra?: Record<string, string>) { return { "Content-Type": "application/json", "X-CSRF-Token": csrfToken(), ...extra }; }
 function hex(value: string | undefined, fallback: string) { return /^#[0-9a-f]{6}$/i.test(value ?? "") ? value! : fallback; }
 
 /* ────────────────────────────────────────────────────
-   CodeMirror CSS editor (loaded dynamically from CDN)
+   CSS editor (inline textarea — no CDN dependency)
    ──────────────────────────────────────────────────── */
-declare global { interface Window { CodeMirror?: { fromTextArea: (el: HTMLTextAreaElement, opts: Record<string, unknown>) => { getValue: () => string; on: (ev: string, cb: () => void) => void; toTextArea: () => void }; } } }
-const CM_BASE = "https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18";
-let cmLoadPromise: Promise<boolean> | null = null;
-function loadCodeMirror(): Promise<boolean> {
-  if (cmLoadPromise) return cmLoadPromise;
-  cmLoadPromise = new Promise((resolve) => {
-    if (window.CodeMirror) { resolve(true); return; }
-    const script = document.createElement("script");
-    script.src = `${CM_BASE}/codemirror.min.js`;
-    script.onload = () => { const mode = document.createElement("script"); mode.src = `${CM_BASE}/mode/css/css.min.js`; mode.onload = () => resolve(true); mode.onerror = () => resolve(false); document.head.appendChild(mode); };
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-    const link = document.createElement("link"); link.rel = "stylesheet"; link.href = `${CM_BASE}/codemirror.min.css`; document.head.appendChild(link);
-  });
-  return cmLoadPromise;
-}
 function CssEditor({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (v: string) => void }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const cmRef = useRef<ReturnType<NonNullable<Window["CodeMirror"]>["fromTextArea"]> | null>(null);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadCodeMirror().then((ok) => { if (!cancelled && ok) setLoaded(true); });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (!loaded || !textareaRef.current || cmRef.current || disabled) return;
-    const cm = window.CodeMirror!.fromTextArea(textareaRef.current, { mode: "css", lineNumbers: true, theme: "default", indentUnit: 2, tabSize: 2, lineWrapping: true });
-    cm.on("change", () => onChangeRef.current(cm.getValue()));
-    cmRef.current = cm;
-    return () => { cmRef.current?.toTextArea(); cmRef.current = null; };
-  }, [loaded, disabled]);
-
-  return <div className="wb-field-stack" style={{ marginTop: 16 }}><label style={{ display: "block", marginBottom: 4, fontSize: "0.78rem", fontWeight: 500 }}>Custom CSS</label><textarea ref={textareaRef} className="wb-css-editor" rows={6} placeholder={"/* Scoped to this section */\n.public-hero {\n  background: linear-gradient(...);\n}"} value={value} disabled={disabled} style={{ fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.78rem", width: "100%", border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, padding: "8px 10px" }} onChange={(e) => onChange(e.target.value)} /></div>;
+  const lineCount = (value || "\n").split("\n").length;
+  const lines = Array.from({ length: Math.max(lineCount, 8) }, (_, i) => i + 1);
+  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const t = e.currentTarget;
+    const start = t.selectionStart;
+    const end = t.selectionEnd;
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const next = value.slice(0, start) + "  " + value.slice(end);
+      onChange(next);
+      requestAnimationFrame(() => { t.selectionStart = t.selectionEnd = start + 2; });
+    } else if (e.key === "Enter") {
+      const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+      const currentLine = value.slice(lineStart, start);
+      const indent = currentLine.match(/^\s*/)?.[0] ?? "";
+      const extra = currentLine.trimEnd().endsWith("{") ? "  " : "";
+      if (indent || extra) {
+        e.preventDefault();
+        const insert = "\n" + indent + extra;
+        onChange(value.slice(0, start) + insert + value.slice(end));
+        requestAnimationFrame(() => { t.selectionStart = t.selectionEnd = start + insert.length; });
+      }
+    } else if (e.key === "{") {
+      e.preventDefault();
+      onChange(value.slice(0, start) + "{}" + value.slice(end));
+      requestAnimationFrame(() => { t.selectionStart = t.selectionEnd = start + 1; });
+    }
+  };
+  const editorStyle: React.CSSProperties = { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.78rem", lineHeight: "1.6", tabSize: 2 };
+  return <div className="wb-field-stack" style={{ marginTop: 16 }}>
+    <label style={{ display: "block", marginBottom: 4, fontSize: "0.78rem", fontWeight: 500 }}>Custom CSS</label>
+    <div style={{ display: "flex", border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, overflow: "hidden", background: "var(--surface-1, #fafaf9)" }}>
+      <div aria-hidden="true" style={{ ...editorStyle, padding: "8px 8px 8px 10px", color: "var(--text-muted, #9ca3af)", textAlign: "right", userSelect: "none", borderRight: "1px solid var(--wb-border, #e5e5e3)", minWidth: 36 }}>
+        {lines.map((n) => <div key={n}>{n}</div>)}
+      </div>
+      <textarea className="wb-css-editor" rows={Math.max(8, lineCount)} placeholder={"/* Scoped to this section */\n.public-hero {\n  background: linear-gradient(...);\n}"} value={value} disabled={disabled} style={{ ...editorStyle, flex: 1, border: "none", padding: "8px 10px", resize: "vertical", outline: "none", background: "transparent" }} onChange={(e) => onChange(e.target.value)} onKeyDown={handleKey} spellCheck={false} />
+    </div>
+  </div>;
 }
 
 /* ────────────────────────────────────────────────────
@@ -402,9 +399,9 @@ export default function WebsiteEditorPage() {
   /* ── API callbacks ── */
   const validateDraft = useCallback(async (selected: Website, currentPages?: Page[]) => {
     try {
-      const serverResult = await request<Validation>(`/api/v1/websites/${selected.id}/validation`);
+      const serverResult = await api<Validation>(`/api/v1/websites/${selected.id}/validation`);
       if (serverResult && !serverResult.valid) { setValidation(serverResult); return; }
-      const knownPages = currentPages?.length ? currentPages : (await request<Page[]>(`/api/v1/websites/${selected.id}/pages`)) ?? [];
+      const knownPages = currentPages?.length ? currentPages : (await api<Page[]>(`/api/v1/websites/${selected.id}/pages`)) ?? [];
       const hasLegal = knownPages.some((p) => /privacy|terms|legal|policy/i.test(p.slug));
       if (!hasLegal) { setValidation({ valid: false, code: "MISSING_LEGAL", message: "Add a privacy policy or terms page before publishing." }); return; }
       const colors = selected.brand?.theme?.colors;
@@ -421,7 +418,7 @@ export default function WebsiteEditorPage() {
   const loadWebsite = useCallback(async (selected: Website) => {
     setBusy("load"); setWebsite(selected);
     try {
-      const [detail, pageRows, versionRows, themeRows] = await Promise.all([request<Website>(`/api/v1/websites/${selected.id}`).catch(() => null), request<Page[]>(`/api/v1/websites/${selected.id}/pages`), request<Version[]>(`/api/v1/websites/${selected.id}/versions`), request<ThemeInstance[]>(`/api/v1/websites/${selected.id}/themes`).catch(() => [] as ThemeInstance[])]);
+      const [detail, pageRows, versionRows, themeRows] = await Promise.all([api<Website>(`/api/v1/websites/${selected.id}`).catch(() => null), api<Page[]>(`/api/v1/websites/${selected.id}/pages`), api<Version[]>(`/api/v1/websites/${selected.id}/versions`), api<ThemeInstance[]>(`/api/v1/websites/${selected.id}/themes`).catch(() => [] as ThemeInstance[])]);
       const ws = detail ?? selected;
       setWebsite(ws); setWebsites((current) => current.map((w) => w.id === ws.id ? ws : w));
       setVersions(versionRows ?? []); setThemeInstances(themeRows ?? []);
@@ -431,7 +428,7 @@ export default function WebsiteEditorPage() {
       const firstPage = allPages.find((p) => p.id === pageIdRef.current) ?? allPages[0] ?? null;
       pageIdRef.current = firstPage?.id ?? null;
       setPage(firstPage);
-      setSections(firstPage ? (await request<Section[]>(`/api/v1/websites/${ws.id}/pages/${firstPage.id}/sections`)) ?? [] : []);
+      setSections(firstPage ? (await api<Section[]>(`/api/v1/websites/${ws.id}/pages/${firstPage.id}/sections`)) ?? [] : []);
       setSelectedSectionId(null);
       void validateDraft(ws, allPages);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The website could not be loaded."); }
@@ -441,7 +438,7 @@ export default function WebsiteEditorPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [session, rows, domainRows] = await Promise.all([request<Session>("/api/v1/auth/me"), request<Website[]>("/api/v1/websites"), request<Domain[]>("/api/v1/websites/domains")]);
+      const [session, rows, domainRows] = await Promise.all([api<Session>("/api/v1/auth/me"), api<Website[]>("/api/v1/websites"), api<Domain[]>("/api/v1/websites/domains")]);
       setPermissions(session.permissions ?? []); if (session.clinic_slug) setClinicSlug(session.clinic_slug); setWebsites(rows ?? []); domainsRef.current = domainRows ?? [];
       if ((rows ?? [])[0]) await loadWebsite((rows ?? [])[0]); else setLoading(false);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The website workspace could not be loaded."); setLoading(false); }
@@ -452,7 +449,7 @@ export default function WebsiteEditorPage() {
   async function createWebsite(event: FormEvent) {
     event.preventDefault(); setBusy("create-website");
     try {
-      const created = await request<Website>("/api/v1/websites", { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: newWebsiteName, template_key: newTemplate, brand: {} }) });
+      const created = await api<Website>("/api/v1/websites", { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: newWebsiteName, template_key: newTemplate, brand: {} }) });
       setWebsites((current) => [created, ...current]); await loadWebsite(created);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The website could not be created."); }
     finally { setBusy(null); }
@@ -462,7 +459,7 @@ export default function WebsiteEditorPage() {
     if (!website || !page || !canEdit) return;
     const candidate = { ...section, ...next }; setBusy(section.id);
     try {
-      const updated = await request<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ section_type: candidate.section_type, layout_key: candidate.layout_key, position: candidate.position, content: candidate.content, is_visible: candidate.is_visible, expected_version: section.version }) });
+      const updated = await api<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ section_type: candidate.section_type, layout_key: candidate.layout_key, position: candidate.position, content: candidate.content, is_visible: candidate.is_visible, expected_version: section.version }) });
       setSections((current) => current.map((s) => s.id === section.id ? updated : s));
       setNotice("Draft saved."); void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be saved."); }
@@ -472,7 +469,7 @@ export default function WebsiteEditorPage() {
   async function addSectionFromLibrary(sectionType: string, layoutKey: string) {
     if (!website || !page || !canEdit) return; setBusy("add-section"); setShowSectionLibrary(false);
     try {
-      const created = await request<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_type: sectionType, layout_key: layoutKey, position: sections.length, content: { ...defaultContent, heading: sectionType.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) }, is_visible: true }) });
+      const created = await api<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_type: sectionType, layout_key: layoutKey, position: sections.length, content: { ...defaultContent, heading: sectionType.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) }, is_visible: true }) });
       setSections((current) => [...current, created]); setSelectedSectionId(created.id); setRightTab("content"); void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be added."); }
     finally { setBusy(null); }
@@ -481,7 +478,7 @@ export default function WebsiteEditorPage() {
   async function removeSection(section: Section) {
     if (!website || !page || !canEdit || !window.confirm("Remove this section from the draft?")) return; setBusy(section.id);
     try {
-      await request(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: section.version }) });
+      await api(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: section.version }) });
       setSections((current) => current.filter((s) => s.id !== section.id).map((s, i) => ({ ...s, position: i })));
       if (selectedSectionId === section.id) setSelectedSectionId(null); void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be removed."); }
@@ -491,7 +488,7 @@ export default function WebsiteEditorPage() {
   async function duplicateSection(section: Section) {
     if (!website || !page || !canEdit) return; setBusy(section.id);
     try {
-      const created = await request<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_type: section.section_type, layout_key: section.layout_key, position: sections.length, content: section.content, is_visible: section.is_visible }) });
+      const created = await api<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_type: section.section_type, layout_key: section.layout_key, position: sections.length, content: section.content, is_visible: section.is_visible }) });
       setSections((current) => [...current, created]); void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be duplicated."); }
     finally { setBusy(null); }
@@ -502,8 +499,8 @@ export default function WebsiteEditorPage() {
     const previous = sections;
     setSections(next.map((s, position) => ({ ...s, position }))); setBusy("reorder");
     try {
-      await request(`/api/v1/website-library/websites/${website.id}/pages/${page.id}/reorder-sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_ids: next.map((s) => s.id) }) });
-      setSections((await request<Section[]>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`)) ?? []); void validateDraft(website);
+      await api(`/api/v1/website-library/websites/${website.id}/pages/${page.id}/reorder-sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_ids: next.map((s) => s.id) }) });
+      setSections((await api<Section[]>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`)) ?? []); void validateDraft(website);
     } catch (reason) { setSections(previous); setError(reason instanceof Error ? reason.message : "The sections could not be reordered."); }
     finally { setBusy(null); }
   }
@@ -525,7 +522,7 @@ export default function WebsiteEditorPage() {
     const chosen = pages.find((p) => p.id === id);
     if (!website || !chosen) return;
     setBusy("page"); pageIdRef.current = chosen.id; setPage(chosen); setSelectedSectionId(null);
-    try { setSections((await request<Section[]>(`/api/v1/websites/${website.id}/pages/${chosen.id}/sections`)) ?? []); }
+    try { setSections((await api<Section[]>(`/api/v1/websites/${website.id}/pages/${chosen.id}/sections`)) ?? []); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The page could not be loaded."); }
     finally { setBusy(null); }
   }
@@ -536,7 +533,7 @@ export default function WebsiteEditorPage() {
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "page";
     setBusy("page");
     try {
-      const created = await request<Page>(`/api/v1/websites/${website.id}/pages`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ slug, title }) });
+      const created = await api<Page>(`/api/v1/websites/${website.id}/pages`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ slug, title }) });
       pageIdRef.current = created.id; await load(); setNotice(`Page "${title}" created.`);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The page could not be created."); setBusy(null); }
   }
@@ -545,14 +542,14 @@ export default function WebsiteEditorPage() {
     if (!website || !page || !canEdit) return;
     const title = window.prompt("New page title", page.title)?.trim(); if (!title || title === page.title) return;
     setBusy("page");
-    try { await request(`/api/v1/websites/${website.id}/pages/${page.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ expected_version: page.version, title }) }); await load(); setNotice("Page renamed."); }
+    try { await api(`/api/v1/websites/${website.id}/pages/${page.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ expected_version: page.version, title }) }); await load(); setNotice("Page renamed."); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The page could not be renamed."); setBusy(null); }
   }
 
   async function deletePageAction() {
     if (!website || !page || !canEdit || !window.confirm(`Delete "${page.title}" and its sections from the draft?`)) return;
     setBusy("page");
-    try { await request(`/api/v1/websites/${website.id}/pages/${page.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: page.version }) }); pageIdRef.current = null; await load(); setNotice("Page deleted."); }
+    try { await api(`/api/v1/websites/${website.id}/pages/${page.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: page.version }) }); pageIdRef.current = null; await load(); setNotice("Page deleted."); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "The page could not be deleted."); setBusy(null); }
   }
 
@@ -564,7 +561,7 @@ export default function WebsiteEditorPage() {
     if (!website || !canEdit) return; setBusy("brand");
     try {
       const nextBrand = { ...(website.brand ?? {}), ...patch };
-      const updated = await request<Website>(`/api/v1/websites/${website.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ brand: nextBrand, expected_version: website.version }) });
+      const updated = await api<Website>(`/api/v1/websites/${website.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ brand: nextBrand, expected_version: website.version }) });
       setWebsite(updated); setWebsites((current) => current.map((w) => w.id === updated.id ? updated : w)); await validateDraft(updated);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Brand settings could not be saved."); }
     finally { setBusy(null); }
@@ -573,7 +570,7 @@ export default function WebsiteEditorPage() {
   async function saveTheme(patch: Pick<Brand, "theme" | "header" | "footer" | "seo" | "tablet" | "mobile">) {
     if (!website || !canEdit) return;
     const cleaned = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-    const updated = await request<Website>(`/api/v1/websites/${website.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ brand: { ...(website.brand ?? {}), ...cleaned }, expected_version: website.version }) });
+    const updated = await api<Website>(`/api/v1/websites/${website.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ brand: { ...(website.brand ?? {}), ...cleaned }, expected_version: website.version }) });
     setWebsite(updated); setWebsites((current) => current.map((w) => w.id === updated.id ? updated : w)); void validateDraft(updated);
   }
 
@@ -586,7 +583,7 @@ export default function WebsiteEditorPage() {
   async function uploadLogo(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; if (!file || !website || !canEdit) return; setBusy("logo");
     try {
-      const uploaded = await request<{ id: string }>("/api/v1/websites/media/upload", { method: "POST", headers: writeHeaders({ "Content-Type": file.type, "X-Original-Filename": file.name, "X-Alt-Text": "Clinic logo" }), body: file });
+      const uploaded = await api<{ id: string }>("/api/v1/websites/media/upload", { method: "POST", headers: writeHeaders({ "Content-Type": file.type, "X-Original-Filename": file.name, "X-Alt-Text": "Clinic logo" }), body: file });
       await updateBrand({ logo_media_id: uploaded.id });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The logo could not be uploaded."); }
     finally { setBusy(null); }
@@ -595,7 +592,7 @@ export default function WebsiteEditorPage() {
   async function publish() {
     if (!website || !canPublish || !validation?.valid) return; setBusy("publish");
     try {
-      setWebsite(await request<Website>(`/api/v1/websites/${website.id}/publish`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: website.version }) }));
+      setWebsite(await api<Website>(`/api/v1/websites/${website.id}/publish`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: website.version }) }));
       setNotice("Published! The live site now uses this version.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Publishing failed."); }
     finally { setBusy(null); }
@@ -604,7 +601,7 @@ export default function WebsiteEditorPage() {
   async function rollback(version: Version) {
     if (!website || !canPublish || !window.confirm(`Roll back to version ${version.version_number}?`)) return; setBusy("rollback");
     try {
-      const result = await request<{ website: Website }>(`/api/v1/websites/${website.id}/rollback`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ source_version_id: version.id, expected_version: website.version }) });
+      const result = await api<{ website: Website }>(`/api/v1/websites/${website.id}/rollback`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ source_version_id: version.id, expected_version: website.version }) });
       await loadWebsite(result.website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Rollback failed."); }
     finally { setBusy(null); }
@@ -671,7 +668,7 @@ export default function WebsiteEditorPage() {
         </div>
         <div className="wb-topbar-right">
           <span className="wb-topbar-hint">{warning ? `⚠ ${warning}` : `v${website.version} · ${templateLabel(website.template_key)}`}</span>
-          <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const res = await request<{ preview_token: string; clinic_slug: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/${encodeURIComponent(res.clinic_slug)}?preview_token=${encodeURIComponent(res.preview_token)}`, "_blank"); } catch { setError("Preview could not be opened — check that the API is reachable."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
+          <button className="wb-btn wb-btn-secondary" onClick={async () => { if (!website) return; setBusy("preview"); try { const res = await api<{ preview_token: string; clinic_slug: string }>(`/api/v1/websites/${website.id}/preview-token`, { method: "POST", headers: writeHeaders() }); window.open(`/${encodeURIComponent(res.clinic_slug)}?preview_token=${encodeURIComponent(res.preview_token)}`, "_blank"); } catch { setError("Preview could not be opened — check that the API is reachable."); } finally { setBusy(null); } }} disabled={!website || busy !== null}>Preview</button>
           <button className="wb-btn wb-btn-secondary" onClick={() => void load()} disabled={busy !== null}>Refresh</button>
           <button className="wb-btn wb-btn-primary" style={{ fontWeight: 600 }} onClick={() => void publish()} disabled={!canPublish || !validation?.valid || busy !== null} title={!canPublish ? "Ask an owner to publish" : warning ?? "Publish this draft"}>
             {busy === "publish" ? "Publishing…" : "Publish"} <span>↑</span>
@@ -1130,7 +1127,7 @@ export default function WebsiteEditorPage() {
                           <button className="wb-btn wb-btn-primary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
                             setBusy("theme"); setError(null);
                             try {
-                              await request(`/api/v1/websites/${website.id}/themes/${ti.id}/activate`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
+                              await api(`/api/v1/websites/${website.id}/themes/${ti.id}/activate`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
                               setNotice(`"${ti.name}" is now live.`);
                               void load();
                             } catch (reason) { setError(reason instanceof Error ? reason.message : "Activation failed."); }
@@ -1148,7 +1145,7 @@ export default function WebsiteEditorPage() {
                         <button className="wb-btn wb-btn-secondary" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
                           setBusy("theme"); setError(null);
                           try {
-                            const created = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: `${ti.name} (copy)`, brand_snapshot: ti.brand_snapshot }) });
+                            const created = await api<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: `${ti.name} (copy)`, brand_snapshot: ti.brand_snapshot }) });
                             if (created) setThemeInstances((cur) => [...cur, created]);
                             setNotice(`Duplicated "${ti.name}".`);
                           } catch (reason) { setError(reason instanceof Error ? reason.message : "Duplicate failed."); }
@@ -1159,7 +1156,7 @@ export default function WebsiteEditorPage() {
                           if (!newName || newName === ti.name) return;
                           setBusy("theme"); setError(null);
                           try {
-                            const updated = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes/${ti.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ name: newName, expected_version: ti.version }) });
+                            const updated = await api<ThemeInstance>(`/api/v1/websites/${website.id}/themes/${ti.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ name: newName, expected_version: ti.version }) });
                             if (updated) setThemeInstances((cur) => cur.map((t) => t.id === ti.id ? updated : t));
                             setNotice(`Renamed to "${newName}".`);
                           } catch (reason) { setError(reason instanceof Error ? reason.message : "Rename failed."); }
@@ -1169,7 +1166,7 @@ export default function WebsiteEditorPage() {
                           <button className="wb-btn wb-btn-danger" style={{ fontSize: "0.72rem", padding: "4px 8px" }} disabled={controlsDisabled} onClick={async () => {
                             setBusy("theme"); setError(null);
                             try {
-                              await request(`/api/v1/websites/${website.id}/themes/${ti.id}/archive`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
+                              await api(`/api/v1/websites/${website.id}/themes/${ti.id}/archive`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: ti.version }) });
                               setThemeInstances((cur) => cur.filter((t) => t.id !== ti.id));
                               setNotice(`"${ti.name}" archived.`);
                             } catch (reason) { setError(reason instanceof Error ? reason.message : "Archive failed."); }
@@ -1188,7 +1185,7 @@ export default function WebsiteEditorPage() {
                       <button className="wb-btn wb-btn-primary" disabled={controlsDisabled || !newThemeName.trim()} onClick={async () => {
                         setBusy("theme"); setError(null);
                         try {
-                          const created = await request<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: newThemeName.trim(), brand_snapshot: brand }) });
+                          const created = await api<ThemeInstance>(`/api/v1/websites/${website.id}/themes`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ name: newThemeName.trim(), brand_snapshot: brand }) });
                           if (created) setThemeInstances((cur) => [...cur, created]);
                           setNewThemeName(""); setNotice(`Theme "${newThemeName.trim()}" created.`);
                         } catch (reason) { setError(reason instanceof Error ? reason.message : "Create failed."); }

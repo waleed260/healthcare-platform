@@ -5,6 +5,7 @@ import anime from "animejs";
 import { api, errorMessage, label, money, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
+import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Summary = { date: string; payment_methods: { method: string; payments: number; collected_minor: number }[]; collected_minor: number; invoices: number; invoiced_minor: number; expenses_minor: number | null; net_minor: number | null };
 type Expense = { id: string; category: string; description: string; amount_minor: number; currency: string; incurred_on: string; voided_at: string | null };
@@ -15,6 +16,7 @@ const CATEGORIES = ["rent", "salaries", "utilities", "supplies", "equipment", "m
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function FinancePage() {
+  const clinicCurrency = useClinicCurrency();
   const toast = useToast();
   const confirm = useConfirm();
   const [day, setDay] = useState(today());
@@ -60,7 +62,7 @@ export default function FinancePage() {
     if (!Number.isFinite(amount) || amount <= 0) { toast.error("Enter a positive amount."); return; }
     setBusy(true);
     try {
-      await post("/api/v1/finance/expenses", { category: form.get("category"), description: String(form.get("description")).trim(), amount_minor: amount, currency: "PKR", incurred_on: form.get("date") });
+      await post("/api/v1/finance/expenses", { category: form.get("category"), description: String(form.get("description")).trim(), amount_minor: amount, currency: clinicCurrency, incurred_on: form.get("date") });
       setShowForm(false);
       toast.success("Expense recorded.");
       await load();
@@ -128,9 +130,9 @@ export default function FinancePage() {
 
       {summary && (
         <div className="billing-summary">
-          <div><span className="eyebrow">COLLECTED</span><strong>{money(summary.collected_minor)}</strong><small className="muted-mono">{summary.payment_methods.reduce((t, r) => t + r.payments, 0)} PAYMENTS</small></div>
-          <div><span className="eyebrow">INVOICED</span><strong>{money(summary.invoiced_minor)}</strong><small className="muted-mono">{summary.invoices} INVOICES</small></div>
-          <div><span className="eyebrow">{summary.net_minor == null ? "EXPENSES" : "NET"}</span><strong>{summary.net_minor == null ? "Restricted" : money(summary.net_minor)}</strong><small className="muted-mono">{summary.expenses_minor == null ? "NO expense.read" : `${money(summary.expenses_minor)} SPENT`}</small></div>
+          <div><span className="eyebrow">COLLECTED</span><strong>{money(summary.collected_minor, clinicCurrency)}</strong><small className="muted-mono">{summary.payment_methods.reduce((t, r) => t + r.payments, 0)} PAYMENTS</small></div>
+          <div><span className="eyebrow">INVOICED</span><strong>{money(summary.invoiced_minor, clinicCurrency)}</strong><small className="muted-mono">{summary.invoices} INVOICES</small></div>
+          <div><span className="eyebrow">{summary.net_minor == null ? "EXPENSES" : "NET"}</span><strong>{summary.net_minor == null ? "Restricted" : money(summary.net_minor, clinicCurrency)}</strong><small className="muted-mono">{summary.expenses_minor == null ? "NO expense.read" : `${money(summary.expenses_minor, clinicCurrency)} SPENT`}</small></div>
         </div>
       )}
 
@@ -139,7 +141,7 @@ export default function FinancePage() {
           <div className="surface-card-heading"><div><p className="eyebrow">PAYMENT METHODS</p><h2>How money arrived.</h2></div><span className="muted-mono">{summary.date}</span></div>
           <div className="report-list">
             {summary.payment_methods.length === 0 && <div className="dashboard-empty"><strong>No payments on this day</strong></div>}
-            {summary.payment_methods.map((row) => <div className="report-list-row" key={row.method}><span>{label(row.method)} · {row.payments}</span><strong>{money(row.collected_minor)}</strong></div>)}
+            {summary.payment_methods.map((row) => <div className="report-list-row" key={row.method}><span>{label(row.method)} · {row.payments}</span><strong>{money(row.collected_minor, clinicCurrency)}</strong></div>)}
           </div>
         </section>
       )}
@@ -149,7 +151,7 @@ export default function FinancePage() {
           <div className="surface-card-heading"><div><p className="eyebrow">PROVIDER REVENUE</p><h2>Who earned what.</h2></div><label className="report-period">From <input type="date" value={rangeStart} max={day} onChange={(e) => setRangeStart(e.target.value || rangeStart)} /></label></div>
           <div className="report-list">
             {revenue.providers.length === 0 && <div className="dashboard-empty"><strong>No payments in this range</strong></div>}
-            {revenue.providers.map((row) => <div className="report-list-row" key={row.provider_id ?? "none"}><span>{row.provider_name}{row.percent_bp ? ` · ${(row.percent_bp / 100).toFixed(2)}%` : ""}</span><strong>{money(row.revenue_minor)}{row.commission_minor > 0 ? ` · commission ${money(row.commission_minor)}` : ""}</strong></div>)}
+            {revenue.providers.map((row) => <div className="report-list-row" key={row.provider_id ?? "none"}><span>{row.provider_name}{row.percent_bp ? ` · ${(row.percent_bp / 100).toFixed(2)}%` : ""}</span><strong>{money(row.revenue_minor, clinicCurrency)}{row.commission_minor > 0 ? ` · commission ${money(row.commission_minor, clinicCurrency)}` : ""}</strong></div>)}
           </div>
           {rules.length > 0 && (
             <div className="report-mini-list">

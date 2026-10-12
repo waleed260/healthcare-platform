@@ -1,7 +1,9 @@
 # Pending Work Plan — CRM Spec Gap Closure
 
-> Generated: October 10, 2026
+> Generated: October 10, 2026 · Updated: October 12, 2026
 > Based on gap analysis of `/home/waleed/Music/crm .docx` vs current codebase
+
+**Note:** Several phases below were already implemented in the backend after this doc was written. Items marked ✅ have working API routes; remaining work is frontend UI or polish.
 
 ---
 
@@ -44,10 +46,11 @@
 
 ## Phase E — Encounter Forms System
 **Why:** Spec sections 24-25 — printable encounter/discharge forms are core clinical requirement.
+**Status:** ✅ Backend encounters CRUD exists (`encounters/routes.py`). Remaining work is frontend.
 
-1. Create encounter form data model (FormTemplate, EncounterForm, Observation, MedicationAdministration)
-2. Migration for encounter_forms, observations, medication_administrations tables
-3. Backend endpoints: create/save/finalize/list encounter forms
+1. ~~Create encounter form data model~~ ✅ exists
+2. ~~Migration for encounter tables~~ ✅ exists
+3. ~~Backend endpoints: create/save/finalize/list~~ ✅ exists
 4. Encounter form header: clinic info, patient MRN, doctor, arrival observations
 5. Assessment sections: complaint, examination, diagnosis, investigations
 6. Medicine administration rows
@@ -58,30 +61,34 @@
 
 ## Phase F — Admission & Transfer Workflow
 **Why:** Spec sections 26-27 — patient admission and clinical handover.
+**Status:** ✅ Backend CRUD for admissions, transfers, discharges, and vitals exists in `crm/routes.py`. Remaining work is frontend UI.
 
-1. Admission episode model + migration
-2. Admit patient action from encounter
-3. Admission form: ward/bed, admitting doctor, consultant, expected stay
-4. Enhanced transfer with clinical handover data (observations, medications, history)
-5. Transfer acceptance workflow (draft → sent → accepted → completed)
-6. Bed allocation/release (if configured)
+1. ~~Admission episode model + migration~~ ✅ exists (GET/POST/PATCH `patients/{id}/admissions`)
+2. Admit patient action from encounter (frontend)
+3. Admission form: ward/bed, admitting doctor, consultant, expected stay (frontend)
+4. ~~Transfer endpoints~~ ✅ exists (GET/POST `patients/{id}/transfers`)
+5. ~~Discharge endpoints~~ ✅ exists (GET/POST `patients/{id}/discharges`)
+6. ~~Vitals endpoints~~ ✅ exists (GET/POST/DELETE `patients/{id}/vitals`)
+7. Frontend UI for transfers, discharges, vitals tabs
 
 ## Phase G — Internal Tasks System
-**Why:** Spec section 15 — no task management exists currently.
+**Why:** Spec section 15.
+**Status:** ✅ Backend fully implemented (`tasks/routes.py` — GET/POST/PATCH/DELETE). Frontend tasks page exists.
 
-1. Tasks table: title, type, assignee, due date/time, priority, patient/lead link, status, notes
-2. Migration + RLS
-3. Backend CRUD endpoints
-4. Tasks UI — list with filters, create form, status updates
-5. Add tasks to navigation
+1. ~~Tasks table + migration + RLS~~ ✅ exists
+2. ~~Backend CRUD endpoints~~ ✅ exists
+3. ~~Tasks UI~~ ✅ exists (tasks/page.tsx)
+4. ~~Add tasks to navigation~~ ✅ exists
+5. Polish: task filtering, assignee avatar, overdue highlighting
 
 ## Phase H — Website Theme System
-**Why:** Spec sections 4-11 — the biggest feature gap. Currently only color presets.
+**Why:** Spec sections 4-11.
+**Status:** ✅ Backend theme CRUD exists (`websites/routes.py` — list/create/patch/archive/activate themes). Frontend theme panel exists.
 
-1. Themes landing page — live theme card, draft library
-2. Theme instance management — duplicate, rename, archive
-3. Draft/live separation — editing creates pending draft
-4. Global theme token model (colors, typography, buttons, layout)
+1. ~~Themes landing page~~ ✅ exists (ThemePanel in website editor)
+2. ~~Theme instance management — duplicate, rename, archive~~ ✅ backend + frontend exist
+3. ~~Draft/live separation~~ ✅ activate endpoint exists
+4. Global theme token model (colors, typography, buttons, layout) — extend
 5. Enhanced section/block editor controls
 6. Responsive preview (desktop/tablet/mobile viewport switching)
 7. Undo/redo in editor

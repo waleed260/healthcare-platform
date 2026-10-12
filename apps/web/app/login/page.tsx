@@ -3,14 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { csrfToken } from "../(authenticated)/_lib/client";
 
 type Phase = "login" | "mfa" | "enroll";
-
-function csrfToken(): string {
-  const parts = document.cookie.split(";").map(c => c.trim()).filter(c => c.startsWith("csrf_token="));
-  const last = parts[parts.length - 1];
-  return last ? decodeURIComponent(last.slice(11)) : "";
-}
 
 async function freshCsrf(): Promise<string> {
   try {

@@ -133,6 +133,14 @@ def create_branch(payload: BranchCreate, request: Request, db: Session = Depends
         if "uq_branches_clinic_code" in str(exc):
             raise _error("DUPLICATE", "A branch with this code already exists.", status.HTTP_409_CONFLICT) from exc
         raise
+    # Seed default branch hours so booking works without manual setup
+    for weekday in range(7):
+        is_closed = weekday == 6
+        db.execute(text("""
+            INSERT INTO branch_hours (clinic_id, branch_id, weekday, interval_index, opens_at, closes_at, is_closed)
+            VALUES (:clinic_id, :branch_id, :weekday, 0, :opens_at, :closes_at, :is_closed)
+            ON CONFLICT (clinic_id, branch_id, weekday, interval_index) DO NOTHING
+        """), {"clinic_id": session["clinic_id"], "branch_id": row["id"], "weekday": weekday, "opens_at": None if is_closed else time(9, 0), "closes_at": None if is_closed else time(17, 0), "is_closed": is_closed})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 

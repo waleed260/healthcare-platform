@@ -4,15 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
 import { api, errorMessage, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
+import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Report = { period_days: number; appointments: { status: string; count: number }[]; patients_created: number; leads: { status: string; count: number }[]; financial: { invoices: number; invoiced_minor: number; outstanding_minor: number; paid_minor: number; payment_methods: { method: string; payments: number; paid_minor: number }[]; aging: { bucket: string; invoices: number; outstanding_minor: number }[] } | null; package_utilization: { packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number }; operational: { waiting_patients: number; followups_due: number; no_shows: number; low_inventory: number } };
 type Branch = { id: string; name: string };
 type Session = { permissions?: string[] };
 
 const label = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const money = (minor: number, currency = "PKR") => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
+const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
 
 export default function ReportsPage() {
+  const clinicCurrency = useClinicCurrency();
   const [report, setReport] = useState<Report | null>(null);
   const [days, setDays] = useState("30");
   const [branchId, setBranchId] = useState("");
@@ -138,11 +140,11 @@ export default function ReportsPage() {
         <section className="surface-card report-card">
           <div className="surface-card-heading"><div><p className="eyebrow">CASH POSITION</p><h2>Collected and open</h2></div><span className="muted-mono">AUTHORIZED VIEW</span></div>
           {report.financial ? <div className="report-finance">
-            <div><span>Paid</span><strong>{money(report.financial.paid_minor)}</strong></div>
-            <div><span>Outstanding</span><strong>{money(report.financial.outstanding_minor)}</strong></div>
+            <div><span>Paid</span><strong>{money(report.financial.paid_minor, clinicCurrency)}</strong></div>
+            <div><span>Outstanding</span><strong>{money(report.financial.outstanding_minor, clinicCurrency)}</strong></div>
             <small>{report.financial.invoices} invoices issued in this window.</small>
-            <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor)}</span>)}</div>
-            <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor)}</span>)}</div>
+            <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor, clinicCurrency)}</span>)}</div>
+            <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor, clinicCurrency)}</span>)}</div>
           </div> : <div className="dashboard-empty"><strong>Financial data restricted</strong><span>Your role does not include billing.read.</span></div>}
         </section>
       </div>

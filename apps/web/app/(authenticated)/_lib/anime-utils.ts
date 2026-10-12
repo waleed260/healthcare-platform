@@ -11,7 +11,7 @@ export function useStaggerReveal<T extends HTMLElement>(deps: unknown[] = []) {
     if (!el) return;
     const children = el.querySelectorAll(":scope > *");
     if (!children.length) return;
-    anime({
+    const a = anime({
       targets: Array.from(children),
       opacity: [0, 1],
       translateY: [18, 0],
@@ -19,6 +19,7 @@ export function useStaggerReveal<T extends HTMLElement>(deps: unknown[] = []) {
       delay: anime.stagger(60, { start: 80 }),
       easing: "easeOutCubic",
     });
+    return () => { a.pause(); };
   }, deps);
   return ref;
 }
@@ -70,7 +71,7 @@ export function useCardReveal<T extends HTMLElement>(selector: string, deps: unk
     if (!el) return;
     const cards = el.querySelectorAll(selector);
     if (!cards.length) return;
-    anime({
+    const a = anime({
       targets: Array.from(cards),
       opacity: [0, 1],
       translateY: [22, 0],
@@ -79,6 +80,7 @@ export function useCardReveal<T extends HTMLElement>(selector: string, deps: unk
       delay: anime.stagger(45, { start: 100 }),
       easing: "easeOutCubic",
     });
+    return () => { a.pause(); };
   }, deps);
   return ref;
 }
@@ -112,7 +114,7 @@ export function useShimmer<T extends HTMLElement>() {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    anime({
+    const a = anime({
       targets: el,
       opacity: [0.45, 1],
       duration: 1200,
@@ -120,6 +122,7 @@ export function useShimmer<T extends HTMLElement>() {
       loop: true,
       easing: "easeInOutSine",
     });
+    return () => { a.pause(); };
   }, []);
   return ref;
 }
@@ -147,7 +150,7 @@ export function useSummaryReveal<T extends HTMLElement>(deps: unknown[] = []) {
     if (!el) return;
     const cards = el.querySelectorAll(":scope > div");
     if (!cards.length) return;
-    anime({
+    const a = anime({
       targets: Array.from(cards),
       opacity: [0, 1],
       translateY: [28, 0],
@@ -156,6 +159,7 @@ export function useSummaryReveal<T extends HTMLElement>(deps: unknown[] = []) {
       delay: anime.stagger(90, { start: 120 }),
       easing: "easeOutExpo",
     });
+    return () => { a.pause(); };
   }, deps);
   return ref;
 }

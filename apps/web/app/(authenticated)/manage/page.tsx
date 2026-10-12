@@ -6,6 +6,7 @@ import { api, errorMessage, label, money, patch, post, writeHeaders } from "../_
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
+import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Session = { permissions?: string[] };
 type Service = { id: string; name: string; category: string | null; short_description: string | null; full_description: string | null; duration_minutes: number; buffer_before_minutes: number; buffer_after_minutes: number; price_mode: string; amount_minor: number | null; currency: string | null; approval_mode: string; visibility: string; status: string; version: number };
@@ -31,6 +32,7 @@ type Tab = (typeof TABS)[number]["id"];
 const SERVICE_CATEGORIES = ["General", "Skin", "Hair", "Dental", "Dermatology", "Laser", "Injectable", "Surgery", "Consultation", "Lab", "Imaging"];
 
 export default function ManagePage() {
+  const clinicCurrency = useClinicCurrency();
   const [permissions, setPermissions] = useState<string[]>([]);
   const [tab, setTab] = useState<Tab>("services");
   const [services, setServices] = useState<Service[]>([]);
@@ -150,7 +152,7 @@ export default function ManagePage() {
       buffer_after_minutes: Number(field(form, "buffer_after") || 0),
       price_mode: mode,
       amount_minor: mode === "contact" ? null : amount,
-      currency: mode === "contact" ? null : "PKR",
+      currency: mode === "contact" ? null : clinicCurrency,
       approval_mode: field(form, "approval_mode"),
       visibility: field(form, "visibility"),
     };
@@ -204,10 +206,21 @@ export default function ManagePage() {
   function handleInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    void run(
-      () => post("/api/v1/staff/invitations", { email: field(form, "email") }),
-      "Invitation sent.", "The invitation could not be sent."
-    ).then(() => setStaffDrawer(false));
+    setBusy(true); setError(null);
+    post<{ setup_url: string }>("/api/v1/staff/invitations", { email: field(form, "email") })
+      .then(async (result) => {
+        const url = result?.setup_url ?? "";
+        if (url) {
+          try { await navigator.clipboard.writeText(url); } catch { /* clipboard unavailable */ }
+          toast.success(`Invitation sent. Setup link${url ? " copied to clipboard." : " created."}`);
+        } else {
+          toast.success("Invitation sent.");
+        }
+        setStaffDrawer(false);
+        await load();
+      })
+      .catch((reason) => { toast.error(errorMessage(reason, "The invitation could not be sent.")); })
+      .finally(() => { setBusy(false); });
   }
 
   async function revokeInvitation(invitationId: string) {
@@ -322,7 +335,7 @@ export default function ManagePage() {
           <div className="invoice-mark">{item.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
             <h3>{item.name}</h3>
-            <p>{item.category ?? "General"} · {item.duration_minutes} min{item.buffer_before_minutes || item.buffer_after_minutes ? ` (${item.buffer_before_minutes}+${item.buffer_after_minutes} buffer)` : ""} · {item.price_mode === "contact" || item.amount_minor == null ? "Contact for price" : money(item.amount_minor, item.currency ?? "PKR")}</p>
+            <p>{item.category ?? "General"} · {item.duration_minutes} min{item.buffer_before_minutes || item.buffer_after_minutes ? ` (${item.buffer_before_minutes}+${item.buffer_after_minutes} buffer)` : ""} · {item.price_mode === "contact" || item.amount_minor == null ? "Contact for price" : money(item.amount_minor, item.currency ?? clinicCurrency)}</p>
             {item.short_description && <small style={{ color: "var(--text-muted, #6b7280)" }}>{item.short_description}</small>}
           </div>
           <div className="invoice-actions">
@@ -514,7 +527,7 @@ export default function ManagePage() {
           <div className="invoice-mark">{t.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
             <h3>{t.name}</h3>
-            <p>{t.category ?? "General"}{t.specialty_code ? ` · ${t.specialty_code}` : ""} · {t.duration_minutes} min{t.amount_minor != null ? ` · ${money(t.amount_minor, t.currency ?? "PKR")}` : ""}</p>
+            <p>{t.category ?? "General"}{t.specialty_code ? ` · ${t.specialty_code}` : ""} · {t.duration_minutes} min{t.amount_minor != null ? ` · ${money(t.amount_minor, t.currency ?? clinicCurrency)}` : ""}</p>
           </div>
           <div className="invoice-actions"><button className="button button-secondary" disabled={busy}>Import</button></div>
         </article>)}
@@ -525,18 +538,7 @@ export default function ManagePage() {
     <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member">
       <form className="manage-form" onSubmit={handleInvite} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <label>Email<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
-        <label>Role <span className="field-optional">assigned after they accept</span>
-          <select name="role_id">
-            <option value="">Select a role (optional)</option>
-            {roles.map((r) => <option key={r.id} value={r.id}>{label(r.name)}</option>)}
-          </select>
-        </label>
-        <label>Branch scope <span className="field-optional">optional</span>
-          <select name="branch_id">
-            <option value="">All branches</option>
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </label>
+        <p style={{ fontSize: "0.82rem", color: "var(--text-muted, #6b7280)" }}>Roles and branch scopes can be assigned after the staff member accepts the invitation.</p>
         <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Sending…" : "Send invitation"}<span>↗</span></button></div>
       </form>
     </Drawer>

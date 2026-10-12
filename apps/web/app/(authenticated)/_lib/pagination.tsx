@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 type PaginationProps = {
   hasMore: boolean;
   loading: boolean;
+  error?: string | null;
   total?: number;
   onLoadMore: () => void;
   pageSize: number;
@@ -13,7 +14,7 @@ type PaginationProps = {
 
 const PAGE_SIZES = [25, 50, 100];
 
-export default function Pagination({ hasMore, loading, total, onLoadMore, pageSize, onPageSizeChange }: PaginationProps) {
+export default function Pagination({ hasMore, loading, error, total, onLoadMore, pageSize, onPageSizeChange }: PaginationProps) {
   return (
     <div className="pagination-bar">
       <div className="pagination-info">
@@ -25,7 +26,13 @@ export default function Pagination({ hasMore, loading, total, onLoadMore, pageSi
           </select>
         </label>
       </div>
-      {hasMore && (
+      {error && (
+        <div className="workspace-alert" role="alert">
+          <strong>{error}</strong>
+          <button className="ghost-button" type="button" onClick={onLoadMore}>Retry <span>↻</span></button>
+        </div>
+      )}
+      {hasMore && !error && (
         <button className="button button-secondary" type="button" onClick={onLoadMore} disabled={loading}>
           {loading ? "Loading…" : "Load more"} <span>↓</span>
         </button>
@@ -38,15 +45,19 @@ export function usePagination<T>(fetcher: (cursor: string | null, limit: number)
   const [items, setItems] = useState<T[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pageSize, setPageSize] = useState(50);
 
   const load = useCallback(async (reset = false) => {
     setLoading(true);
+    setError(null);
     try {
       const c = reset ? null : cursor;
       const result = await fetcher(c, pageSize);
       setItems((prev) => reset ? result.data : [...prev, ...result.data]);
       setCursor(result.nextCursor);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Failed to load more records.");
     } finally {
       setLoading(false);
     }
@@ -54,15 +65,14 @@ export function usePagination<T>(fetcher: (cursor: string | null, limit: number)
 
   const reload = useCallback(() => {
     setCursor(null);
-    setItems([]);
     return load(true);
   }, [load]);
 
   const changePageSize = useCallback((size: number) => {
     setPageSize(size);
     setCursor(null);
-    setItems([]);
-  }, []);
+    void load(true);
+  }, [load]);
 
-  return { items, loading, hasMore: cursor !== null, load, reload, pageSize, changePageSize };
+  return { items, loading, hasMore: cursor !== null, error, load, reload, pageSize, changePageSize };
 }

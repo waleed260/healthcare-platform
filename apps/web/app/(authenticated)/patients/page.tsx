@@ -6,8 +6,7 @@ import anime from "animejs";
 import { apiPage, errorMessage } from "../_lib/client";
 import Pagination, { usePagination } from "../_lib/pagination";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
-
-type Patient = { id: string; patient_number: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; status: string; version: number };
+import type { PatientSummary } from "@contracts/entities";
 
 const statuses = ["active", "inactive", "discharged", "deceased"];
 
@@ -23,12 +22,16 @@ export default function PatientsPage() {
     if (activeSearch) params.set("search", activeSearch);
     if (statusFilter) params.set("status", statusFilter);
     if (cursor) params.set("cursor", cursor);
-    return apiPage<Patient>(`/api/v1/patients?${params.toString()}`);
+    return apiPage<PatientSummary>(`/api/v1/patients?${params.toString()}`);
   }, [activeSearch, statusFilter]);
 
-  const { items: patients, loading, hasMore, load, reload, pageSize, changePageSize } = usePagination(fetcher);
+  const { items: patients, loading, hasMore, error: paginationError, load, reload, pageSize, changePageSize } = usePagination(fetcher);
 
-  useEffect(() => { void reload(); }, [reload]);
+  const initialRef = useRef(true);
+  useEffect(() => {
+    if (initialRef.current) { initialRef.current = false; void reload(); return; }
+    void reload();
+  }, [activeSearch, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,12 +42,10 @@ export default function PatientsPage() {
     setStatusFilter(value);
   }
 
-  useEffect(() => { void reload(); }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const patientListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (loading || patients.length === 0 || !patientListRef.current) return;
-    anime({
+    const animation = anime({
       targets: patientListRef.current.querySelectorAll(".patient-row"),
       opacity: [0, 1],
       translateX: [-16, 0],
@@ -52,6 +53,7 @@ export default function PatientsPage() {
       delay: anime.stagger(30, { start: 80 }),
       easing: "easeOutCubic",
     });
+    return () => { animation.pause(); };
   }, [loading, patients.length]);
 
   return (
@@ -126,7 +128,7 @@ export default function PatientsPage() {
           </div>
         )}
 
-        <Pagination hasMore={hasMore} loading={loading} total={patients.length} onLoadMore={() => void load()} pageSize={pageSize} onPageSizeChange={changePageSize} />
+        <Pagination hasMore={hasMore} loading={loading} error={paginationError} total={patients.length} onLoadMore={() => void load()} pageSize={pageSize} onPageSizeChange={changePageSize} />
       </div>
 
       <AddPatientDrawer open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void reload()} />

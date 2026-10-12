@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import SetupExtras from "./setup-extras";
+import { csrfToken } from "../(authenticated)/_lib/client";
 
 type SetupState = { completed: boolean; completed_at: string | null; ready_to_complete: boolean; steps: Record<string, boolean> };
 type Branch = { id: string; name: string; code: string; timezone: string };
@@ -14,11 +15,6 @@ const labels: Record<string, string> = {
   first_branch: "Create your first branch", branch_hours: "Set branch hours", doctor: "Add a doctor",
   service: "Create a service", doctor_assignment: "Assign a doctor to a branch", service_assignment: "Assign a service to a branch",
 };
-
-function csrfToken(): string {
-  const match = document.cookie.match(/(?:^|; )csrf_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : "";
-}
 
 async function responseMessage(response: Response): Promise<string> {
   const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
@@ -38,6 +34,10 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [branchForm, setBranchForm] = useState({ code: "main", name: "Main clinic", timezone: "UTC" });
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const defaultSchedule = () => dayNames.map((_, i) => ({ opens: "09:00", closes: "17:00", closed: i === 6 }));
+  const [weekSchedule, setWeekSchedule] = useState(defaultSchedule);
+  const updateDay = (i: number, field: string, val: string | boolean) => setWeekSchedule((prev) => prev.map((d, j) => j === i ? { ...d, [field]: val } : d));
   const [doctorName, setDoctorName] = useState("");
   const [serviceName, setServiceName] = useState("");
   const [selectedBranch, setSelectedBranch] = useState("");
@@ -74,7 +74,21 @@ export default function OnboardingPage() {
   }
 
   function submitBranch(event: FormEvent) { event.preventDefault(); void action("branch", () => send("/api/v1/branches", "POST", { ...branchForm, address: {} })); }
-  function submitHours(event: FormEvent) { event.preventDefault(); if (selectedBranch) void action("hours", () => send(`/api/v1/branches/${selectedBranch}/hours/0`, "PUT", { weekday: 0, interval_index: 0, opens_at: "09:00:00", closes_at: "17:00:00", is_closed: false })); }
+  function submitHours(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedBranch) return;
+    void action("hours", async () => {
+      for (let weekday = 0; weekday < 7; weekday++) {
+        const day = weekSchedule[weekday];
+        await send(`/api/v1/branches/${selectedBranch}/hours/${weekday}`, "PUT", {
+          weekday, interval_index: 0,
+          opens_at: day.closed ? null : `${day.opens}:00`,
+          closes_at: day.closed ? null : `${day.closes}:00`,
+          is_closed: day.closed,
+        });
+      }
+    });
+  }
   function submitDoctor(event: FormEvent) { event.preventDefault(); void action("doctor", () => send("/api/v1/doctors", "POST", { public_name: doctorName, consultation_duration_minutes: 30 })); }
   function submitService(event: FormEvent) { event.preventDefault(); void action("service", () => send("/api/v1/services", "POST", { name: serviceName, duration_minutes: 30, approval_mode: "staff_approval", price_mode: "contact", visibility: "public" })); }
   function submitDoctorAssignment(event: FormEvent) { event.preventDefault(); if (selectedBranch && selectedDoctor) void action("doctor-assignment", () => send(`/api/v1/branches/${selectedBranch}/doctors/${selectedDoctor}`, "POST")); }
@@ -94,7 +108,7 @@ export default function OnboardingPage() {
       <ol className="setup-steps" aria-label="Setup progress">{Object.entries(setup.steps).map(([key, complete]) => <li className={complete ? "setup-step complete" : "setup-step"} key={key}><span className="step-mark" aria-hidden="true">{complete ? "✓" : ""}</span><span>{labels[key] ?? key.replaceAll("_", " ")}</span><span className="step-state">{complete ? "Ready" : "To do"}</span></li>)}</ol>
       <section className="setup-actions-grid" aria-label="Setup actions">
         {!step("first_branch") && <form className="setup-card" onSubmit={submitBranch}><p className="eyebrow">01 · LOCATION</p><h2>Open your first branch</h2><label>Branch name<input required maxLength={160} value={branchForm.name} onChange={(event) => setBranchForm({ ...branchForm, name: event.target.value })} /></label><label>Short code<input required maxLength={40} value={branchForm.code} onChange={(event) => setBranchForm({ ...branchForm, code: event.target.value })} /></label><label>IANA timezone<input required value={branchForm.timezone} onChange={(event) => setBranchForm({ ...branchForm, timezone: event.target.value })} /></label><button className="button button-primary" disabled={busy !== null} type="submit">{buttonText("branch", "Save branch")} <span>→</span></button></form>}
-        {!step("branch_hours") && <form className="setup-card" onSubmit={submitHours}><p className="eyebrow">02 · HOURS</p><h2>Set a first opening</h2><p className="setup-card-copy">This saves Monday, 09:00–17:00 in the branch timezone. You can add more intervals later.</p><label>Branch<select required value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}>{branchOptions}</select></label><button className="button button-primary" disabled={busy !== null || !selectedBranch} type="submit">{buttonText("hours", "Save Monday hours")} <span>→</span></button></form>}
+        {!step("branch_hours") && <form className="setup-card" onSubmit={submitHours}><p className="eyebrow">02 · HOURS</p><h2>Set opening hours</h2><p className="setup-card-copy">Set your weekly schedule. Toggle days off and adjust times as needed.</p><label>Branch<select required value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}>{branchOptions}</select></label><div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "8px 0" }}>{weekSchedule.map((day, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "90px auto auto 1fr", gap: 8, alignItems: "center", fontSize: "0.85rem" }}><span style={{ fontWeight: 500 }}>{dayNames[i]}</span><label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.8rem", cursor: "pointer" }}><input type="checkbox" checked={day.closed} onChange={(e) => updateDay(i, "closed", e.target.checked)} /> Closed</label>{!day.closed && <><input type="time" value={day.opens} onChange={(e) => updateDay(i, "opens", e.target.value)} style={{ fontSize: "0.82rem", padding: "2px 4px" }} /><input type="time" value={day.closes} onChange={(e) => updateDay(i, "closes", e.target.value)} style={{ fontSize: "0.82rem", padding: "2px 4px" }} /></>}{day.closed && <span style={{ gridColumn: "span 2", color: "var(--text-muted, #6b7280)", fontSize: "0.8rem" }}>—</span>}</div>)}</div><button className="button button-primary" disabled={busy !== null || !selectedBranch} type="submit">{buttonText("hours", "Save weekly hours")} <span>→</span></button></form>}
         {!step("doctor") && <form className="setup-card" onSubmit={submitDoctor}><p className="eyebrow">03 · CARE TEAM</p><h2>Add a doctor</h2><label>Public name<input required maxLength={160} value={doctorName} onChange={(event) => setDoctorName(event.target.value)} placeholder="Dr. Samira Khan" /></label><button className="button button-primary" disabled={busy !== null} type="submit">{buttonText("doctor", "Add doctor")} <span>→</span></button></form>}
         {!step("service") && <form className="setup-card" onSubmit={submitService}><p className="eyebrow">04 · SERVICE</p><h2>Create a service</h2><label>Service name<input required maxLength={160} value={serviceName} onChange={(event) => setServiceName(event.target.value)} placeholder="General consultation" /></label><button className="button button-primary" disabled={busy !== null} type="submit">{buttonText("service", "Create service")} <span>→</span></button></form>}
         {!step("doctor_assignment") && <form className="setup-card" onSubmit={submitDoctorAssignment}><p className="eyebrow">05 · ASSIGN</p><h2>Place a doctor</h2><label>Branch<select required value={selectedBranch} onChange={(event) => setSelectedBranch(event.target.value)}>{branchOptions}</select></label><label>Doctor<select required value={selectedDoctor} onChange={(event) => setSelectedDoctor(event.target.value)}><option value="">Choose a doctor</option>{catalog.doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.public_name}</option>)}</select></label><button className="button button-primary" disabled={busy !== null || !selectedBranch || !selectedDoctor} type="submit">{buttonText("doctor-assignment", "Assign doctor")} <span>→</span></button></form>}

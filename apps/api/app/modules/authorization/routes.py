@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Cookie, Depends, Header, Request, status
-from fastapi import APIRouter, Cookie, Depends, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session

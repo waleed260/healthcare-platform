@@ -6,6 +6,7 @@ import { api, errorMessage, label, money, post } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
+import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Session = { permissions?: string[] };
 type Package = { id: string; name: string; description: string | null; specialty_id: string | null; total_price_minor: number; original_value_minor: number | null; currency: string; validity_days: number; status: string; version: number; created_at: string; total_sessions: number };
@@ -14,6 +15,7 @@ type Patient = { id: string; full_name: string; patient_number: string };
 type PatientPackage = { id: string; patient_id: string; package_definition_id: string; name: string; purchased_at: string; expires_at: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number; version: number };
 
 export default function PackagesPage() {
+  const clinicCurrency = useClinicCurrency();
   const [permissions, setPermissions] = useState<string[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -83,7 +85,7 @@ export default function PackagesPage() {
         description: field(form, "description") || null,
         total_price_minor: price,
         original_value_minor: original,
-        currency: "PKR",
+        currency: clinicCurrency,
         validity_days: Number(field(form, "validity_days")),
       }),
       "Package created.", "The package could not be created."
@@ -257,7 +259,7 @@ export default function PackagesPage() {
         <label>Service
           <select name="service_id" required>
             <option value="">Choose service…</option>
-            {services.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.duration_minutes} min{s.amount_minor != null ? ` · ${money(s.amount_minor, s.currency ?? "PKR")}` : ""})</option>)}
+            {services.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.duration_minutes} min{s.amount_minor != null ? ` · ${money(s.amount_minor, s.currency ?? clinicCurrency)}` : ""})</option>)}
           </select>
         </label>
         <label>Sessions included<input name="sessions_count" type="number" min={1} max={1000} required defaultValue={1} /></label>

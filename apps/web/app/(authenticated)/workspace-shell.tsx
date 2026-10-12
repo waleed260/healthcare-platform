@@ -5,8 +5,7 @@ import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import anime from "animejs";
 import { post } from "./_lib/client";
-
-type Session = { display_name?: string; email?: string; permissions?: string[]; clinic_id?: string | null; is_platform_admin?: boolean };
+import type { SessionInfo } from "@contracts/entities";
 type NavItem = { href: string; label: string; icon: string; permission: string };
 type NavGroup = { key: string; label: string; items: NavItem[] };
 
@@ -70,13 +69,13 @@ async function readJson<T>(url: string): Promise<T | null> {
 
 export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<SessionInfo | null>(null);
   const [connectionIssue, setConnectionIssue] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-    void readJson<Session>("/api/v1/auth/me").then((nextSession) => {
+    void readJson<SessionInfo>("/api/v1/auth/me").then((nextSession) => {
       if (!mounted) return;
       if (!nextSession) {
         setConnectionIssue(true);
@@ -130,7 +129,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!navRef.current || !session) return;
-    anime({
+    const animation = anime({
       targets: navRef.current.querySelectorAll(".workspace-nav-link"),
       opacity: [0, 1],
       translateX: [-10, 0],
@@ -138,6 +137,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
       delay: anime.stagger(20, { start: 50 }),
       easing: "easeOutCubic",
     });
+    return () => { animation.pause(); };
   }, [session]);
 
   const signOut = useCallback(async () => {

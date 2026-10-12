@@ -54,7 +54,9 @@ export async function apiPage<T>(url: string, fallback = "The request could not 
 }
 
 export function csrfToken(): string {
-  return document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrf_token="))?.slice(11) ?? "";
+  const parts = document.cookie.split(";").map((c) => c.trim()).filter((c) => c.startsWith("csrf_token="));
+  const last = parts[parts.length - 1];
+  return last ? decodeURIComponent(last.slice(11)) : "";
 }
 
 export function writeHeaders(): Record<string, string> {
