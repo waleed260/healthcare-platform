@@ -7,7 +7,7 @@ ALLOWED_TRANSITIONS: Final[dict[str, set[str]]] = {
     "requested": {"confirmed", "cancelled"},
     "confirmed": {"arrived", "rescheduled", "cancelled", "no_show"},
     "arrived": {"waiting", "cancelled"},
-    "waiting": {"in_consultation", "cancelled"},
+    "waiting": {"in_consultation", "cancelled", "confirmed"},
     "in_consultation": {"completed"},
     "completed": set(),
     "rescheduled": set(),

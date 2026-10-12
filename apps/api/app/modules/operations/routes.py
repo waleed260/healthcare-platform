@@ -543,6 +543,16 @@ def queue_remove(queue_id: str, request: Request, db: Session = Depends(get_db),
     """), {"clinic_id": session["clinic_id"], "id": queue_id}).mappings().one_or_none()
     if deleted is None:
         raise _error("NOT_FOUND", "Queue entry not found.", status.HTTP_404_NOT_FOUND)
+    restored = db.execute(text("""
+        UPDATE appointments SET status = 'confirmed', status_changed_at = now(), version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND id = :appointment_id AND status = 'waiting'
+        RETURNING id
+    """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]}).scalar_one_or_none()
+    if restored is not None:
+        db.execute(text("""
+            INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id)
+            VALUES (:clinic_id, :appointment_id, 'waiting', 'confirmed', :actor)
+        """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"], "actor": session["user_id"]})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="queue.remove", entity_type="queue_entry", entity_id=queue["id"], outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": {"id": str(deleted["id"]), "removed": True}, "meta": {"request_id": request.state.request_id}}
