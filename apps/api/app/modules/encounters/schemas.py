@@ -14,7 +14,7 @@ DischargeOutcome = Literal["home", "referral", "transfer", "against_advice", "ad
 
 
 class MedicationEntry(BaseModel):
-    name: str = Field(max_length=200)
+    name: str = Field(min_length=1, max_length=200)
     dosage: str | None = Field(default=None, max_length=100)
     route: str | None = Field(default=None, max_length=60)
     frequency: str | None = Field(default=None, max_length=100)
@@ -34,7 +34,7 @@ class VitalsEntry(BaseModel):
 
 
 class AdministeredTreatment(BaseModel):
-    name: str = Field(max_length=200)
+    name: str = Field(min_length=1, max_length=200)
     dosage: str | None = Field(default=None, max_length=100)
     route: str | None = Field(default=None, max_length=60)
     administered_at: str | None = Field(default=None, max_length=30)
@@ -44,7 +44,7 @@ class AdministeredTreatment(BaseModel):
 
 
 class AdministeredProcedure(BaseModel):
-    name: str = Field(max_length=200)
+    name: str = Field(min_length=1, max_length=200)
     performed_at: str | None = Field(default=None, max_length=30)
     performer: str | None = Field(default=None, max_length=200)
     findings: str | None = Field(default=None, max_length=2000)
