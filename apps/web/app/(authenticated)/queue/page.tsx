@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
+import { useCallback, useEffect, useState } from "react";
 import { api, apiPage, errorMessage, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -135,13 +134,7 @@ export default function QueuePage() {
     finally { setWorking(null); }
   }
 
-  const queueRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !queueRef.current) return;
-    anime({ targets: queueRef.current.querySelectorAll(".queue-row, .queue-card"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
-  }, [loading]);
-
-  return <section className="dash-content queue-content" ref={queueRef} aria-busy={loading}>
+  return <section className="dash-content queue-content" aria-busy={loading}>
     <div className="dash-topline">
       <div><p className="eyebrow">RECEPTION · LIVE CLINIC FLOW</p><h1>Keep the day <em>moving.</em></h1></div>
       <div style={{ display: "flex", gap: 8 }}>

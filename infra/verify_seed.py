@@ -10,7 +10,12 @@ from __future__ import annotations
 import os
 from uuid import UUID, uuid5
 
-import psycopg
+try:
+    import psycopg
+except ModuleNotFoundError:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg[binary]"], stdout=subprocess.DEVNULL)
+    import psycopg
 
 
 NAMESPACE = UUID("a59c4f7e-97c1-4c14-9a2e-0f30f5c63d8b")

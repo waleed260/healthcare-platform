@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -99,12 +98,6 @@ export default function TasksPage() {
     finally { setBusy(null); }
   }
 
-  const listRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (loading || tasks.length === 0 || !listRef.current) return;
-    anime({ targets: listRef.current.querySelectorAll(".task-row"), opacity: [0, 1], translateY: [16, 0], duration: 400, delay: anime.stagger(30, { start: 60 }), easing: "easeOutCubic" });
-  }, [loading, tasks.length]);
-
   const priorityColor = (p: string) => p === "urgent" ? "var(--coral)" : p === "high" ? "#e0a458" : p === "low" ? "var(--muted)" : "var(--leaf)";
   const myTasks = tasks.filter((t) => t.assignee_user_id === userId);
   const overdue = tasks.filter((t) => t.due_at && t.status !== "completed" && t.status !== "cancelled" && new Date(t.due_at) < new Date());
@@ -160,7 +153,7 @@ export default function TasksPage() {
         {!loading && tasks.length === 0 && <div className="dashboard-empty"><strong>No tasks</strong><span>Create a task to get started.</span></div>}
 
         {!loading && tasks.length > 0 && (
-          <div ref={listRef}>
+          <div>
             {tasks.map((task) => (
               <div className="task-row" key={task.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
