@@ -450,6 +450,29 @@ def encounter_print(
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
+# ── Prescriptions linked to this encounter ────────────────────────────
+@router.get("/{encounter_id}/prescriptions")
+def encounter_prescriptions(
+    encounter_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias="healthcare_session"),
+) -> dict:
+    session = _authorized(db, session_token, "clinical.read")
+    enc = db.execute(text("SELECT 1 FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": encounter_id}).scalar_one_or_none()
+    if enc is None:
+        raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
+    rows = db.execute(text("""
+        SELECT id, patient_id, encounter_id, prescribed_by_user_id, medication_name,
+               dosage, frequency, duration, instructions, status, version, prescribed_at, updated_at
+        FROM prescriptions
+        WHERE clinic_id = :clinic_id AND encounter_id = :encounter_id
+        ORDER BY prescribed_at DESC, id DESC
+    """), {"clinic_id": session["clinic_id"], "encounter_id": encounter_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
 # ── Lookup by appointment ─────────────────────────────────────────────
 @router.get("/by-appointment/{appointment_id}")
 def encounter_by_appointment(

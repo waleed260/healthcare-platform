@@ -90,20 +90,42 @@ Last updated: 2026-10-13
 | P6-06 | RETURNING vs SELECT column parity | `test_encounter_routes.py::TestColumnConstants` | 3/3 PASS | PASS — VERIFIED |
 | P6-07 | JSONB serialization tests | `test_encounter_routes.py::TestJsonbSerialization` | 4/4 PASS | PASS — VERIFIED |
 | P6-08 | Frontend build verification | `next build` | PASS | PASS — VERIFIED |
+| P6-09 | E2E: list page loads | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-10 | E2E: create encounter flow | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-11 | E2E: 9-tab detail page | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-12 | E2E: tab navigation & content verification | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-13 | E2E: status transitions (draft→in_progress→ready) | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-14 | E2E: discharge workflow | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-15 | E2E: summary tab with print button | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-16 | E2E: amendment form for discharged encounters | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-17 | E2E: finalized encounter is read-only | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-18 | E2E: GCS calculator shows classification | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-19 | E2E: status filter tabs | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+| P6-20 | E2E: delete/edit/view links per status | `encounter-workflow.spec.ts` | PASS (chromium + mobile) | PASS — VERIFIED |
+
+## Phase 7: Prescription Integration
+
+| Req ID | Description | Files | Status |
+|--------|-------------|-------|--------|
+| P7-01 | Prescription schema has encounter_id field | `clinical/schemas.py:56` | PASS — VERIFIED |
+| P7-02 | Prescription INSERT writes encounter_id | `clinical/routes.py:156-158` | PASS — VERIFIED |
+| P7-03 | Prescription SELECT returns encounter_id | `clinical/routes.py:136` | PASS — VERIFIED |
+| P7-04 | Encounter prescriptions endpoint (GET /encounters/{id}/prescriptions) | `encounters/routes.py` | PASS — VERIFIED |
+| P7-05 | Prescriptions tab in encounter detail page | `encounters/[encounterId]/page.tsx` | PASS — VERIFIED |
+| P7-06 | DB column + index on prescriptions.encounter_id | Migration `0075:71-72` | PASS — VERIFIED |
 
 ## Known Issues / Blockers
 
 | Item | Description | Severity |
 |------|-------------|----------|
 | 1 | Integration tests require running database (healthcare_test) — not run in this session | Low — schema & route tests cover logic |
-| 2 | Prescription module does not yet read/write encounter_id in its routes | Low — FK and index exist, needs route wiring |
-| 3 | No E2E (Playwright) tests for encounter workflow | Medium — manual browser testing needed |
 
 ## Summary
 
-- **Total automated tests**: 75 (60 schema + 15 route)
+- **Total automated tests**: 101 (60 schema + 15 route + 13 E2E × 2 viewports)
 - **All passing**: Yes
 - **Frontend build**: Clean (0 errors)
-- **API routes**: Load successfully (10 endpoints)
+- **API routes**: Load successfully (11 endpoints)
 - **Migrations**: 0073 (base table) + 0075 (extensions) — both have downgrade support
 - **Security**: CSRF required on all writes, RLS policy enforced, tenant isolation via clinic_id, permission checks on every endpoint
+- **Prescription integration**: encounter_id fully wired in schema, routes, and UI

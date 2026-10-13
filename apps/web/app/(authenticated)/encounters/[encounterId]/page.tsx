@@ -92,8 +92,10 @@ function toLocalDatetime(iso: string | null): string {
   } catch { return ""; }
 }
 
-type Tab = "arrival" | "patient" | "assessment" | "treatment" | "medications" | "vitals" | "discharge" | "summary";
-const TABS: Tab[] = ["arrival", "patient", "assessment", "treatment", "medications", "vitals", "discharge", "summary"];
+type Prescription = { id: string; medication_name: string; dosage: string | null; frequency: string | null; duration: string | null; instructions: string | null; status: string; prescribed_at: string };
+
+type Tab = "arrival" | "patient" | "assessment" | "treatment" | "medications" | "vitals" | "discharge" | "prescriptions" | "summary";
+const TABS: Tab[] = ["arrival", "patient", "assessment", "treatment", "medications", "vitals", "discharge", "prescriptions", "summary"];
 
 const AMENDABLE_FIELDS = [
   { value: "chief_complaint", label: "Chief Complaint" },
@@ -178,6 +180,10 @@ export default function EncounterDetailPage() {
   const [followUpClinician, setFollowUpClinician] = useState("");
   const [followUpDept, setFollowUpDept] = useState("");
   const [referralInstructions, setReferralInstructions] = useState("");
+
+  // Prescriptions
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [prescriptionsLoaded, setPrescriptionsLoaded] = useState(false);
 
   // Amendment
   const [amendField, setAmendField] = useState("");
@@ -380,6 +386,19 @@ export default function EncounterDetailPage() {
       toast.error(errorMessage(reason, "Could not submit amendment."));
     } finally { setBusy(false); }
   }
+
+  /* ── Load prescriptions (lazy) ─────────────────────────────── */
+  const loadPrescriptions = useCallback(async () => {
+    try {
+      const data = await api<Prescription[]>(`/api/v1/encounters/${encounterId}/prescriptions`);
+      setPrescriptions(data ?? []);
+    } catch { /* silent — tab shows empty state */ }
+    setPrescriptionsLoaded(true);
+  }, [encounterId]);
+
+  useEffect(() => {
+    if (tab === "prescriptions" && !prescriptionsLoaded) void loadPrescriptions();
+  }, [tab, prescriptionsLoaded, loadPrescriptions]);
 
   /* ── Medication helpers ───────────────────────────────────────── */
   function addMed() { setMeds([...meds, { name: "", dosage: "", route: "oral", frequency: "", duration: "" }]); }
@@ -668,7 +687,37 @@ export default function EncounterDetailPage() {
           </div>
         )}
 
-        {/* ── Tab H: Summary / Print ─────────────────────────────── */}
+        {/* ── Tab H: Prescriptions ───────────────────────────────── */}
+        {tab === "prescriptions" && (
+          <div className="enc-section surface-card">
+            <div className="surface-card-heading"><div><p className="eyebrow">DISCHARGE PRESCRIPTIONS</p><h2>Prescriptions ({prescriptions.length})</h2></div></div>
+            {!prescriptionsLoaded && <div className="dashboard-empty" role="status"><strong>Loading prescriptions...</strong></div>}
+            {prescriptionsLoaded && prescriptions.length === 0 && (
+              <div className="dashboard-empty"><strong>No prescriptions</strong><span>Prescriptions linked to this encounter will appear here.</span></div>
+            )}
+            {prescriptions.length > 0 && (
+              <div>
+                {prescriptions.map((p) => (
+                  <div key={p.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "center", fontSize: 13 }}>
+                    <div><strong>{p.medication_name}</strong></div>
+                    <div>{p.dosage ?? "-"}</div>
+                    <div>{p.frequency ?? "-"}</div>
+                    <div>{p.duration ?? "-"}</div>
+                    <div><span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: p.status === "active" ? "var(--leaf)" : "var(--line)", color: p.status === "active" ? "#fff" : "var(--fg)" }}>{p.status}</span></div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmtDateTime(p.prescribed_at)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {enc && (
+              <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
+                Prescriptions are created from the <a href={`/patients/${enc.patient_id}`} style={{ color: "var(--accent)" }}>patient record</a> and linked via encounter ID.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab I: Summary / Print ──────────────────────────────── */}
         {tab === "summary" && (
           <>
             <div className="enc-section surface-card enc-print-header" style={{ display: "none" }}>
