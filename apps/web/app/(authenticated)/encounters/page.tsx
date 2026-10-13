@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -150,10 +149,6 @@ export default function EncountersPage() {
   }
 
   const listRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (loading || encounters.length === 0 || !listRef.current) return;
-    anime({ targets: listRef.current.querySelectorAll(".enc-row"), opacity: [0, 1], translateY: [16, 0], duration: 400, delay: anime.stagger(30, { start: 60 }), easing: "easeOutCubic" });
-  }, [loading, encounters.length]);
 
   const counts: Record<string, number> = {};
   for (const e of encounters) counts[e.status] = (counts[e.status] ?? 0) + 1;

@@ -39,26 +39,29 @@ JSONB_FIELDS = frozenset({
 
 DATETIME_FIELDS = frozenset({"arrival_datetime"})
 
-ALL_ENCOUNTER_COLUMNS = """
-    e.id, e.clinic_id, e.patient_id, e.appointment_id, e.doctor_id, e.branch_id,
-    e.encounter_type, e.status, e.chief_complaint, e.history_present_illness,
-    e.examination_findings, e.diagnosis, e.investigations, e.treatment_plan,
-    e.medications, e.procedures_performed, e.follow_up_instructions, e.follow_up_date,
-    e.arrival_vitals, e.discharge_vitals, e.discharge_notes, e.internal_notes,
-    e.created_by, e.finalized_at, e.finalized_by, e.created_at, e.updated_at, e.version,
-    e.arrival_mode, e.arrival_datetime, e.attendant_name, e.attendant_phone,
-    e.condition_on_arrival, e.known_allergies, e.allergy_status, e.medical_history,
-    e.current_medications_text, e.symptom_duration,
-    e.gcs_eye, e.gcs_verbal, e.gcs_motor, e.pain_score,
-    e.investigation_results, e.clinical_assessment,
-    e.administered_treatments, e.administered_procedures,
-    e.treatment_response, e.adverse_reactions,
-    e.discharge_condition, e.discharge_outcome, e.discharge_destination,
-    e.discharge_reason, e.discharge_datetime, e.discharged_by,
-    e.discharge_instructions, e.warning_signs, e.medicine_guidance,
-    e.follow_up_clinician, e.follow_up_department, e.referral_instructions,
-    e.amendment_history
+_ENCOUNTER_COLS = """
+    id, clinic_id, patient_id, appointment_id, doctor_id, branch_id,
+    encounter_type, status, chief_complaint, history_present_illness,
+    examination_findings, diagnosis, investigations, treatment_plan,
+    medications, procedures_performed, follow_up_instructions, follow_up_date,
+    arrival_vitals, discharge_vitals, discharge_notes, internal_notes,
+    created_by, finalized_at, finalized_by, created_at, updated_at, version,
+    arrival_mode, arrival_datetime, attendant_name, attendant_phone,
+    condition_on_arrival, known_allergies, allergy_status, medical_history,
+    current_medications_text, symptom_duration,
+    gcs_eye, gcs_verbal, gcs_motor, pain_score,
+    investigation_results, clinical_assessment,
+    administered_treatments, administered_procedures,
+    treatment_response, adverse_reactions,
+    discharge_condition, discharge_outcome, discharge_destination,
+    discharge_reason, discharge_datetime, discharged_by,
+    discharge_instructions, warning_signs, medicine_guidance,
+    follow_up_clinician, follow_up_department, referral_instructions,
+    amendment_history
 """
+
+ALL_ENCOUNTER_COLUMNS = ", ".join(f"e.{c.strip()}" for c in _ENCOUNTER_COLS.split(","))
+RETURNING_COLUMNS = _ENCOUNTER_COLS
 
 
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
@@ -256,7 +259,7 @@ def encounter_update(
     row = db.execute(text(f"""
         UPDATE encounter_forms SET {', '.join(updates)}, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :id
-        RETURNING {ALL_ENCOUNTER_COLUMNS}
+        RETURNING {RETURNING_COLUMNS}
     """), params).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.update", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(values.keys())})
     db.commit()
@@ -336,7 +339,7 @@ def encounter_discharge(
             version = version + 1,
             updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :id
-        RETURNING {ALL_ENCOUNTER_COLUMNS}
+        RETURNING {RETURNING_COLUMNS}
     """), {
         "clinic_id": session["clinic_id"],
         "id": encounter_id,
