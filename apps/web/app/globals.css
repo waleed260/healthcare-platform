@@ -739,6 +739,21 @@ legend{font-size:var(--text-xs)}
 .doctor-card{padding:20px}
 .doctor-avatar{width:36px;height:36px;border-radius:50%;background:var(--leaf);color:white;display:grid;place-items:center;font:600 14px/1 'DM Sans',sans-serif;flex-shrink:0}
 
+/* Entry animations (CSS replacement for animejs) */
+@keyframes fadeSlideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeSlideRight{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+.animate-in>*,.animate-rows>*{animation:fadeSlideUp .35s ease-out both}
+.animate-in>*:nth-child(1){animation-delay:40ms}.animate-in>*:nth-child(2){animation-delay:70ms}.animate-in>*:nth-child(3){animation-delay:100ms}
+.animate-in>*:nth-child(4){animation-delay:130ms}.animate-in>*:nth-child(5){animation-delay:160ms}.animate-in>*:nth-child(6){animation-delay:190ms}
+.animate-in>*:nth-child(7){animation-delay:220ms}.animate-in>*:nth-child(8){animation-delay:250ms}.animate-in>*:nth-child(9){animation-delay:280ms}
+.animate-in>*:nth-child(n+10){animation-delay:300ms}
+.animate-rows>*:nth-child(1){animation-delay:30ms}.animate-rows>*:nth-child(2){animation-delay:55ms}.animate-rows>*:nth-child(3){animation-delay:80ms}
+.animate-rows>*:nth-child(4){animation-delay:105ms}.animate-rows>*:nth-child(5){animation-delay:130ms}.animate-rows>*:nth-child(6){animation-delay:155ms}
+.animate-rows>*:nth-child(7){animation-delay:180ms}.animate-rows>*:nth-child(8){animation-delay:205ms}.animate-rows>*:nth-child(9){animation-delay:230ms}
+.animate-rows>*:nth-child(10){animation-delay:255ms}.animate-rows>*:nth-child(n+11){animation-delay:280ms}
+.workspace-nav-link{animation:fadeSlideRight .3s ease-out both}
+@media(prefers-reduced-motion:reduce){.animate-in>*,.animate-rows>*,.workspace-nav-link{animation:none}}
+
 /* Print styles for encounter summary */
 .enc-print-header{display:none}
 @media print{

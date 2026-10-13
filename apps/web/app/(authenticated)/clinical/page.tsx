@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, apiPage, errorMessage, label, patch, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -95,22 +94,8 @@ export default function ClinicalPage() {
   const addRx = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const body = { medication_name: text(event, "medication"), dosage: text(event, "dosage") || null, frequency: text(event, "frequency") || null, duration: text(event, "duration") || null }; void run(async () => { await post(`/api/v1/patients/${patientId}/prescriptions`, body); target.reset(); }, "Prescription recorded."); };
   const addConsent = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const consentType = text(event, "type"); void run(async () => { await post(`/api/v1/patients/${patientId}/consents`, { consent_type: consentType, status: "granted", version: "1" }); target.reset(); }, "Consent recorded."); };
   const grantedConsent = consents.find((item) => item.status === "granted");
-
-  const sectionRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !sectionRef.current) return;
-    anime({
-      targets: sectionRef.current.querySelectorAll(".surface-card, .panel-card, .clinical-tab-content"),
-      opacity: [0, 1],
-      translateY: [22, 0],
-      duration: 500,
-      delay: anime.stagger(60, { start: 150 }),
-      easing: "easeOutCubic",
-    });
-  }, [loading, tab, patientId]);
-
   return (
-    <section className="dash-content clinical-content" ref={sectionRef} aria-busy={loading}>
+    <section className="dash-content clinical-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINICAL · CARE RECORDS</p>

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api } from "../_lib/client";
 
 type Doctor = {
@@ -63,25 +62,11 @@ export default function DoctorsPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const pageRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !pageRef.current) return;
-    anime({
-      targets: pageRef.current.querySelectorAll(".doctor-card"),
-      opacity: [0, 1],
-      translateY: [24, 0],
-      duration: 500,
-      delay: anime.stagger(60, { start: 100 }),
-      easing: "easeOutCubic",
-    });
-  }, [loading]);
-
   const activeDoctors = doctors.filter((d) => d.status === "active");
   const inactiveDoctors = doctors.filter((d) => d.status !== "active");
 
   return (
-    <section className="dash-content" ref={pageRef} aria-busy={loading}>
+    <section className="dash-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINICAL TEAM</p>

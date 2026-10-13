@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, writeHeaders, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 
@@ -188,16 +187,8 @@ export default function BranchesPage() {
       setSavingDay(null);
     }
   }
-
-  const pageRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !pageRef.current) return;
-    const animation = anime({ targets: pageRef.current.querySelectorAll(".branch-card"), opacity: [0, 1], translateY: [24, 0], duration: 500, delay: anime.stagger(60, { start: 100 }), easing: "easeOutCubic" });
-    return () => { animation.pause(); };
-  }, [loading]);
-
   return (
-    <section className="dash-content" ref={pageRef} aria-busy={loading}>
+    <section className="dash-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINIC NETWORK</p>

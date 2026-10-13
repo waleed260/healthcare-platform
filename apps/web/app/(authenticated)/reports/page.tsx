@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useClinicCurrency } from "../_lib/clinic-context";
@@ -63,14 +62,7 @@ export default function ReportsPage() {
   const appointmentTotal = useMemo(() => report?.appointments.reduce((total, item) => total + item.count, 0) ?? 0, [report]);
   const leadTotal = useMemo(() => report?.leads.reduce((total, item) => total + item.count, 0) ?? 0, [report]);
   const maxAppointment = Math.max(...(report?.appointments.map((item) => item.count) ?? [1]), 1);
-
-  const rptRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !rptRef.current) return;
-    anime({ targets: rptRef.current.querySelectorAll(".surface-card, .analytics-card, .inventory-summary > div"), opacity: [0, 1], translateY: [22, 0], duration: 500, delay: anime.stagger(50, { start: 120 }), easing: "easeOutCubic" });
-  }, [loading]);
-
-  return <main className="workspace-page reports-page" ref={rptRef}>
+  return <main className="workspace-page reports-page">
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">BUSINESS</p>

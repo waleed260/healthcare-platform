@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { apiPage, errorMessage } from "../_lib/client";
 import Pagination, { usePagination } from "../_lib/pagination";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
@@ -41,21 +40,6 @@ export default function PatientsPage() {
   function onStatusChange(value: string) {
     setStatusFilter(value);
   }
-
-  const patientListRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (loading || patients.length === 0 || !patientListRef.current) return;
-    const animation = anime({
-      targets: patientListRef.current.querySelectorAll(".patient-row"),
-      opacity: [0, 1],
-      translateX: [-16, 0],
-      duration: 420,
-      delay: anime.stagger(30, { start: 80 }),
-      easing: "easeOutCubic",
-    });
-    return () => { animation.pause(); };
-  }, [loading, patients.length]);
-
   return (
     <section className="dash-content patient-content" aria-busy={loading}>
       <div className="dash-topline">
@@ -113,7 +97,7 @@ export default function PatientsPage() {
         )}
 
         {patients.length > 0 && (
-          <div className="patient-list" role="list" ref={patientListRef}>
+          <div className="patient-list" role="list">
             {patients.map((patient) => (
               <Link className="patient-row" href={`/patients/${patient.id}`} key={patient.id} role="listitem">
                 <span className="patient-initial" aria-hidden="true">{patient.full_name.trim().charAt(0).toUpperCase()}</span>

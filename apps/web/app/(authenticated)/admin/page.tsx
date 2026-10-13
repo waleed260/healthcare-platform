@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, label, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -164,14 +163,7 @@ export default function AdminPage() {
     { key: "plans", label: "Plans", count: plans.length },
     { key: "announcements", label: "Announcements", count: announcements.length },
   ];
-
-  const adminRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !adminRef.current) return;
-    anime({ targets: adminRef.current.querySelectorAll(".surface-card, .invoice-row, .analytics-card, .inventory-summary > div"), opacity: [0, 1], translateY: [22, 0], duration: 500, delay: anime.stagger(40, { start: 100 }), easing: "easeOutCubic" });
-  }, [loading, tab]);
-
-  return <main className="workspace-page admin-page" ref={adminRef}>
+  return <main className="workspace-page admin-page">
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">PLATFORM ADMIN</p>

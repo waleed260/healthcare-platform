@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, label, money, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -98,22 +97,8 @@ export default function FinancePage() {
       toast.error(errorMessage(failure, "The commission rule could not be saved."));
     }
   }
-
-  const financeRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !financeRef.current) return;
-    anime({
-      targets: financeRef.current.querySelectorAll(".surface-card, .panel-card"),
-      opacity: [0, 1],
-      translateY: [24, 0],
-      duration: 500,
-      delay: anime.stagger(60, { start: 100 }),
-      easing: "easeOutCubic",
-    });
-  }, [loading]);
-
   return (
-    <section className="dash-content finance-content" ref={financeRef} aria-busy={loading}>
+    <section className="dash-content finance-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">BUSINESS · END OF DAY</p>

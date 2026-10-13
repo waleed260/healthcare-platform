@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from uuid import uuid4
 
@@ -94,6 +95,7 @@ app.include_router(clinical_forms_router)
 app.include_router(clinical_form_patient_router)
 app.include_router(tasks_router)
 app.include_router(encounters_router)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_allowed_origins),
@@ -137,6 +139,14 @@ async def security_middleware(request: Request, call_next):
     response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
     if settings.app_env == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    path = request.url.path
+    if request.method == "GET" and response.status_code == 200 and "Cache-Control" not in response.headers:
+        if path.startswith("/api/v1/public/"):
+            response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+        elif path == "/health/live" or path == "/health" or path == "/health/ready":
+            response.headers["Cache-Control"] = "no-cache"
+        elif path.startswith("/api/"):
+            response.headers["Cache-Control"] = "private, no-cache, max-age=0"
     return response
 
 

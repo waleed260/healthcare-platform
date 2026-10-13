@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(process.cwd(), "../.."),
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  compress: true,
+  poweredByHeader: false,
+  reactStrictMode: true,
   experimental: {
     useTypeScriptCli: false,
   },

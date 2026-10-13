@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, post, writeHeaders } from "../../_lib/client";
 
 type Policy = { id: string; name: string; jurisdiction: string; rules: Record<string, unknown>; approved_by: string | null; approved_at: string | null; active: boolean; created_at: string };
@@ -61,14 +60,7 @@ export default function GovernancePage() {
     catch (reason) { setError(reason instanceof Error ? reason.message : "The policy could not be assigned."); }
     finally { setWorking(false); }
   }
-
-  const contentRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!contentRef.current) return;
-    anime({ targets: contentRef.current.querySelectorAll(".surface-card, .detail-card, .inventory-summary > div"), opacity: [0, 1], translateY: [22, 0], duration: 500, delay: anime.stagger(50, { start: 120 }), easing: "easeOutCubic" });
-  }, []);
-
-  return <main className="workspace-page governance-content" aria-busy={loading} ref={contentRef}>
+  return <main className="workspace-page governance-content" aria-busy={loading}>
     <div className="workspace-page-header"><div><p className="eyebrow">PLATFORM ADMIN · RETENTION</p><h1>Approve <em>carefully.</em></h1><p className="workspace-page-intro">Create jurisdiction-specific policies as inactive drafts. Approval and clinic assignment are separate, auditable actions.</p></div><button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
     {notice && <div className="workspace-alert governance-notice" role="status">{notice}</div>}

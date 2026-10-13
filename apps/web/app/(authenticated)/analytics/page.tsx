@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, money } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useClinicCurrency } from "../_lib/clinic-context";
@@ -40,10 +39,6 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  const chartRef = useRef<HTMLDivElement>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
-  const funnelRef = useRef<HTMLDivElement>(null);
-
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -72,40 +67,6 @@ export default function AnalyticsPage() {
     }
   }, [range]);
   useEffect(() => { void load(); }, [load]);
-
-  useEffect(() => {
-    if (loading) return;
-    if (cardsRef.current) {
-      anime({
-        targets: cardsRef.current.querySelectorAll(".analytics-card"),
-        opacity: [0, 1],
-        translateY: [28, 0],
-        scale: [0.93, 1],
-        duration: 600,
-        delay: anime.stagger(70, { start: 80 }),
-        easing: "easeOutExpo",
-      });
-    }
-    if (chartRef.current) {
-      anime({
-        targets: chartRef.current.querySelectorAll(".chart-bar"),
-        scaleY: [0, 1],
-        duration: 650,
-        delay: anime.stagger(40, { start: 300 }),
-        easing: "easeOutCubic",
-      });
-    }
-    if (funnelRef.current) {
-      anime({
-        targets: funnelRef.current.querySelectorAll(".funnel-bar"),
-        width: (el: HTMLElement) => [0, el.style.width || "100%"],
-        opacity: [0, 1],
-        duration: 700,
-        delay: anime.stagger(100, { start: 400 }),
-        easing: "easeOutCubic",
-      });
-    }
-  }, [loading, range]);
 
   const totals = useMemo(() => {
     const half = Math.floor(daily.length / 2);
@@ -149,7 +110,7 @@ export default function AnalyticsPage() {
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
     {/* KPI cards */}
-    <div className="analytics-grid" ref={cardsRef}>
+    <div className="analytics-grid">
       <div className="analytics-card">
         <p className="eyebrow">APPOINTMENTS</p>
         <strong>{totals.appointments.toLocaleString()}</strong>
@@ -173,7 +134,7 @@ export default function AnalyticsPage() {
     </div>
 
     {/* Appointments chart */}
-    <div className="analytics-chart" ref={chartRef}>
+    <div className="analytics-chart">
       <h3>Daily appointments</h3>
       {daily.length === 0
         ? <div className="dashboard-empty"><strong>{loading ? "Loading chart data…" : "No data for this period"}</strong></div>
@@ -187,7 +148,7 @@ export default function AnalyticsPage() {
 
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
       {/* Conversion funnel */}
-      <div className="analytics-chart" ref={funnelRef}>
+      <div className="analytics-chart">
         <h3>Conversion funnel</h3>
         {funnel.length === 0
           ? <div className="dashboard-empty"><strong>{loading ? "Loading…" : "No funnel data"}</strong></div>

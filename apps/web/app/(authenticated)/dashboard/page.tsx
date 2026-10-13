@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import anime from "animejs";
 import PremiumMotion from "../../premium-motion";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
@@ -103,58 +102,19 @@ export default function DashboardPage() {
 
   const kpi = (value: number | undefined) => (loading && summary === null ? "…" : value ?? "—");
 
-  const kpiRef = useRef<HTMLDivElement>(null);
-  const mainRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (loading || !summary) return;
-    if (kpiRef.current) {
-      anime({
-        targets: kpiRef.current.querySelectorAll(".kpi-card"),
-        opacity: [0, 1],
-        translateY: [24, 0],
-        scale: [0.95, 1],
-        duration: 550,
-        delay: anime.stagger(70, { start: 100 }),
-        easing: "easeOutCubic",
-      });
-    }
-    if (mainRef.current) {
-      anime({
-        targets: mainRef.current.querySelectorAll(".panel-card"),
-        opacity: [0, 1],
-        translateY: [30, 0],
-        duration: 550,
-        delay: anime.stagger(90, { start: 350 }),
-        easing: "easeOutCubic",
-      });
-    }
-    if (bottomRef.current) {
-      anime({
-        targets: bottomRef.current.querySelectorAll(".panel-card"),
-        opacity: [0, 1],
-        translateY: [30, 0],
-        duration: 550,
-        delay: anime.stagger(90, { start: 550 }),
-        easing: "easeOutCubic",
-      });
-    }
-  }, [loading, summary]);
-
   return <main className="dashboard-overview" id="overview" aria-busy={loading}>
     <PremiumMotion />
     <div className="dash-topline"><div><p className="eyebrow">Today</p><h1>Today at a <em>glance.</em></h1></div><div className="header-actions">{permissions.includes("appointment.create") && <button className="button button-primary" type="button" onClick={() => setAddApptOpen(true)}>Book appointment <span>+</span></button>}</div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
-    <div className="kpi-grid" ref={kpiRef} aria-live="polite">
+    <div className="kpi-grid" aria-live="polite">
       <Link className="kpi-card" href="/schedule"><span className="kpi-ico kpi-ico-blue" aria-hidden="true">📅</span><div><small>Today&apos;s appointments</small><strong>{kpi(summary?.today_appointments)}</strong></div></Link>
       <Link className="kpi-card" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true">👥</span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
       <Link className="kpi-card" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true">🗎</span><div><small>Pending approval</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
       <Link className="kpi-card" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true">✓</span><div><small>Follow-ups due</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
     </div>
 
-    <div className="dash-main-grid" ref={mainRef}>
+    <div className="dash-main-grid">
       <section className="panel-card" id="schedule"><div className="card-heading"><div><p className="eyebrow">YOUR DAY</p><h2>Today&apos;s schedule</h2></div><Link className="text-link" href="/schedule">View full calendar <span>→</span></Link></div>
         {loading && schedule.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading schedule…</strong></div> : schedule.length === 0 ? <div className="dashboard-empty"><strong>No appointments</strong><span>Your scoped schedule is clear for now.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head"><span>Time</span><span>Appointment</span><span>Status</span></div>{schedule.slice(0, 9).map((a) => <div className="dash-table-row" key={a.id}><time dateTime={a.starts_at}>{time(a.starts_at)}</time><span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span><span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span></div>)}</div>}
       </section>
@@ -167,7 +127,7 @@ export default function DashboardPage() {
       </div>
     </div>
 
-    <div className="dash-bottom-grid" ref={bottomRef}>
+    <div className="dash-bottom-grid">
       <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">INBOX</p><h2>Appointment requests</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
         {requests.length === 0 ? <div className="dashboard-empty"><strong>No pending requests</strong><span>New booking requests will appear here.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head req-row"><span>Reference</span><span>Requested</span><span>Action</span></div>{requests.slice(0, 5).map((a) => <div className="dash-table-row req-row" key={a.id}><strong>{a.reference}</strong><small>{dayShort(a.starts_at)} {time(a.starts_at)}</small><Link className="text-control" href="/schedule?status=requested">Review</Link></div>)}</div>}
       </section>

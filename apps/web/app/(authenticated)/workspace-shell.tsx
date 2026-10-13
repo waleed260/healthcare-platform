@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import anime from "animejs";
 import { post } from "./_lib/client";
+import { cachedFetch } from "./_lib/session-cache";
 import type { SessionInfo } from "@contracts/entities";
 type NavItem = { href: string; label: string; icon: string; permission: string };
 type NavGroup = { key: string; label: string; items: NavItem[] };
@@ -54,14 +54,7 @@ const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good 
 
 async function readJson<T>(url: string): Promise<T | null> {
   try {
-    const response = await fetch(url, { credentials: "include", cache: "no-store" });
-    if (response.status === 401) {
-      window.location.href = "/login";
-      return null;
-    }
-    if (!response.ok) return null;
-    const payload = await response.json() as { data?: T };
-    return payload.data ?? null;
+    return await cachedFetch<T>(url, 10000);
   } catch {
     return null;
   }
@@ -126,20 +119,6 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => { setMobileNavOpen(false); }, [pathname]);
 
-  const navRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!navRef.current || !session) return;
-    const animation = anime({
-      targets: navRef.current.querySelectorAll(".workspace-nav-link"),
-      opacity: [0, 1],
-      translateX: [-10, 0],
-      duration: 350,
-      delay: anime.stagger(20, { start: 50 }),
-      easing: "easeOutCubic",
-    });
-    return () => { animation.pause(); };
-  }, [session]);
-
   const signOut = useCallback(async () => {
     try { await post("/api/v1/auth/logout"); } catch { /* continue */ }
     window.location.href = "/login";
@@ -148,7 +127,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   return <div className="workspace-layout">
     <aside className={`workspace-sidebar ${mobileNavOpen ? "sidebar-open" : ""}`} aria-label="Authenticated workspace navigation">
       <Link className="workspace-brand" href="/">care<span>/</span>fully</Link>
-      <nav className="workspace-nav" ref={navRef}>
+      <nav className="workspace-nav">
         {visibleGroups.map((group) => {
           const isCollapsed = collapsed.has(group.key);
           const hasLabel = group.label.length > 0;

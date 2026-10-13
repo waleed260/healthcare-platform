@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, post, writeHeaders } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
@@ -191,18 +190,11 @@ export default function DoctorDetailPage() {
       setBusy(false);
     }
   }
-
-  const pageRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !pageRef.current) return;
-    anime({ targets: pageRef.current.querySelectorAll(".doctor-detail-card"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(50, { start: 80 }), easing: "easeOutCubic" });
-  }, [loading, tab]);
-
   if (loading) return <section className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading doctor profile…</strong></div></section>;
   if (error || !doctor) return <section className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Doctor not found."}</strong></div><Link className="button button-secondary" href="/doctors">Back to doctors</Link></section>;
 
   return (
-    <section className="dash-content" ref={pageRef}>
+    <section className="dash-content">
       <div className="dash-topline">
         <div>
           <p className="eyebrow"><Link href="/doctors" style={{ color: "var(--muted)" }}>DOCTORS</Link> · PROFILE</p>

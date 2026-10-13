@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { api, errorMessage, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -106,14 +105,7 @@ export default function SecurityPage() {
   const mfa = overview?.mfa;
   const sessions = overview?.sessions ?? [];
   const otherCount = sessions.filter((s) => !s.current).length;
-
-  const secRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !secRef.current) return;
-    anime({ targets: secRef.current.querySelectorAll(".surface-card, .inventory-summary > div"), opacity: [0, 1], translateY: [22, 0], duration: 500, delay: anime.stagger(55, { start: 120 }), easing: "easeOutCubic" });
-  }, [loading]);
-
-  return <main className="workspace-page security-page" ref={secRef}>
+  return <main className="workspace-page security-page">
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">ACCOUNT · SAFE BY DEFAULT</p>

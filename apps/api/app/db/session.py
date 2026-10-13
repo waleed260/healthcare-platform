@@ -11,7 +11,15 @@ _settings = get_settings()
 # untyped NULL used as ``(:cursor IS NULL OR col > :cursor)``, which the list endpoints rely on, and it also
 # never creates server-side prepared statements, so pooled (PgBouncer/Neon) connections are safe.
 # The connect timeout is configurable because scale-to-zero databases need a moment to wake.
-engine = create_engine(_settings.database_url, pool_pre_ping=True, connect_args={"connect_timeout": _settings.database_connect_timeout, "cursor_factory": psycopg.ClientCursor})
+engine = create_engine(
+    _settings.database_url,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_recycle=300,
+    connect_args={"connect_timeout": _settings.database_connect_timeout, "cursor_factory": psycopg.ClientCursor},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 

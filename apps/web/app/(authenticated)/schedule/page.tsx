@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEventHandler } from "react";
-import anime from "animejs";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 import BlockTimeDrawer from "../_lib/block-time-drawer";
 import { api, writeHeaders } from "../_lib/client";
@@ -106,15 +105,8 @@ export default function SchedulePage() {
   const dropOnDay = (day: Date) => { if (!draggedId) return; const appointment = appointments.find((item) => item.id === draggedId); if (!appointment) return; reschedule(appointment, dateKey(day), `${String(new Date(appointment.starts_at).getHours()).padStart(2, "0")}:${String(new Date(appointment.starts_at).getMinutes()).padStart(2, "0")}`); setDraggedId(null); };
   const actionStatus = detail?.status ?? selected?.status;
   const selectedAppointment = detail ?? selected;
-
-  const scheduleRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !scheduleRef.current) return;
-    anime({ targets: scheduleRef.current.querySelectorAll(".calendar-cell, .calendar-toolbar, .calendar-filters"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
-  }, [loading]);
-
   return <>
-    <section className="dash-content schedule-content" ref={scheduleRef} aria-busy={loading || busy !== null}>
+    <section className="dash-content schedule-content" aria-busy={loading || busy !== null}>
       <div className="dash-topline">
         <div><p className="eyebrow">CALENDAR · SCOPED CLINIC VIEW</p><h1>Make room for <em>care.</em></h1></div>
         <div className="header-actions">

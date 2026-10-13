@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import anime from "animejs";
 import { csrfToken, errorMessage, post } from "../_lib/client";
 import FollowUpDrawer from "../_lib/follow-up-drawer";
 
@@ -153,15 +152,8 @@ export default function OperationsPage() {
   }
 
   useEffect(() => { void setupPush(); }, [setupPush]);
-
-  const opsRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (loading || !opsRef.current) return;
-    anime({ targets: opsRef.current.querySelectorAll(".panel-card, .operations-row, .operations-card"), opacity: [0, 1], translateY: [20, 0], duration: 450, delay: anime.stagger(35, { start: 100 }), easing: "easeOutCubic" });
-  }, [loading]);
-
   return <>
-    <section className="dash-content operations-content" ref={opsRef} aria-busy={loading}>
+    <section className="dash-content operations-content" aria-busy={loading}>
       <div className="dash-topline">
         <div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div>
         <div className="header-actions">

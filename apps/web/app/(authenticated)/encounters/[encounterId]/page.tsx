@@ -720,43 +720,115 @@ export default function EncounterDetailPage() {
         {/* ── Tab I: Summary / Print ──────────────────────────────── */}
         {tab === "summary" && (
           <>
+            {/* Print header (hidden on screen, visible when printing) */}
             <div className="enc-section surface-card enc-print-header" style={{ display: "none" }}>
-              <h2 style={{ marginBottom: 4 }}>Clinical Encounter Summary</h2>
-              <p>Patient: <strong>{enc.patient_name}</strong> {enc.mrn && `(MRN: ${enc.mrn})`} | Doctor: <strong>Dr. {enc.doctor_name}</strong> | Date: {fmtDateTime(enc.created_at)}</p>
+              <h2 style={{ marginBottom: 4 }}>Discharge Summary</h2>
+              <p>Patient: <strong>{enc.patient_name}</strong> {enc.mrn && `(MRN: ${enc.mrn})`} | Doctor: <strong>Dr. {enc.doctor_name}</strong>{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
+              {enc.branch_name && <p>Branch: {enc.branch_name}</p>}
             </div>
+
             <div className="enc-section surface-card">
-              <div className="surface-card-heading"><div><p className="eyebrow">SUMMARY</p><h2>Encounter Summary</h2></div>
+              <div className="surface-card-heading"><div><p className="eyebrow">DISCHARGE SUMMARY</p><h2>Encounter Summary</h2></div>
                 <button className="button button-secondary" type="button" onClick={() => window.print()}>Print</button>
               </div>
-              <SummarySection label="Status" value={statusLabel[enc.status] ?? enc.status} />
-              <SummarySection label="Type" value={typeLabel(enc.encounter_type)} />
+
+              {/* Token / Reference */}
+              <div style={{ background: "var(--bg-alt, rgba(0,0,0,0.03))", padding: "10px 14px", borderRadius: 6, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div><span className="eyebrow">TOKEN NUMBER</span><p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0" }}>{enc.id.slice(0, 8).toUpperCase()}</p></div>
+                <div style={{ textAlign: "right" }}><span className="eyebrow">STATUS</span><p style={{ fontSize: 14, fontWeight: 600, margin: "2px 0 0", color: statusColor[enc.status] }}>{statusLabel[enc.status] ?? enc.status}</p></div>
+              </div>
+
+              {/* Arrival Vitals */}
+              <div style={{ marginBottom: 16 }}>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>ARRIVAL VITALS</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "8px 16px", fontSize: 13 }}>
+                  {enc.arrival_vitals?.weight_kg != null && <div><span style={{ color: "var(--muted)" }}>Weight</span><br /><strong>{enc.arrival_vitals.weight_kg} kg</strong></div>}
+                  {enc.arrival_vitals?.height_cm != null && <div><span style={{ color: "var(--muted)" }}>Height</span><br /><strong>{enc.arrival_vitals.height_cm} cm</strong></div>}
+                  {enc.arrival_vitals?.weight_kg != null && enc.arrival_vitals?.height_cm != null && <div><span style={{ color: "var(--muted)" }}>BMI</span><br /><strong>{(enc.arrival_vitals.weight_kg / ((enc.arrival_vitals.height_cm / 100) ** 2)).toFixed(1)}</strong></div>}
+                  {enc.arrival_vitals?.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.arrival_vitals.pulse}</strong></div>}
+                  {enc.arrival_vitals?.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.arrival_vitals.blood_pressure}</strong></div>}
+                  {enc.arrival_vitals?.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.arrival_vitals.oxygen_saturation}%</strong></div>}
+                  {enc.arrival_vitals?.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (F)</span><br /><strong>{enc.arrival_vitals.temperature}°F</strong></div>}
+                  {(enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null) && <div><span style={{ color: "var(--muted)" }}>GCS Score</span><br /><strong>E{enc.gcs_eye ?? "-"} V{enc.gcs_verbal ?? "-"} M{enc.gcs_motor ?? "-"} = {(enc.gcs_eye ?? 0) + (enc.gcs_verbal ?? 0) + (enc.gcs_motor ?? 0)}</strong></div>}
+                </div>
+              </div>
+
+              {/* Condition on Arrival & Duration */}
+              <SummarySection label="Condition on Arrival" value={enc.condition_on_arrival} />
+              <SummarySection label="Duration of Symptoms" value={enc.symptom_duration} />
               {enc.arrival_mode && <SummarySection label="Arrival Mode" value={typeLabel(enc.arrival_mode)} />}
               {enc.arrival_datetime && <SummarySection label="Arrival Time" value={fmtDateTime(enc.arrival_datetime)} />}
-              {enc.condition_on_arrival && <SummarySection label="Condition on Arrival" value={enc.condition_on_arrival} />}
-              <SummarySection label="Chief Complaint" value={enc.chief_complaint} />
-              <SummarySection label="HPI" value={enc.history_present_illness} />
-              {enc.symptom_duration && <SummarySection label="Symptom Duration" value={enc.symptom_duration} />}
-              <SummarySection label="Examination Findings" value={enc.examination_findings} />
-              {(enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null) && <SummarySection label="GCS" value={`E${enc.gcs_eye ?? "-"} V${enc.gcs_verbal ?? "-"} M${enc.gcs_motor ?? "-"} = ${(enc.gcs_eye ?? 0) + (enc.gcs_verbal ?? 0) + (enc.gcs_motor ?? 0)}`} />}
-              {enc.pain_score != null && <SummarySection label="Pain Score" value={`${enc.pain_score}/10`} />}
-              <SummarySection label="Diagnosis" value={enc.diagnosis} />
-              <SummarySection label="Clinical Assessment" value={enc.clinical_assessment} />
-              <SummarySection label="Investigations" value={enc.investigations} />
-              <SummarySection label="Investigation Results" value={enc.investigation_results} />
-              <SummarySection label="Treatment Plan" value={enc.treatment_plan} />
-              <SummarySection label="Procedures" value={enc.procedures_performed} />
-              {(enc.administered_treatments?.length ?? 0) > 0 && <SummarySection label="Administered Treatments" value={enc.administered_treatments!.map((t) => `${t.name}${t.dosage ? ` ${t.dosage}` : ""}${t.route ? ` (${t.route})` : ""}`).join("; ")} />}
-              {(enc.administered_procedures?.length ?? 0) > 0 && <SummarySection label="Administered Procedures" value={enc.administered_procedures!.map((p) => `${p.name}${p.performer ? ` by ${p.performer}` : ""}`).join("; ")} />}
-              <SummarySection label="Treatment Response" value={enc.treatment_response} />
-              <SummarySection label="Adverse Reactions" value={enc.adverse_reactions} />
-              {(enc.medications?.length ?? 0) > 0 && <SummarySection label="Medications" value={enc.medications!.map((m) => `${m.name}${m.dosage ? ` ${m.dosage}` : ""}${m.frequency ? ` ${m.frequency}` : ""}${m.duration ? ` x ${m.duration}` : ""}`).join("; ")} />}
-              <SummarySection label="Discharge Outcome" value={enc.discharge_outcome ? typeLabel(enc.discharge_outcome) : null} />
-              <SummarySection label="Discharge Condition" value={enc.discharge_condition} />
-              <SummarySection label="Discharge Notes" value={enc.discharge_notes} />
+
+              {/* Clinical Findings */}
+              <div style={{ marginTop: 16 }}>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>CLINICAL FINDINGS</p>
+                <SummarySection label="Chief Complaint" value={enc.chief_complaint} />
+                <SummarySection label="HPI" value={enc.history_present_illness} />
+                <SummarySection label="Diagnosis" value={enc.diagnosis} />
+                <SummarySection label="Examination Findings" value={enc.examination_findings} />
+                <SummarySection label="Clinical Assessment" value={enc.clinical_assessment} />
+                {enc.pain_score != null && <SummarySection label="Pain Score" value={`${enc.pain_score}/10`} />}
+                <SummarySection label="Investigations" value={enc.investigations} />
+                <SummarySection label="Investigation Results" value={enc.investigation_results} />
+              </div>
+
+              {/* Treatment Given */}
+              <div style={{ marginTop: 16 }}>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>TREATMENT GIVEN BY CLINIC</p>
+                {(enc.medications?.length ?? 0) > 0 && <SummarySection label="Medicines" value={enc.medications!.map((m) => `${m.name}${m.dosage ? ` ${m.dosage}` : ""}${m.route ? ` (${m.route})` : ""}${m.frequency ? ` ${m.frequency}` : ""}${m.duration ? ` x ${m.duration}` : ""}`).join("; ")} />}
+                {(enc.administered_treatments?.length ?? 0) > 0 && <SummarySection label="Treatments" value={enc.administered_treatments!.map((t) => `${t.name}${t.dosage ? ` ${t.dosage}` : ""}${t.route ? ` (${t.route})` : ""}${t.administered_by ? ` — by ${t.administered_by}` : ""}`).join("; ")} />}
+                {(enc.administered_procedures?.length ?? 0) > 0 && <SummarySection label="Procedures" value={enc.administered_procedures!.map((p) => `${p.name}${p.performer ? ` by ${p.performer}` : ""}${p.findings ? ` — ${p.findings}` : ""}`).join("; ")} />}
+                <SummarySection label="Treatment Plan" value={enc.treatment_plan} />
+                <SummarySection label="Treatment Response" value={enc.treatment_response} />
+                {enc.adverse_reactions && <SummarySection label="Adverse Reactions" value={enc.adverse_reactions} />}
+              </div>
+
+              {/* Condition at Discharge */}
+              <div style={{ marginTop: 16 }}>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>DISCHARGE</p>
+                <SummarySection label="Condition at Discharge" value={enc.discharge_condition} />
+                <SummarySection label="Discharge Outcome" value={enc.discharge_outcome ? typeLabel(enc.discharge_outcome) : null} />
+                {enc.discharge_datetime && <SummarySection label="Discharge Time" value={fmtDateTime(enc.discharge_datetime)} />}
+              </div>
+
+              {/* Discharge Vitals */}
+              {enc.discharge_vitals && Object.values(enc.discharge_vitals).some((v) => v != null && v !== "") && (
+                <div style={{ marginTop: 12 }}>
+                  <p className="eyebrow" style={{ marginBottom: 6 }}>DISCHARGE VITAL SIGNS</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "8px 16px", fontSize: 13 }}>
+                    {enc.discharge_vitals.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.discharge_vitals.pulse}</strong></div>}
+                    {enc.discharge_vitals.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.discharge_vitals.blood_pressure}</strong></div>}
+                    {enc.discharge_vitals.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.discharge_vitals.oxygen_saturation}%</strong></div>}
+                    {enc.discharge_vitals.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (F)</span><br /><strong>{enc.discharge_vitals.temperature}°F</strong></div>}
+                  </div>
+                </div>
+              )}
+
+              {/* Discharge Instructions */}
               <SummarySection label="Discharge Instructions" value={enc.discharge_instructions} />
               <SummarySection label="Warning Signs" value={enc.warning_signs} />
-              <SummarySection label="Medicine Guidance" value={enc.medicine_guidance} />
+
+              {/* Discharge Medication Rx */}
+              <SummarySection label="Discharge Medication Rx" value={enc.medicine_guidance} />
+              <SummarySection label="Discharge Notes" value={enc.discharge_notes} />
+
+              {/* Follow-up */}
               <SummarySection label="Follow-up" value={[enc.follow_up_date && `Date: ${fmtDate(enc.follow_up_date)}`, enc.follow_up_instructions, enc.follow_up_clinician && `Clinician: ${enc.follow_up_clinician}`, enc.follow_up_department && `Dept: ${enc.follow_up_department}`].filter(Boolean).join(" | ") || null} />
+
+              {/* Examined By + Printed By */}
+              <div style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
+                <div>
+                  <span className="eyebrow">EXAMINED BY</span>
+                  <p style={{ fontWeight: 600, margin: "4px 0 0" }}>Dr. {enc.doctor_name}{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
+                  <p style={{ color: "var(--muted)", margin: "2px 0 0" }}>{fmtDateTime(enc.created_at)}</p>
+                </div>
+                <div>
+                  <span className="eyebrow">{enc.discharged_by ? "DISCHARGED BY" : "PRINTED BY"}</span>
+                  <p style={{ fontWeight: 600, margin: "4px 0 0" }}>{enc.discharged_by ?? `Dr. ${enc.doctor_name}`}</p>
+                  {enc.discharge_datetime && <p style={{ color: "var(--muted)", margin: "2px 0 0" }}>{fmtDateTime(enc.discharge_datetime)}</p>}
+                </div>
+              </div>
+
               {enc.internal_notes && <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--bg-alt, rgba(0,0,0,0.03))", borderRadius: 6, fontStyle: "italic", fontSize: 13 }}><span className="eyebrow">INTERNAL NOTES (NOT PRINTED)</span><p>{enc.internal_notes}</p></div>}
             </div>
 
