@@ -104,7 +104,14 @@ export default function EncountersPage() {
 
   async function createEncounter(e: FormEvent) {
     e.preventDefault();
-    if (!selectedPatient || !selectedDoctor) return;
+    if (!selectedPatient) {
+      toast.error("Please select a patient from the search results.");
+      return;
+    }
+    if (!selectedDoctor) {
+      toast.error("Please select a doctor.");
+      return;
+    }
     setBusy("create");
     try {
       const body: Record<string, unknown> = {
@@ -196,13 +203,17 @@ export default function EncountersPage() {
                 <>
                   <input value={patientSearch} onChange={(e) => void searchPatients(e.target.value)} placeholder="Search patient by name…" />
                   {patientResults.length > 0 && (
-                    <div style={{ border: "1px solid var(--line)", borderRadius: 6, maxHeight: 150, overflowY: "auto", marginTop: 4 }}>
+                    <div style={{ border: "1px solid var(--line)", borderRadius: 6, maxHeight: 150, overflowY: "auto", marginTop: 4, background: "var(--surface, var(--bg))" }}>
+                      <div style={{ padding: "6px 12px", fontSize: 11, color: "var(--muted)", borderBottom: "1px solid var(--line)" }}>Click to select a patient:</div>
                       {patientResults.map((p) => (
-                        <button key={p.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "none", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }} onClick={() => { setSelectedPatient(p); setPatientResults([]); }}>
+                        <button key={p.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "var(--surface, var(--bg))", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }} onClick={() => { setSelectedPatient(p); setPatientResults([]); }}>
                           {p.full_name} {p.mrn && <span style={{ color: "var(--muted)" }}>· {p.mrn}</span>}
                         </button>
                       ))}
                     </div>
+                  )}
+                  {patientSearch.length >= 2 && patientResults.length === 0 && (
+                    <span style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, display: "block" }}>No patients found for &ldquo;{patientSearch}&rdquo;</span>
                   )}
                 </>
               )}
@@ -220,7 +231,7 @@ export default function EncountersPage() {
             </label>
             <label style={{ gridColumn: "1 / -1" }}>Chief complaint<textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="Patient's chief complaint" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
           </div>
-          <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy === "create" || !selectedPatient || !selectedDoctor}>{busy === "create" ? "Creating…" : "Create encounter"}</button></div>
+          <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy === "create"}>{busy === "create" ? "Creating…" : "Create encounter"}</button></div>
         </form>
       )}
 
