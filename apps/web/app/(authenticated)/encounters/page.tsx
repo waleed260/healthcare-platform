@@ -78,12 +78,8 @@ export default function EncountersPage() {
     try {
       const params = new URLSearchParams({ limit: "100" });
       if (filter !== "all") params.set("status", filter);
-      const [page, docs] = await Promise.all([
-        apiPage<Encounter>(`/api/v1/encounters?${params.toString()}`),
-        api<Doctor[]>("/api/v1/doctors?limit=100").catch(() => []),
-      ]);
+      const page = await apiPage<Encounter>(`/api/v1/encounters?${params.toString()}`);
       setEncounters(page.data);
-      setDoctors(docs ?? []);
     } catch (reason) {
       setError(errorMessage(reason, "Could not load encounters."));
     } finally {
@@ -92,6 +88,10 @@ export default function EncountersPage() {
   }, [filter]);
 
   useEffect(() => { void loadEncounters(); }, [loadEncounters]);
+
+  useEffect(() => {
+    void api<Doctor[]>("/api/v1/doctors?limit=100").then((d) => setDoctors(d ?? [])).catch(() => {});
+  }, []);
 
   async function searchPatients(q: string) {
     setPatientSearch(q);
@@ -147,8 +147,6 @@ export default function EncountersPage() {
       setBusy(null);
     }
   }
-
-  const listRef = useRef<HTMLDivElement>(null);
 
   const counts: Record<string, number> = {};
   for (const e of encounters) counts[e.status] = (counts[e.status] ?? 0) + 1;
@@ -233,7 +231,7 @@ export default function EncountersPage() {
         {!loading && encounters.length === 0 && <div className="dashboard-empty"><strong>No encounters</strong><span>Create an encounter to start documenting.</span></div>}
 
         {!loading && encounters.length > 0 && (
-          <div ref={listRef}>
+          <div>
             {encounters.map((enc) => (
               <div className="enc-row" key={enc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>

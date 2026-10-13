@@ -748,7 +748,7 @@ export default function EncounterDetailPage() {
                   {enc.arrival_vitals?.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.arrival_vitals.pulse}</strong></div>}
                   {enc.arrival_vitals?.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.arrival_vitals.blood_pressure}</strong></div>}
                   {enc.arrival_vitals?.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.arrival_vitals.oxygen_saturation}%</strong></div>}
-                  {enc.arrival_vitals?.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (F)</span><br /><strong>{enc.arrival_vitals.temperature}°F</strong></div>}
+                  {enc.arrival_vitals?.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (°C)</span><br /><strong>{enc.arrival_vitals.temperature}°C</strong></div>}
                   {(enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null) && <div><span style={{ color: "var(--muted)" }}>GCS Score</span><br /><strong>E{enc.gcs_eye ?? "-"} V{enc.gcs_verbal ?? "-"} M{enc.gcs_motor ?? "-"} = {(enc.gcs_eye ?? 0) + (enc.gcs_verbal ?? 0) + (enc.gcs_motor ?? 0)}</strong></div>}
                 </div>
               </div>
@@ -799,7 +799,7 @@ export default function EncounterDetailPage() {
                     {enc.discharge_vitals.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.discharge_vitals.pulse}</strong></div>}
                     {enc.discharge_vitals.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.discharge_vitals.blood_pressure}</strong></div>}
                     {enc.discharge_vitals.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.discharge_vitals.oxygen_saturation}%</strong></div>}
-                    {enc.discharge_vitals.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (F)</span><br /><strong>{enc.discharge_vitals.temperature}°F</strong></div>}
+                    {enc.discharge_vitals.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (°C)</span><br /><strong>{enc.discharge_vitals.temperature}°C</strong></div>}
                   </div>
                 </div>
               )}

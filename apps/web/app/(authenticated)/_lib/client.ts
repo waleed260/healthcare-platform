@@ -16,7 +16,7 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
       window.location.href = "/login";
       throw new Error("Session expired — redirecting to login.");
     }
-    if (payload?.error?.code === "CSRF_INVALID" && init?.method && init.method !== "GET") {
+    if ((payload?.error?.code === "CSRF_INVALID" || payload?.error?.code === "CSRF_REQUIRED") && init?.method && init.method !== "GET") {
       const freshToken = await refreshCsrf();
       const token = freshToken ?? csrfToken();
       const h = new Headers(init.headers);
