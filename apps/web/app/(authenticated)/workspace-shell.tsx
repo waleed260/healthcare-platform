@@ -6,7 +6,7 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { post } from "./_lib/client";
 import { cachedFetch } from "./_lib/session-cache";
 import type { SessionInfo } from "@contracts/entities";
-type NavItem = { href: string; label: string; icon: string; permission: string };
+type NavItem = { href: string; label: string; icon: string; permission: string; adminOnly?: boolean };
 type NavGroup = { key: string; label: string; items: NavItem[] };
 
 const navGroups: NavGroup[] = [
@@ -46,7 +46,7 @@ const navGroups: NavGroup[] = [
     { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
     { href: "/security", label: "Security", icon: "⚿", permission: "" },
     { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
-    { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read" },
+    { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read", adminOnly: true },
   ]},
 ];
 
@@ -81,12 +81,19 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   const permissions = session?.permissions ?? [];
 
+  const isAdmin = session?.is_platform_admin === true;
+
   const visibleGroups = useMemo(() => {
     return navGroups.map((group) => ({
       ...group,
-      items: group.items.filter((item) => !session || !item.permission || permissions.includes(item.permission)),
+      items: group.items.filter((item) => {
+        if (!session) return true;
+        if (item.adminOnly && !isAdmin) return false;
+        if (isAdmin) return true;
+        return !item.permission || permissions.includes(item.permission);
+      }),
     })).filter((group) => group.items.length > 0);
-  }, [permissions, session]);
+  }, [permissions, session, isAdmin]);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleGroup = useCallback((key: string) => {
