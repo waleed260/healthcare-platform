@@ -54,7 +54,7 @@ def _clear_session_cookies(response: Response) -> None:
 
 def _validate_origin(request: Request) -> None:
     origin = request.headers.get("origin")
-    if not origin or origin not in get_settings().allowed_origins:
+    if not origin or not get_settings().origin_allowed(origin):
         raise _error("CSRF_ORIGIN_REJECTED", "The request origin is not allowed.", status.HTTP_403_FORBIDDEN)
 
 

@@ -98,7 +98,8 @@ app.include_router(encounters_router)
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(settings.cors_allowed_origins),
+    allow_origins=[o for o in settings.cors_allowed_origins if "*" not in o],
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID", "Idempotency-Key", "X-Clinic-Slug", "X-Management-Token", "X-Export-Access-Token", "X-Document-Access-Token", "X-Document-Expires", "X-Original-Filename", "X-Alt-Text", "X-Preview-Token"],

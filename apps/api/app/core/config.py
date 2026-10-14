@@ -1,4 +1,5 @@
 import os
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -52,6 +53,33 @@ class Settings(BaseSettings):
     def cors_allowed_origins(self) -> set[str]:
         value = self.cors_origins or self.csrf_allowed_origins
         return {origin.strip() for origin in value.split(",") if origin.strip()}
+
+    def origin_allowed(self, origin: str) -> bool:
+        """Check if an origin matches the allowed list, supporting wildcards.
+
+        Entries like ``https://*.vercel.app`` match any subdomain so that
+        every Vercel preview deployment is accepted without listing each URL.
+        """
+        for pattern in self.allowed_origins:
+            if "*" not in pattern:
+                if origin == pattern:
+                    return True
+            else:
+                regex = re.escape(pattern).replace(r"\*", "[a-zA-Z0-9_-]+")
+                if re.fullmatch(regex, origin):
+                    return True
+        return False
+
+    @property
+    def cors_origin_regex(self) -> str | None:
+        """Build a single regex for CORSMiddleware from all allowed origins."""
+        parts: list[str] = []
+        for pattern in self.cors_allowed_origins:
+            if "*" not in pattern:
+                parts.append(re.escape(pattern))
+            else:
+                parts.append(re.escape(pattern).replace(r"\*", "[a-zA-Z0-9_-]+"))
+        return "|".join(parts) if parts else None
 
     @property
     def google_enabled(self) -> bool:
