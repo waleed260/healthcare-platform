@@ -1,4 +1,4 @@
-export type ApiEnvelope<T> = { data?: T; error?: { code?: string; message?: string } };
+export type ApiEnvelope<T> = { data?: T; error?: { code?: string; message?: string; fields?: Record<string, string> } };
 
 async function refreshCsrf(): Promise<string | undefined> {
   try {
@@ -32,7 +32,9 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
       }
       return retryPayload?.data as T;
     }
-    throw new Error(payload?.error?.message ?? fallback);
+    const fields = payload?.error?.fields;
+    const fieldHint = fields ? ": " + Object.values(fields).slice(0, 2).join(", ") : "";
+    throw new Error((payload?.error?.message ?? fallback) + fieldHint);
   }
   return payload?.data as T;
 }

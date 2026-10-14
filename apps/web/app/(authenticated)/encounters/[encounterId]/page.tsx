@@ -292,9 +292,19 @@ export default function EncounterDetailPage() {
       if (allergyStatus !== (enc.allergy_status ?? "unknown")) body.allergy_status = allergyStatus;
       s("medical_history", medicalHistory, enc.medical_history);
       s("current_medications_text", currentMedsText, enc.current_medications_text);
-      // Administered
-      body.administered_treatments = treatments;
-      body.administered_procedures = adminProcedures;
+      // Administered — filter out incomplete rows and convert empty optional strings to null
+      const cleanTreatments = treatments
+        .filter((t) => t.name.trim())
+        .map((t) => ({ name: t.name.trim(), dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null }));
+      const cleanProcedures = adminProcedures
+        .filter((p) => p.name.trim())
+        .map((p) => ({ name: p.name.trim(), performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null }));
+      if (JSON.stringify(cleanTreatments) !== JSON.stringify((enc.administered_treatments ?? []).map((t) => ({ name: t.name, dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null })))) {
+        body.administered_treatments = cleanTreatments;
+      }
+      if (JSON.stringify(cleanProcedures) !== JSON.stringify((enc.administered_procedures ?? []).map((p) => ({ name: p.name, performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null })))) {
+        body.administered_procedures = cleanProcedures;
+      }
       s("treatment_response", treatmentResponse, enc.treatment_response);
       s("adverse_reactions", adverseReactions, enc.adverse_reactions);
       // Discharge text fields
@@ -308,8 +318,13 @@ export default function EncounterDetailPage() {
       s("follow_up_clinician", followUpClinician, enc.follow_up_clinician);
       s("follow_up_department", followUpDept, enc.follow_up_department);
       s("referral_instructions", referralInstructions, enc.referral_instructions);
-      // Meds & vitals
-      body.medications = meds;
+      // Meds & vitals — filter out incomplete medication rows
+      const cleanMeds = meds
+        .filter((m) => m.name.trim())
+        .map((m) => ({ name: m.name.trim(), dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null }));
+      if (JSON.stringify(cleanMeds) !== JSON.stringify((enc.medications ?? []).map((m) => ({ name: m.name, dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null })))) {
+        body.medications = cleanMeds;
+      }
       body.arrival_vitals = Object.values(arrivalVitals).some((v) => v != null && v !== "") ? arrivalVitals : null;
       body.discharge_vitals = Object.values(dischargeVitals).some((v) => v != null && v !== "") ? dischargeVitals : null;
 
@@ -562,14 +577,14 @@ export default function EncounterDetailPage() {
               </div>
               {treatments.length === 0 && <div className="dashboard-empty"><strong>No administered treatments</strong></div>}
               {treatments.map((t, idx) => (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr auto", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                  <label style={{ fontSize: 11 }}>Name<input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name" /></label>
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
+                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span><input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" /></label>
                   <label style={{ fontSize: 11 }}>Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                   <label style={{ fontSize: 11 }}>Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
                   <label style={{ fontSize: 11 }}>Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11 }}>Given by<input value={t.administered_by ?? ""} onChange={(e) => updateTreatment(idx, "administered_by", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11 }}>Response<input value={t.response ?? ""} onChange={(e) => updateTreatment(idx, "response", e.target.value)} disabled={readonly} /></label>
-                  {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, marginBottom: 4 }} onClick={() => removeTreatment(idx)}>Remove</button>}
+                  {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, alignSelf: "end", marginBottom: 4 }} onClick={() => removeTreatment(idx)}>Remove</button>}
                 </div>
               ))}
             </div>
@@ -579,12 +594,12 @@ export default function EncounterDetailPage() {
               </div>
               {adminProcedures.length === 0 && <div className="dashboard-empty"><strong>No administered procedures</strong></div>}
               {adminProcedures.map((p, idx) => (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 2fr auto", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                  <label style={{ fontSize: 11 }}>Name<input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name" /></label>
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
+                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span><input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" /></label>
                   <label style={{ fontSize: 11 }}>Performed at<input type="datetime-local" value={p.performed_at ?? ""} onChange={(e) => updateProcedure(idx, "performed_at", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11 }}>Performer<input value={p.performer ?? ""} onChange={(e) => updateProcedure(idx, "performer", e.target.value)} disabled={readonly} /></label>
-                  <label style={{ fontSize: 11 }}>Findings<input value={p.findings ?? ""} onChange={(e) => updateProcedure(idx, "findings", e.target.value)} disabled={readonly} /></label>
-                  {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, marginBottom: 4 }} onClick={() => removeProcedure(idx)}>Remove</button>}
+                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Findings<input value={p.findings ?? ""} onChange={(e) => updateProcedure(idx, "findings", e.target.value)} disabled={readonly} /></label>
+                  {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, alignSelf: "end", marginBottom: 4 }} onClick={() => removeProcedure(idx)}>Remove</button>}
                 </div>
               ))}
             </div>
@@ -606,13 +621,13 @@ export default function EncounterDetailPage() {
             </div>
             {meds.length === 0 && <div className="dashboard-empty"><strong>No medications</strong></div>}
             {meds.map((med, idx) => (
-              <div key={idx} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                <label style={{ fontSize: 11 }}>Name<input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name" /></label>
+              <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
+                <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span><input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" /></label>
                 <label style={{ fontSize: 11 }}>Dosage<input value={med.dosage ?? ""} onChange={(e) => updateMed(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                 <label style={{ fontSize: 11 }}>Route<input value={med.route ?? ""} onChange={(e) => updateMed(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
                 <label style={{ fontSize: 11 }}>Frequency<input value={med.frequency ?? ""} onChange={(e) => updateMed(idx, "frequency", e.target.value)} disabled={readonly} placeholder="e.g. TDS" /></label>
                 <label style={{ fontSize: 11 }}>Duration<input value={med.duration ?? ""} onChange={(e) => updateMed(idx, "duration", e.target.value)} disabled={readonly} placeholder="e.g. 5 days" /></label>
-                {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, marginBottom: 4 }} onClick={() => removeMed(idx)}>Remove</button>}
+                {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, alignSelf: "end", marginBottom: 4 }} onClick={() => removeMed(idx)}>Remove</button>}
               </div>
             ))}
           </div>
