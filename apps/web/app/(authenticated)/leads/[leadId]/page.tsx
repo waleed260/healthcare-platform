@@ -120,7 +120,7 @@ export default function LeadDetailPage() {
   const isTerminal = lead?.status === "converted" || lead?.status === "lost";
 
   return (
-    <section className="dash-content lead-detail-content" aria-busy={loading}>
+    <main className="dash-content lead-detail-content" aria-busy={loading}>
       <Link className="back-link" href="/leads">← Lead pipeline</Link>
 
       {error && (
@@ -270,6 +270,6 @@ export default function LeadDetailPage() {
           </section>
         </>
       )}
-    </section>
+    </main>
   );
 }

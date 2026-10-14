@@ -226,8 +226,8 @@ export default function PatientDetailPage() {
     try {
       const response = await fetch(`/api/v1/patients/${patientId}/documents`, { credentials: "include", cache: "no-store" });
       if (response.ok) {
-        const payload = await response.json();
-        const items = Array.isArray(payload.data) ? payload.data : payload.data?.items ?? [];
+        const payload = await response.json().catch(() => null) as { data?: Document[] | { items?: Document[] } } | null;
+        const items = payload ? (Array.isArray(payload.data) ? payload.data : payload.data && !Array.isArray(payload.data) ? payload.data.items ?? [] : []) : [];
         setDocuments(items);
         setDocumentsError(null);
       } else {
@@ -518,7 +518,7 @@ export default function PatientDetailPage() {
   }
 
   return (
-    <section className="dash-content patient-detail-content" aria-busy={loading}>
+    <main className="dash-content patient-detail-content" aria-busy={loading}>
       <Link className="back-link" href="/patients">← Patient directory</Link>
 
       {error && (
@@ -1173,6 +1173,6 @@ export default function PatientDetailPage() {
           />
         </>
       )}
-    </section>
+    </main>
   );
 }

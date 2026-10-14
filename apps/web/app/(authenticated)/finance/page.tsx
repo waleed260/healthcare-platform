@@ -98,7 +98,7 @@ export default function FinancePage() {
     }
   }
   return (
-    <section className="dash-content finance-content" aria-busy={loading}>
+    <main className="dash-content finance-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">BUSINESS · END OF DAY</p>
@@ -183,6 +183,6 @@ export default function FinancePage() {
           </div>
         </section>
       )}
-    </section>
+    </main>
   );
 }

@@ -188,7 +188,7 @@ export default function BranchesPage() {
     }
   }
   return (
-    <section className="dash-content" aria-busy={loading}>
+    <main className="dash-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINIC NETWORK</p>
@@ -303,6 +303,6 @@ export default function BranchesPage() {
           );
         })}
       </div>
-    </section>
+    </main>
   );
 }

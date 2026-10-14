@@ -66,7 +66,7 @@ export default function DoctorsPage() {
   const inactiveDoctors = doctors.filter((d) => d.status !== "active");
 
   return (
-    <section className="dash-content" aria-busy={loading}>
+    <main className="dash-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINICAL TEAM</p>
@@ -235,6 +235,6 @@ export default function DoctorsPage() {
           </div>
         </>
       )}
-    </section>
+    </main>
   );
 }

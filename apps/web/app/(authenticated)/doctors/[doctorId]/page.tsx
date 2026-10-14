@@ -190,11 +190,11 @@ export default function DoctorDetailPage() {
       setBusy(false);
     }
   }
-  if (loading) return <section className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading doctor profile…</strong></div></section>;
-  if (error || !doctor) return <section className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Doctor not found."}</strong></div><Link className="button button-secondary" href="/doctors">Back to doctors</Link></section>;
+  if (loading) return <main className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading doctor profile…</strong></div></main>;
+  if (error || !doctor) return <main className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Doctor not found."}</strong></div><Link className="button button-secondary" href="/doctors">Back to doctors</Link></main>;
 
   return (
-    <section className="dash-content">
+    <main className="dash-content">
       <div className="dash-topline">
         <div>
           <p className="eyebrow"><Link href="/doctors" style={{ color: "var(--muted)" }}>DOCTORS</Link> · PROFILE</p>
@@ -439,7 +439,7 @@ export default function DoctorDetailPage() {
           )}
         </div>
       </>)}
-    </section>
+    </main>
   );
 }
 

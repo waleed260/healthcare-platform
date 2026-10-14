@@ -41,7 +41,7 @@ export default function PatientsPage() {
     setStatusFilter(value);
   }
   return (
-    <section className="dash-content patient-content" aria-busy={loading}>
+    <main className="dash-content patient-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINIC RECORDS · SCOPED ACCESS</p>
@@ -116,6 +116,6 @@ export default function PatientsPage() {
       </div>
 
       <AddPatientDrawer open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void reload()} />
-    </section>
+    </main>
   );
 }

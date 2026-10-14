@@ -245,7 +245,7 @@ export default function BillingPage() {
   const outstanding = invoices.reduce((sum, inv) => sum + Math.max(inv.total_minor - inv.paid_minor, 0), 0);
   const openCount = invoices.filter((inv) => !["paid", "void", "refunded"].includes(inv.status)).length;
   return (
-    <section className="dash-content billing-content" aria-busy={loading || pageLoading}>
+    <main className="dash-content billing-content" aria-busy={loading || pageLoading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">BUSINESS · CLEAR BALANCES</p>
@@ -510,6 +510,6 @@ export default function BillingPage() {
           </form>
         </div>
       )}
-    </section>
+    </main>
   );
 }

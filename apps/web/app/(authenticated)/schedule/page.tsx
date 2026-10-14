@@ -106,7 +106,7 @@ export default function SchedulePage() {
   const actionStatus = detail?.status ?? selected?.status;
   const selectedAppointment = detail ?? selected;
   return <>
-    <section className="dash-content schedule-content" aria-busy={loading || busy !== null}>
+    <main className="dash-content schedule-content" aria-busy={loading || busy !== null}>
       <div className="dash-topline">
         <div><p className="eyebrow">CALENDAR · SCOPED CLINIC VIEW</p><h1>Make room for <em>care.</em></h1></div>
         <div className="header-actions">
@@ -145,7 +145,7 @@ export default function SchedulePage() {
         {loading && <div className="dashboard-empty" role="status"><strong>Loading the schedule</strong><span>Checking your authorized appointments…</span></div>}
         {!loading && days.map((day) => { const key = dateKey(day); const items = grouped.get(key) ?? []; return <div className={`calendar-cell ${key === dateKey(new Date()) ? "is-today" : ""} ${view === "month" && day.getMonth() !== cursorDate.getMonth() ? "is-outside" : ""}`} key={key} onDragOver={(event) => event.preventDefault()} onDrop={() => dropOnDay(day)}><div className="calendar-cell-heading"><strong>{view === "month" ? day.getDate() : formatDay(day, { weekday: "short", month: "short", day: "numeric" })}</strong><small>{items.length ? `${items.length} booked` : "Open"}</small></div>{items.sort((a, b) => a.starts_at.localeCompare(b.starts_at)).map((appointment) => <AppointmentCard key={appointment.id} appointment={appointment} doctorName={names.doctor.get(appointment.doctor_id ?? "") ?? ""} serviceName={names.service.get(appointment.service_id ?? "") ?? ""} onOpen={() => void openAppointment(appointment)} onDragStart={() => setDraggedId(appointment.id)} />)}</div>; })}
       </section>
-    </section>
+    </main>
 
     {selected && <div className="drawer-scrim" onClick={() => setSelected(null)}>
       <aside className="appointment-drawer" onClick={(event) => event.stopPropagation()} aria-label="Appointment details">

@@ -114,12 +114,12 @@ export default function OperationsPage() {
     }
     try {
       const response = await fetch("/api/v1/operations/notifications/push-config", { credentials: "include", cache: "no-store" });
-      const payload = await response.json();
-      if (!response.ok || !payload.data?.enabled || !payload.data?.public_key) {
+      const payload = await response.json().catch(() => null) as { data?: { enabled?: boolean; public_key?: string } } | null;
+      if (!response.ok || !payload?.data?.enabled || !payload?.data?.public_key) {
         setPushState("unavailable");
         return;
       }
-      setPushKey(payload.data.public_key);
+      setPushKey(payload?.data?.public_key ?? null);
       const registration = await navigator.serviceWorker.register("/sw.js");
       const existing = await registration.pushManager.getSubscription();
       setPushState(Notification.permission === "denied" ? "denied" : existing ? "on" : "off");
@@ -153,7 +153,7 @@ export default function OperationsPage() {
 
   useEffect(() => { void setupPush(); }, [setupPush]);
   return <>
-    <section className="dash-content operations-content" aria-busy={loading}>
+    <main className="dash-content operations-content" aria-busy={loading}>
       <div className="dash-topline">
         <div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div>
         <div className="header-actions">
@@ -198,7 +198,7 @@ export default function OperationsPage() {
         {pushState === "on" ? <p className="privacy-caption" role="status">Alerts are enabled on this device.</p> : (pushState === "off" || pushState === "error") && <button className="button button-secondary" type="button" onClick={() => void enablePush()} disabled={working !== null}>{working === "push" ? "Enabling…" : "Enable browser alerts"} <span>→</span></button>}
       </section>
       {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · refresh if the clinic day has changed.</p>}
-    </section>
+    </main>
     <FollowUpDrawer open={addFollowUpOpen} onClose={() => setAddFollowUpOpen(false)} onCreated={() => void load()} />
   </>;
 }

@@ -134,7 +134,7 @@ export default function QueuePage() {
     finally { setWorking(null); }
   }
 
-  return <section className="dash-content queue-content" aria-busy={loading}>
+  return <main className="dash-content queue-content" aria-busy={loading}>
     <div className="dash-topline">
       <div><p className="eyebrow">RECEPTION · LIVE CLINIC FLOW</p><h1>Keep the day <em>moving.</em></h1></div>
       <div style={{ display: "flex", gap: 8 }}>
@@ -200,5 +200,5 @@ export default function QueuePage() {
       </article>)}</div>}
       {nextCursor && !error && <button className="button button-secondary queue-load-more" type="button" onClick={() => void load(nextCursor, true)} disabled={loading} aria-label="Load more queue entries">{loading ? "Loading…" : "Load more entries"}<span>↓</span></button>}
     </div>
-  </section>;
+  </main>;
 }

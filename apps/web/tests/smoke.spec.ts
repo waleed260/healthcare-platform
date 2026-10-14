@@ -18,7 +18,7 @@ const syntheticSession: SessionInfo = {
   user_id: "synthetic-user",
   clinic_id: clinic.id,
   display_name: "Synthetic Staff",
-  permissions: ["queue.read", "queue.manage", "appointment.read", "appointment.approve", "appointment.check_in", "appointment.cancel", "appointment.reschedule", "appointment.manage", "patient.read", "patient.archive", "website.read", "website.edit", "website.publish"],
+  permissions: ["queue.read", "queue.manage", "appointment.read", "appointment.approve", "appointment.check_in", "appointment.cancel", "appointment.reschedule", "appointment.manage", "patient.read", "patient.update", "patient.archive", "admin.clinic.manage", "website.read", "website.edit", "website.publish"],
 };
 
 async function installSyntheticApi(page: Page): Promise<void> {
@@ -72,7 +72,8 @@ test.describe("core responsive browser flows", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/book/synthetic-care");
     await expect(page.getByRole("heading", { name: /make time for/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /request appointment/i })).toBeDisabled();
+    await expect(page.getByRole("navigation", { name: /booking progress/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Next →" })).toBeVisible();
   });
 
   test("keyboard focus is visible on the public entry flow", async ({ page }) => {
@@ -170,7 +171,7 @@ test.describe("core responsive browser flows", () => {
     await page.context().addCookies([{ name: "csrf_token", value: "synthetic-csrf", url: "http://127.0.0.1:3000" }]);
     await page.goto("/queue");
     await expect(page.getByText("Synthetic First")).toBeVisible();
-    await expect(page.getByText("waiting")).toBeVisible();
+    await expect(page.getByText("waiting", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /start consultation/i }).click();
     await expect(page.getByText("in consultation", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Complete" }).click();
@@ -277,11 +278,13 @@ test.describe("core responsive browser flows", () => {
     });
     await page.route("**/api/v1/governance/patients/patient-1/privacy-requests", async (route) => { created = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ data: { id: "privacy-1", status: "requested" } }) }); });
     await page.goto("/privacy");
+    await page.getByRole("button", { name: /new request/i }).click();
     await page.getByLabel("Patient ID").fill("patient-1");
     await page.getByLabel("Reason").fill("Synthetic access review");
     await page.getByRole("button", { name: /record request/i }).click();
     await expect.poll(() => created).toBe(true);
     await page.getByRole("button", { name: "Approve" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: /approve/i }).click();
     await expect.poll(() => approved).toBe(true);
   });
 
@@ -359,27 +362,37 @@ test.describe("core responsive browser flows", () => {
   test("website editor saves a draft section and publishes the version", async ({ page }) => {
     const website = { id: "site-1", name: "Synthetic Clinic Website", template_key: "calm_clinic", status: "draft", version: 1, draft_version_id: "version-1", live_version_id: null };
     const pageRecord = { id: "page-1", slug: "home", title: "Home", seo_title: null, seo_description: null, version: 1 };
+    // A legal page is required by the client-side publish validation gate.
+    const legalRecord = { id: "page-2", slug: "privacy-policy", title: "Privacy Policy", seo_title: null, seo_description: null, version: 1 };
     const section = { id: "section-1", section_type: "hero", layout_key: "split", position: 0, content: { heading: "Welcome", body: "Synthetic clinic copy." }, is_visible: true, version: 1 };
-    await page.route("**/api/v1/websites", async (route) => {
-      if (route.request().method() === "GET") await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [website] }) });
-      else await route.fallback();
-    });
-    await page.route("**/api/v1/websites/site-1/**", async (route) => {
+    // One deterministic handler: unregister the shared baseline mock so no
+    // registration-order ambiguity can leak live-network calls into this test.
+    await page.unroute("**/api/v1/**");
+    await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
-      if (path.endsWith("/pages") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [pageRecord] }) });
-      if (path.endsWith("/versions") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [{ id: "version-1", version_number: 1, published_at: null, created_at: "2026-01-01T00:00:00Z" }] }) });
-      if (path.endsWith("/sections") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [section] }) });
-      if (path.endsWith("/validation") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { valid: true, code: null, message: null } }) });
-      if (path.endsWith("/section-1") && route.request().method() === "PATCH") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...section, content: { ...section.content, heading: "Updated welcome" }, version: 2 } }) });
-      if (path.endsWith("/publish") && route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...website, status: "published", version: 2, live_version_id: "version-2" } }) });
-      return route.fallback();
+      if (path.endsWith("/auth/me")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: syntheticSession }) });
+      if (path.endsWith("/clinic") || path.endsWith("/clinic/context")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: clinic }) });
+      if (path.endsWith("/clinic/onboarding")) return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { completed: true, completed_at: null, steps: {}, ready_to_complete: false } }) });
+      if (path === "/api/v1/websites") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [website] }) });
+      if (path.startsWith("/api/v1/websites/site-1")) {
+        if (path.endsWith("/pages") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [pageRecord, legalRecord] }) });
+        if (path.endsWith("/versions") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [{ id: "version-1", version_number: 1, published_at: null, created_at: "2026-01-01T00:00:00Z" }] }) });
+        if (path.endsWith("/pages/page-1/sections") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [section] }) });
+        if (path.endsWith("/themes") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });
+        if (path.endsWith("/validation") && route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { valid: true, code: null, message: null } }) });
+        if (path.endsWith("/section-1") && route.request().method() === "PATCH") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...section, content: { ...section.content, heading: "Updated welcome" }, version: 2 } }) });
+        if (path.endsWith("/publish") && route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: { ...website, status: "published", version: 2, live_version_id: "version-2" } }) });
+        return route.abort();
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [], meta: { next_cursor: null } }) });
     });
     await page.goto("/website");
     await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await page.locator(".wb-preview-block").first().click();
     await page.getByLabel("Heading").fill("Updated welcome");
     await page.getByRole("button", { name: /save section/i }).click();
     await expect(page.getByRole("status")).toContainText(/draft saved/i);
-    await page.getByRole("button", { name: /publish draft/i }).click();
+    await page.getByRole("button", { name: /^Publish/ }).click();
     await expect(page.getByRole("status")).toContainText(/published/i);
   });
 

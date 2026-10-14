@@ -417,14 +417,14 @@ export default function EncounterDetailPage() {
   const pageRef = useRef<HTMLElement>(null);
 
   /* ── Loading / Error ──────────────────────────────────────────── */
-  if (loading) return <section className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading encounter...</strong></div></section>;
-  if (error || !enc) return <section className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Encounter not found."}</strong></div><Link className="button button-secondary" href="/encounters">Back</Link></section>;
+  if (loading) return <main className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading encounter...</strong></div></main>;
+  if (error || !enc) return <main className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Encounter not found."}</strong></div><Link className="button button-secondary" href="/encounters">Back</Link></main>;
 
   const readonly = enc.status === "discharged" || enc.status === "finalized";
 
   /* ── Render ───────────────────────────────────────────────────── */
   return (
-    <section className="dash-content" ref={pageRef}>
+    <main className="dash-content" ref={pageRef}>
       {/* Header */}
       <div className="dash-topline">
         <div>
@@ -886,7 +886,7 @@ export default function EncounterDetailPage() {
           </div>
         )}
       </form>
-    </section>
+    </main>
   );
 }
 

@@ -95,7 +95,7 @@ export default function ClinicalPage() {
   const addConsent = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const consentType = text(event, "type"); void run(async () => { await post(`/api/v1/patients/${patientId}/consents`, { consent_type: consentType, status: "granted", version: "1" }); target.reset(); }, "Consent recorded."); };
   const grantedConsent = consents.find((item) => item.status === "granted");
   return (
-    <section className="dash-content clinical-content" aria-busy={loading}>
+    <main className="dash-content clinical-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINICAL · CARE RECORDS</p>
@@ -257,6 +257,6 @@ export default function ClinicalPage() {
           </div>
         </section>
       )}
-    </section>
+    </main>
   );
 }

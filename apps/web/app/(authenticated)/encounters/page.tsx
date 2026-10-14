@@ -159,7 +159,7 @@ export default function EncountersPage() {
   for (const e of encounters) counts[e.status] = (counts[e.status] ?? 0) + 1;
 
   return (
-    <section className="dash-content">
+    <main className="dash-content">
       <div className="dash-topline">
         <div>
           <p className="eyebrow">CLINICAL · DOCUMENTATION</p>
@@ -270,6 +270,6 @@ export default function EncountersPage() {
           </div>
         )}
       </section>
-    </section>
+    </main>
   );
 }

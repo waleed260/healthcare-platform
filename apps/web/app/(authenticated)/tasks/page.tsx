@@ -103,7 +103,7 @@ export default function TasksPage() {
   const overdue = tasks.filter((t) => t.due_at && t.status !== "completed" && t.status !== "cancelled" && new Date(t.due_at) < new Date());
 
   return (
-    <section className="dash-content">
+    <main className="dash-content">
       <div className="dash-topline">
         <div>
           <p className="eyebrow">HOME · STAY ON TOP</p>
@@ -182,6 +182,6 @@ export default function TasksPage() {
           </div>
         )}
       </section>
-    </section>
+    </main>
   );
 }

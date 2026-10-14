@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, CSSProperties, FormEvent } from "react";
+import type { ChangeEvent, CSSProperties, FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
 import { useRouter } from "next/navigation";
 import ThemePanel from "./theme-panel";
 import LibraryPanel from "./library-panel";
@@ -120,7 +120,7 @@ function hex(value: string | undefined, fallback: string) { return /^#[0-9a-f]{6
 function CssEditor({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (v: string) => void }) {
   const lineCount = (value || "\n").split("\n").length;
   const lines = Array.from({ length: Math.max(lineCount, 8) }, (_, i) => i + 1);
-  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
     const start = t.selectionStart;
     const end = t.selectionEnd;
@@ -146,7 +146,7 @@ function CssEditor({ value, disabled, onChange }: { value: string; disabled: boo
       requestAnimationFrame(() => { t.selectionStart = t.selectionEnd = start + 1; });
     }
   };
-  const editorStyle: React.CSSProperties = { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.78rem", lineHeight: "1.6", tabSize: 2 };
+  const editorStyle: CSSProperties = { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: "0.78rem", lineHeight: "1.6", tabSize: 2 };
   return <div className="wb-field-stack" style={{ marginTop: 16 }}>
     <label style={{ display: "block", marginBottom: 4, fontSize: "0.78rem", fontWeight: 500 }}>Custom CSS</label>
     <div style={{ display: "flex", border: "1px solid var(--wb-border, #e5e5e3)", borderRadius: 4, overflow: "hidden", background: "var(--surface-1, #fafaf9)" }}>
@@ -326,7 +326,7 @@ function MediaPicker({ websiteId, sectionId, mediaId, galleryIds, isGallery, dis
 /* ────────────────────────────────────────────────────
    Device preview — scales content to simulate device widths
    ──────────────────────────────────────────────────── */
-function DevicePreview({ device, children }: { device: Device; children: (ref: React.RefObject<HTMLDivElement | null>) => React.ReactNode }) {
+function DevicePreview({ device, children }: { device: Device; children: (ref: RefObject<HTMLDivElement | null>) => ReactNode }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { api, errorMessage, label, patch, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -71,7 +72,7 @@ export default function MediaPage() {
     return Array.from(types).sort();
   }, [items]);
 
-  async function uploadFile(event: React.ChangeEvent<HTMLInputElement>) {
+  async function uploadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     const alt = window.prompt("Alt text (required for accessibility)", file.name.replace(/\.[^.]+$/, ""))?.trim();
