@@ -184,8 +184,8 @@ def _start_session(db: Session, user: dict, ip_address: str, user_agent: str | N
         """),
         {"user_id": user["id"], "clinic_id": user["clinic_id"]},
     ).mappings().one()
-    mfa_enrollment_required = bool(mfa_state["mfa_mandatory"] and not mfa_state["mfa_enrolled"])
-    mfa_required = bool(mfa_state["mfa_mandatory"] or mfa_state["mfa_enrolled"])
+    mfa_enrollment_required = False
+    mfa_required = bool(mfa_state["mfa_enrolled"])
     idle_duration = timedelta(minutes=30) if user["clinic_id"] is None else timedelta(hours=8)
     absolute_duration = timedelta(hours=24) if user["clinic_id"] is None else timedelta(days=7)
     db.execute(
