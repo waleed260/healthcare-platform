@@ -73,12 +73,12 @@ export default function BillingPage() {
     try {
       const [session, patientRows] = await Promise.all([
         api<Session>("/api/v1/auth/me"),
-        api<PatientRef[]>("/api/v1/patients?limit=200"),
+        api<PatientRef[]>("/api/v1/patients?limit=100"),
       ]);
       setPermissions(session.permissions ?? []);
       setPatients(patientRows ?? []);
       try {
-        const svc = await api<ServiceRef[]>("/api/v1/services?limit=200");
+        const svc = await api<ServiceRef[]>("/api/v1/services?limit=100");
         setServices(Array.isArray(svc) ? svc : []);
       } catch { setServices([]); }
     } catch (reason) {

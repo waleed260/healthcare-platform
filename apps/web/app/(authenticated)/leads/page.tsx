@@ -38,8 +38,8 @@ export default function LeadsPage() {
         append ? Promise.resolve<Session | null>(null) : api<Session>("/api/v1/auth/me"),
         apiPage<Lead>(`/api/v1/leads?${params.toString()}`),
         append ? Promise.resolve<Specialty[] | null>(null) : api<Specialty[]>("/api/v1/specialties"),
-        append ? Promise.resolve<Service[] | null>(null) : api<Service[]>("/api/v1/services?limit=200").catch(() => null),
-        append ? Promise.resolve<StaffUser[] | null>(null) : api<StaffUser[]>("/api/v1/staff/users?limit=200").catch(() => null),
+        append ? Promise.resolve<Service[] | null>(null) : api<Service[]>("/api/v1/services?limit=100").catch(() => null),
+        append ? Promise.resolve<StaffUser[] | null>(null) : api<StaffUser[]>("/api/v1/staff/users?limit=100").catch(() => null),
       ]);
       if (session) setPermissions(session.permissions ?? []);
       if (specialtyRows) setSpecialties(specialtyRows ?? []);
