@@ -57,7 +57,7 @@ _ENCOUNTER_COLS = """
     discharge_reason, discharge_datetime, discharged_by,
     discharge_instructions, warning_signs, medicine_guidance,
     follow_up_clinician, follow_up_department, referral_instructions,
-    amendment_history
+    amendment_history, token_number
 """
 
 ALL_ENCOUNTER_COLUMNS = ", ".join(f"e.{c.strip()}" for c in _ENCOUNTER_COLS.split(","))
@@ -118,7 +118,8 @@ def encounter_list(
         SELECT e.id, e.patient_id, p.full_name AS patient_name, e.appointment_id,
                e.doctor_id, d.public_name AS doctor_name, e.branch_id,
                e.encounter_type, e.status, e.chief_complaint,
-               e.diagnosis, e.finalized_at, e.created_at, e.updated_at, e.version
+               e.diagnosis, e.finalized_at, e.created_at, e.updated_at, e.version,
+               e.token_number
         FROM encounter_forms e
         JOIN patients p ON p.clinic_id = e.clinic_id AND p.id = e.patient_id
         JOIN doctor_profiles d ON d.clinic_id = e.clinic_id AND d.id = e.doctor_id
@@ -195,14 +196,18 @@ def encounter_create(
         INSERT INTO encounter_forms (clinic_id, patient_id, appointment_id, doctor_id, branch_id,
                                      encounter_type, chief_complaint, arrival_vitals, created_by,
                                      arrival_mode, arrival_datetime, attendant_name, attendant_phone,
-                                     condition_on_arrival)
+                                     condition_on_arrival, token_number)
         VALUES (:clinic_id, :patient_id, :appointment_id, :doctor_id, :branch_id,
                 :encounter_type, :chief_complaint, CAST(:arrival_vitals AS jsonb), :created_by,
                 :arrival_mode, :arrival_datetime, :attendant_name, :attendant_phone,
-                :condition_on_arrival)
+                :condition_on_arrival,
+                (SELECT COALESCE(MAX(ef.token_number), 0) + 1
+                 FROM encounter_forms ef
+                 WHERE ef.clinic_id = :clinic_id AND DATE(ef.created_at AT TIME ZONE 'UTC') = CURRENT_DATE))
         RETURNING id, patient_id, appointment_id, doctor_id, branch_id, encounter_type,
                   chief_complaint, arrival_vitals, status, version, created_at,
-                  arrival_mode, arrival_datetime, attendant_name, attendant_phone, condition_on_arrival
+                  arrival_mode, arrival_datetime, attendant_name, attendant_phone, condition_on_arrival,
+                  token_number
     """), {
         "clinic_id": session["clinic_id"],
         "patient_id": payload.patient_id,

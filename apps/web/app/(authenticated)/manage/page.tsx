@@ -7,7 +7,7 @@ import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 
-type Session = { permissions?: string[] };
+type Session = { user_id?: string; permissions?: string[] };
 type Service = { id: string; name: string; category: string | null; short_description: string | null; full_description: string | null; duration_minutes: number; buffer_before_minutes: number; buffer_after_minutes: number; price_mode: string; amount_minor: number | null; currency: string | null; approval_mode: string; visibility: string; status: string; version: number };
 type ServiceTemplate = { id: string; name: string; category: string | null; specialty_code: string | null; duration_minutes: number; amount_minor: number | null; currency: string | null };
 type Branch = { id: string; code: string; name: string; timezone: string; phone: string | null; status: string; version: number };
@@ -55,6 +55,7 @@ export default function ManagePage() {
   const [staffDetail, setStaffDetail] = useState<StaffUser | null>(null);
   const [roleDetail, setRoleDetail] = useState<Role | null>(null);
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [serviceSearch, setServiceSearch] = useState("");
 
@@ -69,6 +70,7 @@ export default function ManagePage() {
       const session = await api<Session>("/api/v1/auth/me");
       const granted = session.permissions ?? [];
       setPermissions(granted);
+      if (session.user_id) setCurrentUserId(session.user_id);
       const has = (code: string) => granted.includes(code);
       const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow] = await Promise.all([
         has("service.read") ? api<Service[]>("/api/v1/services?limit=100") : Promise.resolve([]),
@@ -538,15 +540,16 @@ export default function ManagePage() {
 
         <div>
           <p className="eyebrow" style={{ fontSize: "0.68rem", margin: "0 0 8px" }}>ASSIGNED ROLES</p>
+          {currentUserId && staffDetail.id === currentUserId && <small style={{ color: "var(--text-muted, #6b7280)", display: "block", marginBottom: 8 }}>You cannot modify your own roles.</small>}
           {(staffDetail.roles ?? []).length === 0
             ? <small style={{ color: "var(--text-muted, #6b7280)" }}>No roles assigned</small>
             : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {(staffDetail.roles ?? []).map((r) => <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.78rem", padding: "3px 10px", borderRadius: 6, background: "var(--surface-2, #f0f0ee)" }}>
                 {label(r.name)}
-                {can("staff.manage") && <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red, #b91c1c)", fontWeight: 700, fontSize: "0.85rem", padding: 0, lineHeight: 1 }} disabled={busy} onClick={(e) => { e.stopPropagation(); void removeRole(staffDetail.id, r.id); }} title="Remove role">×</button>}
+                {can("staff.manage") && staffDetail.id !== currentUserId && <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red, #b91c1c)", fontWeight: 700, fontSize: "0.85rem", padding: 0, lineHeight: 1 }} disabled={busy} onClick={(e) => { e.stopPropagation(); void removeRole(staffDetail.id, r.id); }} title="Remove role">×</button>}
               </span>)}
             </div>}
-          {can("staff.manage") && <div style={{ marginTop: 8 }}>
+          {can("staff.manage") && staffDetail.id !== currentUserId && <div style={{ marginTop: 8 }}>
             <select style={{ fontSize: "0.82rem", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-subtle, #e5e5e3)" }} onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add role…</option>
               {roles.filter((r) => !(staffDetail.roles ?? []).some((ur) => ur.id === r.id)).map((r) => <option key={r.id} value={r.id}>{label(r.name)}</option>)}

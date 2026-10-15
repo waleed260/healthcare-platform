@@ -245,6 +245,8 @@ def user_roles(user_id: UUID, request: Request, db: Session = Depends(get_db), s
 @router.post("/users/{user_id}/roles", status_code=status.HTTP_201_CREATED)
 def user_role_add(user_id: UUID, payload: RoleAssignment, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    if user_id == session["user_id"]:
+        raise _error("FORBIDDEN", "You cannot modify your own roles.", status.HTTP_403_FORBIDDEN)
     try:
         inserted = db.execute(text("""
             INSERT INTO user_roles (clinic_id, user_id, role_id, assigned_by)
@@ -269,6 +271,8 @@ def user_role_add(user_id: UUID, payload: RoleAssignment, request: Request, db: 
 @router.delete("/users/{user_id}/roles/{role_id}")
 def user_role_remove(user_id: UUID, role_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    if user_id == session["user_id"]:
+        raise _error("FORBIDDEN", "You cannot modify your own roles.", status.HTTP_403_FORBIDDEN)
     owner_state = db.execute(text("""
         SELECT r.name = 'owner' AS is_owner,
                (

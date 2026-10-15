@@ -98,12 +98,19 @@ export default function QueuePage() {
     } finally { setCheckingIn(null); }
   }
 
+  const [completedBillingLink, setCompletedBillingLink] = useState<string | null>(null);
+
   async function advance(entry: QueueEntry) {
-    setWorking(entry.id); setError(null); setNotice(null);
+    setWorking(entry.id); setError(null); setNotice(null); setCompletedBillingLink(null);
     const action = entry.status === "waiting" ? "start" : "complete";
     try {
       await post(`/api/v1/operations/queue/${entry.id}/${action}`, { expected_version: entry.version });
-      setNotice(entry.status === "waiting" ? `${entry.full_name} is now in consultation.` : `${entry.full_name}'s consultation is complete.`);
+      if (entry.status === "waiting") {
+        setNotice(`${entry.full_name} is now in consultation.`);
+      } else {
+        setNotice(`${entry.full_name}'s consultation is complete.`);
+        setCompletedBillingLink(`/billing?from_appointment=${entry.appointment_id}`);
+      }
       await load();
     } catch (reason) {
       const msg = errorMessage(reason, "The queue action could not be completed.");
@@ -170,7 +177,7 @@ export default function QueuePage() {
     </div>}
 
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
-    {notice && <div className="success-alert" role="status">{notice}</div>}
+    {notice && <div className="success-alert" role="status">{notice}{completedBillingLink && <> <Link href={completedBillingLink} style={{ marginLeft: 8, fontWeight: 600 }}>Go to Billing →</Link></>}</div>}
 
     <div className="queue-card">
       <div className="card-heading">
@@ -190,7 +197,10 @@ export default function QueuePage() {
         <div className="queue-actions">
           {canManage && <button className="ghost-button" type="button" onClick={() => { setReorderTarget(reorderTarget === entry.id ? null : entry.id); setReorderPriority(entry.priority); setReorderReason(""); }} title="Set priority">P</button>}
           <button className="button queue-action" type="button" onClick={() => void advance(entry)} disabled={!canManage || working === entry.id} title={!canManage ? "Requires queue.manage" : undefined}>{working === entry.id ? "Working…" : entry.status === "waiting" ? "Start consultation" : "Complete"}<span>→</span></button>
-          {entry.status === "in_consultation" && <Link className="button button-secondary" href={`/encounters?start=1&appointment_id=${entry.appointment_id}`} style={{ fontSize: 11, padding: "4px 10px" }}>Start encounter</Link>}
+          {entry.status === "in_consultation" && <>
+            <Link className="button button-secondary" href={`/encounters?start=1&appointment_id=${entry.appointment_id}`} style={{ fontSize: 11, padding: "4px 10px" }}>Start encounter</Link>
+            <Link className="button button-secondary" href={`/billing?from_appointment=${entry.appointment_id}`} style={{ fontSize: 11, padding: "4px 10px" }}>Billing</Link>
+          </>}
           {canManage && <button className="ghost-button queue-remove" type="button" onClick={() => void remove(entry)} disabled={working === entry.id} title="Remove from queue">✕</button>}
         </div>
         {reorderTarget === entry.id && <div className="reorder-inline">

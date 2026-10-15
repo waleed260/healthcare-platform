@@ -13,6 +13,7 @@ type Encounter = {
   encounter_type: string; status: string; chief_complaint: string | null;
   diagnosis: string | null; finalized_at: string | null;
   created_at: string; updated_at: string; version: number;
+  token_number: number | null;
 };
 type Doctor = { id: string; public_name: string };
 type Patient = { id: string; full_name: string; mrn: string | null };
@@ -260,6 +261,7 @@ export default function EncountersPage() {
               <div className="enc-row" key={enc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {enc.token_number != null && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", fontFamily: "var(--font-mono, monospace)", marginRight: 4 }}>#{enc.token_number}</span>}
                     <Link href={`/encounters/${enc.id}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{enc.patient_name}</Link>
                     <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: statusColor[enc.status] ?? "var(--line)", color: "#fff" }}>{statusLabel(enc.status)}</span>
                     <span style={{ fontSize: 10, color: "var(--muted)", background: "var(--line)", padding: "1px 6px", borderRadius: 4 }}>{typeLabel(enc.encounter_type)}</span>

@@ -51,6 +51,7 @@ type Encounter = {
   follow_up_clinician: string | null; follow_up_department: string | null;
   referral_instructions: string | null;
   amendment_history: AmendmentEntry[] | null;
+  token_number: number | null;
   doctor_user_id: string | null;
   // Patient data from JOIN
   patient_dob: string | null; patient_allergies: string | null;
@@ -440,6 +441,7 @@ export default function EncounterDetailPage() {
           {enc.status === "draft" && currentUserId && currentUserId === enc.doctor_user_id && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
           {enc.status === "in_progress" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("ready_for_discharge")}>Ready for Discharge</button>}
           {enc.status === "discharged" && <button className="button button-primary" type="button" disabled={busy} onClick={() => void changeStatus("finalized")}>Finalize</button>}
+          {(enc.status === "discharged" || enc.status === "finalized") && <Link className="button button-secondary" href={enc.appointment_id ? `/billing?from_appointment=${enc.appointment_id}` : "/billing"} style={{ fontSize: 11 }}>Go to Billing</Link>}
           {enc.mrn && <span className="muted-mono">MRN: {enc.mrn}</span>}
         </div>
       </div>
@@ -705,7 +707,7 @@ export default function EncounterDetailPage() {
 
               {/* Token / Reference */}
               <div style={{ background: "var(--bg-alt, rgba(0,0,0,0.03))", padding: "10px 14px", borderRadius: 6, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <div><span className="eyebrow">TOKEN NUMBER</span><p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0" }}>{enc.id.slice(0, 8).toUpperCase()}</p></div>
+                <div><span className="eyebrow">TOKEN NUMBER</span><p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0" }}>{enc.token_number != null ? enc.token_number : enc.id.slice(0, 8).toUpperCase()}</p></div>
                 <div style={{ textAlign: "right" }}><span className="eyebrow">STATUS</span><p style={{ fontSize: 14, fontWeight: 600, margin: "2px 0 0", color: statusColor[enc.status] }}>{statusLabel[enc.status] ?? enc.status}</p></div>
               </div>
 
