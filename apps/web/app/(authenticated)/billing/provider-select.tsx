@@ -5,7 +5,7 @@ import { api } from "../_lib/client";
 
 type Doctor = { id: string; public_name: string };
 
-// eslint-disable-next-line no-unused-vars
+ 
 type Change = (providerId: string) => void;
 
 /** Optional provider attribution for an invoice line (drives provider revenue and commission reports). */

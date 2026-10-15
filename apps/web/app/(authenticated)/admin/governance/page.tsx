@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, post, writeHeaders } from "../../_lib/client";
 
 type Policy = { id: string; name: string; jurisdiction: string; rules: Record<string, unknown>; approved_by: string | null; approved_at: string | null; active: boolean; created_at: string };

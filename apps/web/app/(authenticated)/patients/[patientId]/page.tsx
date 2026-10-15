@@ -133,7 +133,6 @@ export default function PatientDetailPage() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [transfersLoaded, setTransfersLoaded] = useState(false);
   const [discharges, setDischarges] = useState<Discharge[]>([]);
-  const [dischargesLoaded, setDischargesLoaded] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [showDischargeForm, setShowDischargeForm] = useState(false);
@@ -329,7 +328,6 @@ export default function PatientDetailPage() {
       setTransfers(t ?? []);
       setTransfersLoaded(true);
       setDischarges(d ?? []);
-      setDischargesLoaded(true);
       if (Array.isArray(b)) setBranches(b);
     } catch (reason) { toast.error(errorMessage(reason, "Transfer data could not be loaded.")); }
   }, [patientId, toast, branches]);

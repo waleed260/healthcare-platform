@@ -7,7 +7,7 @@ import { SiteFooter, SiteHeader } from "./site-chrome";
 import { themeStyle } from "../site-theme";
 import type { SiteBrand } from "../site-theme";
 import SectionBlock from "./sections";
-import type { Content, Section, PublicCatalog, ResultMedia, TemplateKey } from "./sections";
+import type { Section, PublicCatalog, ResultMedia, TemplateKey } from "./sections";
 
 type Page = { slug: string; title: string; seo_title?: string | null; seo_description?: string | null; canonical_url?: string | null; noindex?: boolean; og_title?: string | null; og_description?: string | null; og_image_media_id?: string | null; sections: Section[] };
 type Redirect = { from_path: string; to_path: string; status_code: number };

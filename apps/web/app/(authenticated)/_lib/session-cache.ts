@@ -1,3 +1,5 @@
+import { redirectToLogin } from "./client";
+
 type CacheEntry<T> = { data: T; ts: number };
 
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -15,7 +17,7 @@ export function cachedFetch<T>(url: string, ttlMs = DEFAULT_TTL): Promise<T> {
   const promise = fetch(url, { credentials: "include" })
     .then(async (res) => {
       if (res.status === 401) {
-        window.location.href = "/login";
+        redirectToLogin();
         throw new Error("Session expired");
       }
       if (!res.ok) throw new Error("Fetch failed");

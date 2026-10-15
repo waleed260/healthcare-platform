@@ -37,3 +37,4 @@ neon_*.url
 
 # tunnel watchdog secrets
 infra/tunnel-guard.env
+.vercel

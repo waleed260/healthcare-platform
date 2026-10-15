@@ -25,7 +25,7 @@ function dobFromAge(age: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function AddAppointmentDrawer({ open, onClose, clinicSlug, onCreated }: Props) {
+export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props) {
   const toast = useToast();
   const [form, setForm, dirty, resetDirty] = useDirty({
     doctor_id: "", service_id: "", branch_id: "",

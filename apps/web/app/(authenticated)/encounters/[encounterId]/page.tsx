@@ -51,6 +51,7 @@ type Encounter = {
   follow_up_clinician: string | null; follow_up_department: string | null;
   referral_instructions: string | null;
   amendment_history: AmendmentEntry[] | null;
+  doctor_user_id: string | null;
   // Patient data from JOIN
   patient_dob: string | null; patient_allergies: string | null;
   patient_contraindications: string | null;
@@ -121,6 +122,7 @@ export default function EncounterDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("arrival");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Assessment
   const [complaint, setComplaint] = useState("");
@@ -245,6 +247,9 @@ export default function EncounterDetailPage() {
   }, [encounterId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void api<{ user_id: string }>("/api/v1/auth/me").then((s) => { if (s?.user_id) setCurrentUserId(s.user_id); }).catch(() => {});
+  }, []);
 
   /* ── Save (PATCH) ─────────────────────────────────────────────── */
   async function save(e: FormEvent) {
@@ -432,7 +437,7 @@ export default function EncounterDetailPage() {
         </div>
         <div className="header-actions">
           <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 10, background: statusColor[enc.status] ?? "var(--line)", color: "#fff" }}>{statusLabel[enc.status] ?? typeLabel(enc.status)}</span>
-          {enc.status === "draft" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
+          {enc.status === "draft" && currentUserId && currentUserId === enc.doctor_user_id && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
           {enc.status === "in_progress" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("ready_for_discharge")}>Ready for Discharge</button>}
           {enc.status === "discharged" && <button className="button button-primary" type="button" disabled={busy} onClick={() => void changeStatus("finalized")}>Finalize</button>}
           {enc.mrn && <span className="muted-mono">MRN: {enc.mrn}</span>}

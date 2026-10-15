@@ -12,7 +12,7 @@ const FIELD_TYPES: FieldType[] = ["text", "textarea", "number", "select", "check
 const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 const slugKey = (name: string, i: number) => name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || `field_${i}`;
 
-// eslint-disable-next-line no-unused-vars
+ 
 type Notify = (message: string) => void;
 
 export default function FormsPanel({ patientId, permissions, onError }: { patientId: string; permissions: string[]; onError: Notify }) {

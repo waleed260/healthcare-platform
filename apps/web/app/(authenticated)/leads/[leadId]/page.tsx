@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, apiPage, post, patch, csrfToken, errorMessage } from "../../_lib/client";
+import { api, apiPage, post, patch, errorMessage } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
 

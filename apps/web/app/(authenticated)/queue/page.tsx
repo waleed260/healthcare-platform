@@ -12,10 +12,12 @@ type TodayAppointment = { id: string; reference: string; patient_name: string; s
 
 function waitDuration(checkedInAt: string): string {
   const ms = Date.now() - new Date(checkedInAt).getTime();
+  if (ms <= 0) return "just now"; // future/clock-skew timestamps
   const mins = Math.floor(ms / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  if (mins < 24 * 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return ">24h"; // stale entry (patient never progressed) — don't display absurd durations
 }
 
 function isToday(dateStr: string): boolean {

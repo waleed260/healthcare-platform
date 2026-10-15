@@ -269,7 +269,7 @@ function PreviewSection({ section, template, brand, selected, onSelect }: { sect
 /* ────────────────────────────────────────────────────
    Media picker — selects clean media for section images
    ──────────────────────────────────────────────────── */
-function MediaPicker({ websiteId, sectionId, mediaId, galleryIds, isGallery, disabled, onSelect, onGalleryChange }: {
+function MediaPicker({ websiteId, sectionId: _sectionId, mediaId, galleryIds, isGallery, disabled, onSelect, onGalleryChange }: {
   websiteId: string | null; sectionId: string; mediaId: string | null; galleryIds: string[]; isGallery: boolean; disabled: boolean;
   onSelect: (id: string | null) => void; onGalleryChange: (ids: string[]) => void;
 }) {

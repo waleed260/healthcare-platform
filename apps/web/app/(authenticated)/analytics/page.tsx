@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage, money } from "../_lib/client";
-import { useToast } from "../_lib/toast";
 import { useClinicCurrency } from "../_lib/clinic-context";
 
-type Session = { permissions?: string[] };
 type DailyStat = { date: string; appointments: number; new_patients: number; revenue_minor: number; no_shows: number };
 type ChannelStat = { channel: string; leads: number; converted: number };
 type FunnelStep = { stage: string; count: number };
@@ -37,7 +35,6 @@ export default function AnalyticsPage() {
   const [topServices, setTopServices] = useState<TopService[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const toast = useToast();
 
   const load = useCallback(async () => {
     setLoading(true);

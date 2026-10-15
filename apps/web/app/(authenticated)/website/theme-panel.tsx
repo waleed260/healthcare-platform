@@ -16,7 +16,7 @@ const WIDTH: Record<Device, string> = { desktop: "100%", tablet: "768px", mobile
 
 const pickDraft = (brand: SiteBrand): Draft => ({ theme: brand.theme, header: brand.header, footer: brand.footer, tablet: brand.tablet, mobile: brand.mobile });
 
-// eslint-disable-next-line no-unused-vars
+ 
 type SaveHandler = (draft: Draft) => Promise<void>;
 
 export default function ThemePanel({ brand, disabled, onSave }: { brand: SiteBrand; disabled: boolean; onSave: SaveHandler }) {

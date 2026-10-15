@@ -1,7 +1,9 @@
 # Pending Work Plan — CRM Spec Gap Closure
 
-> Generated: October 10, 2026 · Updated: October 12, 2026
+> Generated: October 10, 2026 · Updated: October 15, 2026
 > Based on gap analysis of `/home/waleed/Music/crm .docx` vs current codebase
+
+**Status update (2026-10-15):** Phase A (patient detail — appointments, treatments, prescriptions, invoices, documents, packages, timeline tabs) and Phase B (lead source/campaign/owner/lost lifecycle + follow-up due dates) are **implemented and verified** in the frontend; see `fix.md` and `CRM_DEFECT_LEDGER.md` (DEF-016…DEF-020) for the audit. Encounter forms (Phase E) and admission/transfer/vitals UI (Phase F) are also live on the patient/encounter pages. Remaining open items are the polish bullets in Phases G–J plus one carry-over: the Prescriptions **tab on the encounter page** was dropped with the DEF-016 crash fix — the backend route (`GET /encounters/{id}/prescriptions`) exists, so re-adding the tab is the next frontend task.
 
 **Note:** Several phases below were already implemented in the backend after this doc was written. Items marked ✅ have working API routes; remaining work is frontend UI or polish.
 

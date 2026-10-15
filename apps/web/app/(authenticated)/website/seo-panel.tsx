@@ -7,7 +7,7 @@ import type { SeoSettings, SiteBrand } from "../../site-theme";
 type PageRow = { id: string; slug: string; title: string; seo_title: string | null; seo_description: string | null; canonical_url: string | null; noindex: boolean; og_title: string | null; og_description: string | null; version: number };
 type RedirectRow = { id: string; from_path: string; to_path: string; status_code: number };
 
-// eslint-disable-next-line no-unused-vars
+ 
 type SaveSeo = (seo: SeoSettings) => Promise<void>;
 
 function completeness(page: PageRow | undefined): number {

@@ -124,6 +124,8 @@ test.describe("core responsive browser flows", () => {
     await page.goto("/patients/patient-1");
     await expect(page.getByRole("heading", { name: "Assigned clinicians" })).toBeVisible();
     await expect(page.getByText("Synthetic Care Doctor")).toBeVisible();
+    // Notes are lazy-loaded on their dedicated tab.
+    await page.getByRole("tab", { name: "Notes", exact: true }).click();
     await expect(page.getByText("Synthetic scoped note")).toBeVisible();
   });
 
@@ -143,6 +145,8 @@ test.describe("core responsive browser flows", () => {
       await route.fulfill({ status: 200, contentType: "application/pdf", body: "synthetic-pdf" });
     });
     await page.goto("/patients/patient-1");
+    // Documents are lazy-loaded on their dedicated tab.
+    await page.getByRole("tab", { name: "Documents", exact: true }).click();
     await expect(page.getByText("synthetic-referral.pdf")).toBeVisible();
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download" }).click();
@@ -310,10 +314,20 @@ test.describe("core responsive browser flows", () => {
       await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ data: { reference: "SYN-0001", status: "pending", management_secret: "synthetic-secret" } }) });
     });
     await page.goto("/book/synthetic-care");
-    await page.getByLabel("Date").fill(day);
+    // Wizard flow: Service (1) → Provider (2, skipped when no doctors) → Date & Time (3) → Details (4) → Confirm (5).
+    await page.getByRole("button", { name: /general consultation/i }).click();
+    await page.getByRole("button", { name: /^Next/ }).click();
+    const providerPanel = page.locator('section[aria-label="Choose a provider"]');
+    if (await providerPanel.isVisible()) {
+      await page.getByRole("button", { name: /any available/i }).click();
+      await page.getByRole("button", { name: /^Next/ }).click();
+    }
+    await page.getByLabel("Appointment date").fill(day);
     await expect(page.locator(".slot")).toHaveCount(1);
     await page.locator(".slot").click();
+    await page.getByRole("button", { name: /^Next/ }).click(); // → Your details
     await page.getByLabel("Full name").fill("Synthetic Booking");
+    await page.getByRole("button", { name: /^Next/ }).click(); // → Confirm
     await page.getByRole("button", { name: /request appointment/i }).click();
     await expect(page.getByRole("heading", { name: /you.re on the list/i })).toBeVisible();
     await expect(page.getByText("SYN-0001")).toBeVisible();

@@ -1,9 +1,8 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, label, post } from "../_lib/client";
 import { useToast } from "../_lib/toast";
-import { useConfirm } from "../_lib/confirm";
 import Drawer from "../_lib/drawer";
 
 type Domain = { id: string; hostname: string; observed_status: string; certificate_status: string | null; checked_at: string | null; failure_reason: string | null; created_at: string };
@@ -29,7 +28,6 @@ export default function DomainsPage() {
   const [verifyDrawer, setVerifyDrawer] = useState<Domain | null>(null);
   const [observedProof, setObservedProof] = useState("");
   const toast = useToast();
-  const confirm = useConfirm();
   const can = (p: string) => permissions.includes(p);
 
   const load = useCallback(async () => {

@@ -1,14 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, apiPage, post, money, label, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 import Pagination, { usePagination } from "../_lib/pagination";
-import ProviderSelect from "./provider-select";
 import type { PatientRef, InvoiceSummary, ServiceRef, SessionInfo } from "@contracts/entities";
 type InvoiceDetail = InvoiceSummary & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
 type InvoiceLine = { id: string; service_id: string | null; provider_id: string | null; provider_name: string | null; description: string; quantity: number; unit_price_minor: number; tax_minor: number; line_total_minor: number };

@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Drawer, { useDirty } from "./drawer";
 import { useToast } from "./toast";
-import { post, api } from "./client";
+import { post } from "./client";
 
 type Duplicate = { id: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; score: number };
 type Patient = { id: string; patient_number: string; full_name: string };
@@ -11,7 +11,7 @@ type Patient = { id: string; patient_number: string; full_name: string };
 type Props = {
   open: boolean;
   onClose: () => void;
-  onCreated?: (patient: Patient) => void;
+  onCreated?: (_patient: Patient) => void;
 };
 
 export default function AddPatientDrawer({ open, onClose, onCreated }: Props) {

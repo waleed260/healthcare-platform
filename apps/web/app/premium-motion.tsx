@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 /**
  * Lightweight, accessible scroll/entrance motion powered by anime.js.
  *

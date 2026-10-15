@@ -226,7 +226,7 @@ export default function BookingPage() {
         {step === 3 && (
           <section className="booking-step-panel" aria-label="Choose date and time">
             <h2>Pick a date</h2>
-            <input type="date" className="booking-date-input" min={dateString(1)} max={dateString(89)} value={day} onChange={(e) => setDay(e.target.value)} />
+            <input type="date" className="booking-date-input" aria-label="Appointment date" min={dateString(1)} max={dateString(89)} value={day} onChange={(e) => setDay(e.target.value)} />
             <h2>Available times <small>{loadingSlots ? "Checking…" : `${slots.length} openings`}</small></h2>
             <div className="slot-grid" aria-live="polite">
               {!loadingSlots && slots.length === 0 && <p className="slot-empty">No openings on this day. Try another date.</p>}

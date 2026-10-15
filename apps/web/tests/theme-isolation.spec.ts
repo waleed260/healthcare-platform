@@ -24,14 +24,14 @@ test.describe("theme settings isolation and rendering", () => {
         data = [];
       } else if (path.endsWith("/validation")) {
         data = { valid: true, code: null, message: null };
-      } else if (path.includes("/public/sites/slug")) {
-        data = { snapshot: { template_key: "calm_clinic", brand, pages: [{ slug: "home", title: "Test Clinic", sections: [{ id: "sec1", section_type: "hero", layout_key: "split", position: 0, content: { heading: "Welcome", body: "Hello" }, is_visible: true }] }] } };
-      } else if (path.includes("/public/catalog")) {
-        data = { clinic: { name: "Test Clinic", timezone: "UTC" }, branches: [], services: [], doctors: [] };
       } else if (path.includes("/public/sites/slug") && path.includes("/testimonials")) {
         data = [];
       } else if (path.includes("/public/sites/slug") && path.includes("/results")) {
         data = [];
+      } else if (path.includes("/public/sites/slug")) {
+        data = { snapshot: { template_key: "calm_clinic", brand, pages: [{ slug: "home", title: "Test Clinic", sections: [{ id: "sec1", section_type: "hero", layout_key: "split", position: 0, content: { heading: "Welcome", body: "Hello" }, is_visible: true }] }] } };
+      } else if (path.includes("/public/catalog")) {
+        data = { clinic: { name: "Test Clinic", timezone: "UTC" }, branches: [], services: [], doctors: [] };
       } else if (path.includes("/themes") && !path.includes("activate") && !path.includes("archive")) {
         data = [{ id: "th1", name: "Live", status: "live", brand_snapshot: brand, version: 1, created_at: "2026-10-01T00:00:00Z" }, { id: "th2", name: "Draft Autumn", status: "draft", brand_snapshot: {}, version: 1, created_at: "2026-10-02T00:00:00Z" }];
       } else if (path.includes("/themes/") && path.includes("/activate")) {

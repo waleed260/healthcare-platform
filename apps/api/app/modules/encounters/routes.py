@@ -161,6 +161,7 @@ def encounter_detail(
                p.contraindications AS patient_contraindications,
                p.emergency_contact_name, p.emergency_contact_phone, p.emergency_contact_relation,
                d.public_name AS doctor_name, d.specialty AS doctor_specialty,
+               d.user_id AS doctor_user_id,
                b.name AS branch_name
         FROM encounter_forms e
         JOIN patients p ON p.clinic_id = e.clinic_id AND p.id = e.patient_id

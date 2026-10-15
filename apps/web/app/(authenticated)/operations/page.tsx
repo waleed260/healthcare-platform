@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { csrfToken, errorMessage, post } from "../_lib/client";
+import { errorMessage, post, redirectToLogin } from "../_lib/client";
 import FollowUpDrawer from "../_lib/follow-up-drawer";
 
 type FollowUp = { id: string; patient_id?: string; reason: string; due_at: string; priority: string; status: string; version: number };
@@ -60,7 +60,7 @@ export default function OperationsPage() {
         fetch(followUrl, { credentials: "include", cache: "no-store" }),
         fetch(notificationUrl, { credentials: "include", cache: "no-store" }),
       ]);
-      if (followResponse.status === 401 || notificationResponse.status === 401) { window.location.href = "/login"; return; }
+      if (followResponse.status === 401 || notificationResponse.status === 401) { redirectToLogin(); return; }
       const followPayload = await followResponse.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
       const notificationPayload = await notificationResponse.json().catch(() => ({ error: { message: "Unexpected response from the server." } }));
       if (!followResponse.ok) throw new Error(message(followResponse, followPayload));

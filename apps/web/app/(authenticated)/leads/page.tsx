@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Lead = { id: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; source: string; campaign: string | null; status: string; specialty_id: string | null; requested_service_id: string | null; assigned_to_user_id: string | null; converted_to_patient_id: string | null; lost_reason: string | null; notes: string | null; created_at: string; version: number };
 type Specialty = { id: string; name: string; code: string };
@@ -16,7 +16,7 @@ const activityKinds = ["call", "note", "message", "follow_up"] as const;
 type ActivityKind = (typeof activityKinds)[number];
 const stageLabel = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const dateTime = (value: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
-import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
+import { api, apiPage, writeHeaders } from "../_lib/client";
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]); const [specialties, setSpecialties] = useState<Specialty[]>([]); const [services, setServices] = useState<Service[]>([]); const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]); const [permissions, setPermissions] = useState<string[]>([]); const [filter, setFilter] = useState("all"); const [showForm, setShowForm] = useState(false); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null); const [nextCursor, setNextCursor] = useState<string | null>(null);

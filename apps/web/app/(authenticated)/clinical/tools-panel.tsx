@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, writeHeaders } from "../_lib/client";
 
 type ToolState = { tool_key: string; state: Record<string, unknown>; version: number; updated_at: string };
-// eslint-disable-next-line no-unused-vars
+ 
 type OnError = (message: string) => void;
 type Props = { patientId: string; permissions: string[]; onError: OnError };
 

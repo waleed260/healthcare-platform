@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { SectionProps } from "./types";
 import { text } from "./types";
 
-export default function HeroSection({ section, clinicSlug, template, catalog, brand }: SectionProps) {
+export default function HeroSection({ section, clinicSlug, template, catalog, brand: _brand }: SectionProps) {
   const content = section.content ?? {};
   const layout = section.layout_key ?? "default";
   const heading = text(content.heading);

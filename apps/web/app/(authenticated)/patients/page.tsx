@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { apiPage, errorMessage } from "../_lib/client";
+import { apiPage } from "../_lib/client";
 import Pagination, { usePagination } from "../_lib/pagination";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
 import type { PatientSummary } from "@contracts/entities";
@@ -13,7 +13,7 @@ export default function PatientsPage() {
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   const fetcher = useCallback(async (cursor: string | null, limit: number) => {
@@ -30,7 +30,7 @@ export default function PatientsPage() {
   useEffect(() => {
     if (initialRef.current) { initialRef.current = false; void reload(); return; }
     void reload();
-  }, [activeSearch, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSearch, statusFilter]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -112,7 +112,7 @@ export default function PatientsPage() {
           </div>
         )}
 
-        <Pagination hasMore={hasMore} loading={loading} error={paginationError} total={patients.length} onLoadMore={() => void load()} pageSize={pageSize} onPageSizeChange={changePageSize} />
+        <Pagination hasMore={hasMore} loading={loading} error={paginationError} total={patients.length} onLoadMore={() => void load()} pageSize={pageSize} onPageSizeChange={changePageSize} loadMoreLabel="Load more patient records" />
       </div>
 
       <AddPatientDrawer open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void reload()} />

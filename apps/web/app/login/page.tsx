@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { csrfToken } from "../(authenticated)/_lib/client";
+import { csrfToken, safeNextPath } from "../(authenticated)/_lib/client";
 
 type Phase = "login" | "mfa" | "enroll";
 
@@ -22,6 +22,13 @@ async function apiMessage(response: Response): Promise<string> {
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // ?next= deep link (set by redirectToLogin() on auth expiry): return the user
+  // exactly where they came from instead of the generic dashboard. `safeNextPath`
+  // rejects anything that is not a same-app relative path (open-redirect guard).
+  const nextPath = safeNextPath(
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("next"),
+  );
   const [phase, setPhase] = useState<Phase>("login");
   const [recovery, setRecovery] = useState(false);
   const [enrollment, setEnrollment] = useState<{ secret: string; recovery_codes: string[] } | null>(null);
@@ -45,7 +52,7 @@ export default function LoginPage() {
     const outcome = new URLSearchParams(window.location.search).get("google");
     if (!outcome) return;
     window.history.replaceState(null, "", "/login");
-    if (outcome === "ok") router.push("/dashboard");
+    if (outcome === "ok") router.push(nextPath ?? "/dashboard");
     else if (outcome === "mfa") setPhase("mfa");
     else if (outcome === "enroll") void beginEnrollment().catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to start MFA enrollment."));
     else setError(outcome === "no_account" ? "No active workspace account matches that Google email. Ask your clinic administrator for an invitation." : outcome === "unverified" ? "Google could not verify that email address." : "Google sign-in could not be completed. Try again.");
@@ -65,7 +72,7 @@ export default function LoginPage() {
         const enrollmentPayload = await enrollmentResponse.json() as { secret: string; recovery_codes: string[] };
         setEnrollment(enrollmentPayload);
         setPhase("enroll");
-      } else if (payload.data.mfa_required) setPhase("mfa"); else router.push("/dashboard");
+      } else if (payload.data.mfa_required) setPhase("mfa"); else router.push(nextPath ?? "/dashboard");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to sign in."); }
     finally { setBusy(false); }
   }
@@ -77,7 +84,7 @@ export default function LoginPage() {
       const token = await freshCsrf();
       const response = await fetch(`/api/v1/auth/mfa/${recovery ? "recover" : "verify"}`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": token }, credentials: "include", body: JSON.stringify({ code }) });
       if (!response.ok) throw new Error(await apiMessage(response));
-      router.push("/dashboard");
+      router.push(nextPath ?? "/dashboard");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to verify this code."); }
     finally { setBusy(false); }
   }

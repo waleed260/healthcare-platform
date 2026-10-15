@@ -10,11 +10,13 @@ type PaginationProps = {
   onLoadMore: () => void;
   pageSize: number;
   onPageSizeChange: (size: number) => void;
+  // Screen-reader-friendly label for the Load more button (default: "Load more").
+  loadMoreLabel?: string;
 };
 
 const PAGE_SIZES = [25, 50, 100];
 
-export default function Pagination({ hasMore, loading, error, total, onLoadMore, pageSize, onPageSizeChange }: PaginationProps) {
+export default function Pagination({ hasMore, loading, error, total, onLoadMore, pageSize, onPageSizeChange, loadMoreLabel = "Load more" }: PaginationProps) {
   return (
     <div className="pagination-bar">
       <div className="pagination-info">
@@ -33,8 +35,8 @@ export default function Pagination({ hasMore, loading, error, total, onLoadMore,
         </div>
       )}
       {hasMore && !error && (
-        <button className="button button-secondary" type="button" onClick={onLoadMore} disabled={loading}>
-          {loading ? "Loading…" : "Load more"} <span>↓</span>
+        <button className="button button-secondary" type="button" aria-label={loadMoreLabel} onClick={onLoadMore} disabled={loading}>
+          {loading ? "Loading…" : loadMoreLabel} <span>↓</span>
         </button>
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Drawer from "./drawer";
-import { api, apiPage, post, errorMessage } from "./client";
+import { apiPage, post, errorMessage } from "./client";
 import { useToast } from "./toast";
 
 type Patient = { id: string; full_name: string; patient_number: string; normalized_email: string | null; normalized_phone: string | null };
