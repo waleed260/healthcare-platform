@@ -9,9 +9,11 @@ import { useConfirm } from "../../_lib/confirm";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 type Vitals = { blood_pressure?: string; pulse?: number; temperature?: number; respiratory_rate?: number; oxygen_saturation?: number; weight_kg?: number; height_cm?: number; notes?: string };
-type Medication = { name: string; dosage?: string; route?: string; frequency?: string; duration?: string; notes?: string };
-type AdministeredTreatment = { name: string; dosage?: string; route?: string; administered_at?: string; administered_by?: string; response?: string; notes?: string };
-type AdministeredProcedure = { name: string; performed_at?: string; performer?: string; findings?: string; notes?: string };
+type Medication = { name: string; dosage?: string; route?: string; frequency?: string; duration?: string; notes?: string; inventory_product_id?: string; unit_price_minor?: number; currency?: string };
+type AdministeredTreatment = { name: string; dosage?: string; route?: string; administered_at?: string; administered_by?: string; response?: string; notes?: string; service_id?: string; inventory_product_id?: string; unit_price_minor?: number; currency?: string; quantity?: number };
+type AdministeredProcedure = { name: string; performed_at?: string; performer?: string; findings?: string; notes?: string; service_id?: string; unit_price_minor?: number; currency?: string };
+type CatalogService = { id: string; name: string; category: string; price_mode: string; amount_minor: number | null; currency: string | null; status: string };
+type InventoryProduct = { id: string; name: string; product_type: string; unit: string; status: string };
 type AmendmentEntry = { field: string; old_value: string | null; new_value: string; reason: string; amended_by: string; amended_at: string };
 type Encounter = {
   id: string; clinic_id: string; patient_id: string; patient_name: string; mrn: string | null;
@@ -72,6 +74,15 @@ const statusLabel: Record<string, string> = {
   draft: "Draft", in_progress: "In Progress", ready_for_discharge: "Ready for Discharge",
   discharged: "Discharged", finalized: "Finalized", referred: "Referred", transferred: "Transferred",
 };
+
+function formatPrice(amountMinor: number | null | undefined, cur?: string | null, priceMode?: string): string {
+  if (amountMinor == null) return "";
+  const amount = (amountMinor / 100).toLocaleString();
+  const c = cur ?? "PKR";
+  if (priceMode === "starting_at") return `from ${c} ${amount}`;
+  if (priceMode === "contact") return "Price on request";
+  return `${c} ${amount}`;
+}
 
 function computeAge(dob: string | null): string {
   if (!dob) return "";
@@ -169,6 +180,12 @@ export default function EncounterDetailPage() {
   const [treatmentResponse, setTreatmentResponse] = useState("");
   const [adverseReactions, setAdverseReactions] = useState("");
 
+  // Catalog pickers
+  const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
+  const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+
   // Discharge extension
   const [dischCondition, setDischCondition] = useState("");
   const [dischOutcome, setDischOutcome] = useState("");
@@ -250,6 +267,8 @@ export default function EncounterDetailPage() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     void api<{ user_id: string }>("/api/v1/auth/me").then((s) => { if (s?.user_id) setCurrentUserId(s.user_id); }).catch(() => {});
+    void api<CatalogService[]>("/api/v1/services?limit=100").then((d) => setCatalogServices((d ?? []).filter((s) => s.status === "active"))).catch(() => {});
+    void api<InventoryProduct[]>("/api/v1/inventory/products?limit=100").then((d) => setInventoryProducts((d ?? []).filter((p) => p.status === "active"))).catch(() => {});
   }, []);
 
   /* ── Save (PATCH) ─────────────────────────────────────────────── */
@@ -294,14 +313,14 @@ export default function EncounterDetailPage() {
       // Administered — filter out incomplete rows and convert empty optional strings to null
       const cleanTreatments = treatments
         .filter((t) => t.name.trim())
-        .map((t) => ({ name: t.name.trim(), dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null }));
+        .map((t) => ({ name: t.name.trim(), dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null, service_id: t.service_id || null, inventory_product_id: t.inventory_product_id || null, unit_price_minor: t.unit_price_minor ?? null, currency: t.currency || null, quantity: t.quantity ?? null }));
       const cleanProcedures = adminProcedures
         .filter((p) => p.name.trim())
-        .map((p) => ({ name: p.name.trim(), performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null }));
-      if (JSON.stringify(cleanTreatments) !== JSON.stringify((enc.administered_treatments ?? []).map((t) => ({ name: t.name, dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null })))) {
+        .map((p) => ({ name: p.name.trim(), performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null, service_id: p.service_id || null, unit_price_minor: p.unit_price_minor ?? null, currency: p.currency || null }));
+      if (JSON.stringify(cleanTreatments) !== JSON.stringify((enc.administered_treatments ?? []).map((t) => ({ name: t.name, dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null, service_id: t.service_id || null, inventory_product_id: t.inventory_product_id || null, unit_price_minor: t.unit_price_minor ?? null, currency: t.currency || null, quantity: t.quantity ?? null })))) {
         body.administered_treatments = cleanTreatments;
       }
-      if (JSON.stringify(cleanProcedures) !== JSON.stringify((enc.administered_procedures ?? []).map((p) => ({ name: p.name, performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null })))) {
+      if (JSON.stringify(cleanProcedures) !== JSON.stringify((enc.administered_procedures ?? []).map((p) => ({ name: p.name, performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null, service_id: p.service_id || null, unit_price_minor: p.unit_price_minor ?? null, currency: p.currency || null })))) {
         body.administered_procedures = cleanProcedures;
       }
       s("treatment_response", treatmentResponse, enc.treatment_response);
@@ -320,8 +339,8 @@ export default function EncounterDetailPage() {
       // Meds & vitals — filter out incomplete medication rows
       const cleanMeds = meds
         .filter((m) => m.name.trim())
-        .map((m) => ({ name: m.name.trim(), dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null }));
-      if (JSON.stringify(cleanMeds) !== JSON.stringify((enc.medications ?? []).map((m) => ({ name: m.name, dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null })))) {
+        .map((m) => ({ name: m.name.trim(), dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null, inventory_product_id: m.inventory_product_id || null, unit_price_minor: m.unit_price_minor ?? null, currency: m.currency || null }));
+      if (JSON.stringify(cleanMeds) !== JSON.stringify((enc.medications ?? []).map((m) => ({ name: m.name, dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null, inventory_product_id: m.inventory_product_id || null, unit_price_minor: m.unit_price_minor ?? null, currency: m.currency || null })))) {
         body.medications = cleanMeds;
       }
       body.arrival_vitals = Object.values(arrivalVitals).some((v) => v != null && v !== "") ? arrivalVitals : null;
@@ -414,6 +433,28 @@ export default function EncounterDetailPage() {
   function addProcedure() { setAdminProcedures([...adminProcedures, { name: "", performed_at: "", performer: "", findings: "", notes: "" }]); }
   function updateProcedure(idx: number, field: keyof AdministeredProcedure, val: string) { setAdminProcedures(adminProcedures.map((p, i) => i === idx ? { ...p, [field]: val } : p)); }
   function removeProcedure(idx: number) { setAdminProcedures(adminProcedures.filter((_, i) => i !== idx)); }
+
+  /* ── Catalog picker helpers ──────────────────────────────────── */
+  function addTreatmentFromService(svc: CatalogService) {
+    setTreatments([...treatments, { name: svc.name, service_id: svc.id, unit_price_minor: svc.amount_minor ?? undefined, currency: svc.currency ?? undefined, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }]);
+    setPickerOpen(null); setPickerSearch("");
+  }
+  function addTreatmentFromInventory(prod: InventoryProduct) {
+    setTreatments([...treatments, { name: prod.name, inventory_product_id: prod.id, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }]);
+    setPickerOpen(null); setPickerSearch("");
+  }
+  function addProcedureFromService(svc: CatalogService) {
+    setAdminProcedures([...adminProcedures, { name: svc.name, service_id: svc.id, unit_price_minor: svc.amount_minor ?? undefined, currency: svc.currency ?? undefined, performed_at: "", performer: "", findings: "", notes: "" }]);
+    setPickerOpen(null); setPickerSearch("");
+  }
+  function addMedFromInventory(prod: InventoryProduct) {
+    setMeds([...meds, { name: prod.name, inventory_product_id: prod.id, dosage: "", route: "oral", frequency: "", duration: "" }]);
+    setPickerOpen(null); setPickerSearch("");
+  }
+  function togglePicker(key: string) {
+    setPickerOpen(pickerOpen === key ? null : key);
+    setPickerSearch("");
+  }
 
   const pageRef = useRef<HTMLElement>(null);
 
@@ -560,12 +601,51 @@ export default function EncounterDetailPage() {
           <>
             <div className="enc-section surface-card">
               <div className="surface-card-heading"><div><p className="eyebrow">ADMINISTERED</p><h2>Treatments ({treatments.length})</h2></div>
-                {!readonly && <button className="button button-secondary" type="button" onClick={addTreatment}>Add treatment</button>}
+                {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button className="button button-secondary" type="button" onClick={addTreatment}>Add treatment</button>
+                  {catalogServices.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("treat-svc")} style={{ background: pickerOpen === "treat-svc" ? "var(--accent)" : undefined, color: pickerOpen === "treat-svc" ? "#fff" : undefined }}>Add from Service</button>}
+                  {inventoryProducts.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("treat-inv")} style={{ background: pickerOpen === "treat-inv" ? "var(--accent)" : undefined, color: pickerOpen === "treat-inv" ? "#fff" : undefined }}>Add from Inventory</button>}
+                </div>}
               </div>
+              {pickerOpen === "treat-svc" && (
+                <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                  <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((svc) => (
+                      <button key={svc.id} type="button" onClick={() => addTreatmentFromService(svc)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                        <span><strong>{svc.name}</strong>{svc.category && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{svc.category}</span>}</span>
+                        {svc.amount_minor != null && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
+                      </button>
+                    ))}
+                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No services match &ldquo;{pickerSearch}&rdquo;</div>}
+                  </div>
+                </div>
+              )}
+              {pickerOpen === "treat-inv" && (
+                <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search inventory items by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                  <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                    {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((prod) => (
+                      <button key={prod.id} type="button" onClick={() => addTreatmentFromInventory(prod)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                        <span><strong>{prod.name}</strong></span>
+                        <span style={{ fontSize: 10, color: "var(--muted)", textTransform: "capitalize" }}>{prod.product_type} · {prod.unit}</span>
+                      </button>
+                    ))}
+                    {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No items match &ldquo;{pickerSearch}&rdquo;</div>}
+                  </div>
+                </div>
+              )}
               {treatments.length === 0 && <div className="dashboard-empty"><strong>No administered treatments</strong></div>}
               {treatments.map((t, idx) => (
                 <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span><input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" /></label>
+                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" style={{ flex: 1 }} />
+                      {t.service_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "var(--accent)", color: "#fff", whiteSpace: "nowrap" }}>Service</span>}
+                      {t.inventory_product_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "#6b7280", color: "#fff", whiteSpace: "nowrap" }}>Inventory</span>}
+                      {t.unit_price_minor != null && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(t.unit_price_minor, t.currency)}</span>}
+                    </div>
+                  </label>
                   <label style={{ fontSize: 11 }}>Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                   <label style={{ fontSize: 11 }}>Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
                   <label style={{ fontSize: 11 }}>Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
@@ -577,12 +657,35 @@ export default function EncounterDetailPage() {
             </div>
             <div className="enc-section surface-card" style={{ marginTop: 16 }}>
               <div className="surface-card-heading"><div><p className="eyebrow">PROCEDURES</p><h2>Administered Procedures ({adminProcedures.length})</h2></div>
-                {!readonly && <button className="button button-secondary" type="button" onClick={addProcedure}>Add procedure</button>}
+                {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <button className="button button-secondary" type="button" onClick={addProcedure}>Add procedure</button>
+                  {catalogServices.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("proc-svc")} style={{ background: pickerOpen === "proc-svc" ? "var(--accent)" : undefined, color: pickerOpen === "proc-svc" ? "#fff" : undefined }}>Add from Service</button>}
+                </div>}
               </div>
+              {pickerOpen === "proc-svc" && (
+                <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                  <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((svc) => (
+                      <button key={svc.id} type="button" onClick={() => addProcedureFromService(svc)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                        <span><strong>{svc.name}</strong>{svc.category && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{svc.category}</span>}</span>
+                        {svc.amount_minor != null && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
+                      </button>
+                    ))}
+                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No services match &ldquo;{pickerSearch}&rdquo;</div>}
+                  </div>
+                </div>
+              )}
               {adminProcedures.length === 0 && <div className="dashboard-empty"><strong>No administered procedures</strong></div>}
               {adminProcedures.map((p, idx) => (
                 <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span><input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" /></label>
+                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" style={{ flex: 1 }} />
+                      {p.service_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "var(--accent)", color: "#fff", whiteSpace: "nowrap" }}>Service</span>}
+                      {p.unit_price_minor != null && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(p.unit_price_minor, p.currency)}</span>}
+                    </div>
+                  </label>
                   <label style={{ fontSize: 11 }}>Performed at<input type="datetime-local" value={p.performed_at ?? ""} onChange={(e) => updateProcedure(idx, "performed_at", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11 }}>Performer<input value={p.performer ?? ""} onChange={(e) => updateProcedure(idx, "performer", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11, gridColumn: "span 2" }}>Findings<input value={p.findings ?? ""} onChange={(e) => updateProcedure(idx, "findings", e.target.value)} disabled={readonly} /></label>
@@ -604,12 +707,34 @@ export default function EncounterDetailPage() {
         {tab === "medications" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">PRESCRIPTION</p><h2>Medications ({meds.length})</h2></div>
-              {!readonly && <button className="button button-secondary" type="button" onClick={addMed}>Add medication</button>}
+              {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button className="button button-secondary" type="button" onClick={addMed}>Add medication</button>
+                {inventoryProducts.filter((p) => p.product_type === "medicine").length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("med-inv")} style={{ background: pickerOpen === "med-inv" ? "var(--accent)" : undefined, color: pickerOpen === "med-inv" ? "#fff" : undefined }}>Add from Inventory</button>}
+              </div>}
             </div>
+            {pickerOpen === "med-inv" && (
+              <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search medicines by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                  {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).map((prod) => (
+                    <button key={prod.id} type="button" onClick={() => addMedFromInventory(prod)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                      <span><strong>{prod.name}</strong></span>
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{prod.unit}</span>
+                    </button>
+                  ))}
+                  {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No medicines match &ldquo;{pickerSearch}&rdquo;</div>}
+                </div>
+              </div>
+            )}
             {meds.length === 0 && <div className="dashboard-empty"><strong>No medications</strong></div>}
             {meds.map((med, idx) => (
               <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span><input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" /></label>
+                <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" style={{ flex: 1 }} />
+                    {med.inventory_product_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "#6b7280", color: "#fff", whiteSpace: "nowrap" }}>Inventory</span>}
+                  </div>
+                </label>
                 <label style={{ fontSize: 11 }}>Dosage<input value={med.dosage ?? ""} onChange={(e) => updateMed(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                 <label style={{ fontSize: 11 }}>Route<input value={med.route ?? ""} onChange={(e) => updateMed(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
                 <label style={{ fontSize: 11 }}>Frequency<input value={med.frequency ?? ""} onChange={(e) => updateMed(idx, "frequency", e.target.value)} disabled={readonly} placeholder="e.g. TDS" /></label>

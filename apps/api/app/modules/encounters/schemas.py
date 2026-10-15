@@ -20,6 +20,9 @@ class MedicationEntry(BaseModel):
     frequency: str | None = Field(default=None, max_length=100)
     duration: str | None = Field(default=None, max_length=100)
     notes: str | None = Field(default=None, max_length=500)
+    inventory_product_id: str | None = None
+    unit_price_minor: int | None = None
+    currency: str | None = Field(default=None, max_length=3)
 
 
 class VitalsEntry(BaseModel):
@@ -41,6 +44,11 @@ class AdministeredTreatment(BaseModel):
     administered_by: str | None = Field(default=None, max_length=200)
     response: str | None = Field(default=None, max_length=500)
     notes: str | None = Field(default=None, max_length=500)
+    service_id: str | None = None
+    inventory_product_id: str | None = None
+    unit_price_minor: int | None = None
+    currency: str | None = Field(default=None, max_length=3)
+    quantity: int | None = Field(default=None, ge=1)
 
 
 class AdministeredProcedure(BaseModel):
@@ -49,6 +57,9 @@ class AdministeredProcedure(BaseModel):
     performer: str | None = Field(default=None, max_length=200)
     findings: str | None = Field(default=None, max_length=2000)
     notes: str | None = Field(default=None, max_length=500)
+    service_id: str | None = None
+    unit_price_minor: int | None = None
+    currency: str | None = Field(default=None, max_length=3)
 
 
 class EncounterCreate(BaseModel):
