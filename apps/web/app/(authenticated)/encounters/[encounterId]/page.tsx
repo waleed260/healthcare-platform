@@ -13,7 +13,6 @@ type Medication = { name: string; dosage?: string; route?: string; frequency?: s
 type AdministeredTreatment = { name: string; dosage?: string; route?: string; administered_at?: string; administered_by?: string; response?: string; notes?: string };
 type AdministeredProcedure = { name: string; performed_at?: string; performer?: string; findings?: string; notes?: string };
 type AmendmentEntry = { field: string; old_value: string | null; new_value: string; reason: string; amended_by: string; amended_at: string };
-
 type Encounter = {
   id: string; clinic_id: string; patient_id: string; patient_name: string; mrn: string | null;
   appointment_id: string | null; doctor_id: string; doctor_name: string;
@@ -92,10 +91,8 @@ function toLocalDatetime(iso: string | null): string {
   } catch { return ""; }
 }
 
-type Prescription = { id: string; medication_name: string; dosage: string | null; frequency: string | null; duration: string | null; instructions: string | null; status: string; prescribed_at: string };
-
-type Tab = "arrival" | "patient" | "assessment" | "treatment" | "medications" | "vitals" | "discharge" | "prescriptions" | "summary";
-const TABS: Tab[] = ["arrival", "patient", "assessment", "treatment", "medications", "vitals", "discharge", "prescriptions", "summary"];
+type Tab = "arrival" | "patient" | "assessment" | "treatment" | "medications" | "vitals" | "discharge" | "summary";
+const TABS: Tab[] = ["arrival", "patient", "assessment", "treatment", "medications", "vitals", "discharge", "summary"];
 
 const AMENDABLE_FIELDS = [
   { value: "chief_complaint", label: "Chief Complaint" },
@@ -180,10 +177,6 @@ export default function EncounterDetailPage() {
   const [followUpClinician, setFollowUpClinician] = useState("");
   const [followUpDept, setFollowUpDept] = useState("");
   const [referralInstructions, setReferralInstructions] = useState("");
-
-  // Prescriptions
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [prescriptionsLoaded, setPrescriptionsLoaded] = useState(false);
 
   // Amendment
   const [amendField, setAmendField] = useState("");
@@ -402,19 +395,6 @@ export default function EncounterDetailPage() {
     } finally { setBusy(false); }
   }
 
-  /* ── Load prescriptions (lazy) ─────────────────────────────── */
-  const loadPrescriptions = useCallback(async () => {
-    try {
-      const data = await api<Prescription[]>(`/api/v1/encounters/${encounterId}/prescriptions`);
-      setPrescriptions(data ?? []);
-    } catch { /* silent — tab shows empty state */ }
-    setPrescriptionsLoaded(true);
-  }, [encounterId]);
-
-  useEffect(() => {
-    if (tab === "prescriptions" && !prescriptionsLoaded) void loadPrescriptions();
-  }, [tab, prescriptionsLoaded, loadPrescriptions]);
-
   /* ── Medication helpers ───────────────────────────────────────── */
   function addMed() { setMeds([...meds, { name: "", dosage: "", route: "oral", frequency: "", duration: "" }]); }
   function updateMed(idx: number, field: keyof Medication, val: string) { setMeds(meds.map((m, i) => i === idx ? { ...m, [field]: val } : m)); }
@@ -436,6 +416,9 @@ export default function EncounterDetailPage() {
   if (error || !enc) return <main className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Encounter not found."}</strong></div><Link className="button button-secondary" href="/encounters">Back</Link></main>;
 
   const readonly = enc.status === "discharged" || enc.status === "finalized";
+  const isDraft = enc.status === "draft";
+  const lockedTabs: Set<Tab> = isDraft ? new Set(["assessment", "treatment", "medications", "vitals", "discharge", "summary"]) : new Set();
+  const arrivalLocked = !isDraft && !readonly;
 
   /* ── Render ───────────────────────────────────────────────────── */
   return (
@@ -468,7 +451,7 @@ export default function EncounterDetailPage() {
       <div className="pipeline-toolbar">
         <div className="pipeline-tabs" role="tablist">
           {TABS.map((t) => (
-            <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{typeLabel(t)}</button>
+            <button key={t} className={tab === t ? "active" : ""} disabled={lockedTabs.has(t)} onClick={() => { if (!lockedTabs.has(t)) setTab(t); }}>{typeLabel(t)}</button>
           ))}
         </div>
       </div>
@@ -478,10 +461,10 @@ export default function EncounterDetailPage() {
         {/* ── Tab A: Arrival ─────────────────────────────────────── */}
         {tab === "arrival" && (
           <div className="enc-section surface-card">
-            <div className="surface-card-heading"><div><p className="eyebrow">ARRIVAL</p><h2>Arrival Information</h2></div></div>
+            <div className="surface-card-heading"><div><p className="eyebrow">ARRIVAL</p><h2>Arrival Information</h2></div>{arrivalLocked && <span style={{ fontSize: 11, color: "var(--muted)" }}>Locked after assessment started</span>}</div>
             <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
               <label>Arrival mode
-                <select value={arrivalMode} onChange={(e) => setArrivalMode(e.target.value)} disabled={readonly}>
+                <select value={arrivalMode} onChange={(e) => setArrivalMode(e.target.value)} disabled={readonly || arrivalLocked}>
                   <option value="">Select...</option>
                   <option value="walk_in">Walk-in</option>
                   <option value="ambulance">Ambulance</option>
@@ -490,16 +473,16 @@ export default function EncounterDetailPage() {
                   <option value="self">Self</option>
                 </select>
               </label>
-              <label>Arrival date/time<input type="datetime-local" value={arrivalDatetime} onChange={(e) => setArrivalDatetime(e.target.value)} disabled={readonly} /></label>
-              <label>Attendant name<input value={attendantName} onChange={(e) => setAttendantName(e.target.value)} disabled={readonly} placeholder="Name of accompanying person" /></label>
-              <label>Attendant phone<input value={attendantPhone} onChange={(e) => setAttendantPhone(e.target.value)} disabled={readonly} placeholder="Phone number" /></label>
+              <label>Arrival date/time<input type="datetime-local" value={arrivalDatetime} onChange={(e) => setArrivalDatetime(e.target.value)} disabled={readonly || arrivalLocked} /></label>
+              <label>Attendant name<input value={attendantName} onChange={(e) => setAttendantName(e.target.value)} disabled={readonly || arrivalLocked} placeholder="Name of accompanying person" /></label>
+              <label>Attendant phone<input value={attendantPhone} onChange={(e) => setAttendantPhone(e.target.value)} disabled={readonly || arrivalLocked} placeholder="Phone number" /></label>
             </div>
             <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-              <label>Condition on arrival<textarea value={conditionOnArrival} onChange={(e) => setConditionOnArrival(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Patient's condition when they arrived" /></label>
+              <label>Condition on arrival<textarea value={conditionOnArrival} onChange={(e) => setConditionOnArrival(e.target.value)} rows={2} disabled={readonly || arrivalLocked} style={{ width: "100%", resize: "vertical" }} placeholder="Patient's condition when they arrived" /></label>
             </div>
             <div style={{ marginTop: 16 }}>
               <p className="eyebrow" style={{ marginBottom: 12 }}>ARRIVAL VITALS</p>
-              <VitalsForm vitals={arrivalVitals} onChange={setArrivalVitals} readonly={readonly} />
+              <VitalsForm vitals={arrivalVitals} onChange={setArrivalVitals} readonly={readonly || arrivalLocked} />
             </div>
           </div>
         )}
@@ -559,10 +542,7 @@ export default function EncounterDetailPage() {
               <label>Clinical assessment<textarea value={clinicalAssessment} onChange={(e) => setClinicalAssessment(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
               <label>Treatment plan<textarea value={treatmentPlan} onChange={(e) => setTreatmentPlan(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
               <label>Procedures performed<textarea value={procedures} onChange={(e) => setProcedures(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-                <label>Follow-up date<input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} disabled={readonly} /></label>
-              </div>
+              <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
               <label>Internal notes<textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical", fontStyle: "italic" }} placeholder="Only visible to staff" /></label>
             </div>
           </div>
@@ -681,9 +661,10 @@ export default function EncounterDetailPage() {
               <label>Warning signs<textarea value={warningSigns} onChange={(e) => setWarningSigns(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Signs that require immediate medical attention" /></label>
               <label>Medicine guidance<textarea value={medicineGuidance} onChange={(e) => setMedicineGuidance(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Instructions for medications" /></label>
             </div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", marginTop: 12 }}>
+            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", marginTop: 12 }}>
               <label>Follow-up clinician<input value={followUpClinician} onChange={(e) => setFollowUpClinician(e.target.value)} disabled={readonly} /></label>
               <label>Follow-up department<input value={followUpDept} onChange={(e) => setFollowUpDept(e.target.value)} disabled={readonly} /></label>
+              <label>Follow-up date<input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} disabled={readonly} /></label>
             </div>
             {dischOutcome === "referral" && (
               <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
@@ -702,37 +683,7 @@ export default function EncounterDetailPage() {
           </div>
         )}
 
-        {/* ── Tab H: Prescriptions ───────────────────────────────── */}
-        {tab === "prescriptions" && (
-          <div className="enc-section surface-card">
-            <div className="surface-card-heading"><div><p className="eyebrow">DISCHARGE PRESCRIPTIONS</p><h2>Prescriptions ({prescriptions.length})</h2></div></div>
-            {!prescriptionsLoaded && <div className="dashboard-empty" role="status"><strong>Loading prescriptions...</strong></div>}
-            {prescriptionsLoaded && prescriptions.length === 0 && (
-              <div className="dashboard-empty"><strong>No prescriptions</strong><span>Prescriptions linked to this encounter will appear here.</span></div>
-            )}
-            {prescriptions.length > 0 && (
-              <div>
-                {prescriptions.map((p) => (
-                  <div key={p.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr auto", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "center", fontSize: 13 }}>
-                    <div><strong>{p.medication_name}</strong></div>
-                    <div>{p.dosage ?? "-"}</div>
-                    <div>{p.frequency ?? "-"}</div>
-                    <div>{p.duration ?? "-"}</div>
-                    <div><span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: p.status === "active" ? "var(--leaf)" : "var(--line)", color: p.status === "active" ? "#fff" : "var(--fg)" }}>{p.status}</span></div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{fmtDateTime(p.prescribed_at)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {enc && (
-              <div style={{ marginTop: 16, fontSize: 12, color: "var(--muted)" }}>
-                Prescriptions are created from the <a href={`/patients/${enc.patient_id}`} style={{ color: "var(--accent)" }}>patient record</a> and linked via encounter ID.
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Tab I: Summary / Print ──────────────────────────────── */}
+        {/* ── Tab H: Summary / Print ──────────────────────────────── */}
         {tab === "summary" && (
           <>
             {/* Print header (hidden on screen, visible when printing) */}

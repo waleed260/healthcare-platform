@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, post, writeHeaders } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
@@ -41,6 +41,7 @@ export default function DoctorDetailPage() {
   const [tab, setTab] = useState<"overview" | "services" | "branches" | "schedule">("overview");
 
   const [showRuleForm, setShowRuleForm] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [ruleBranch, setRuleBranch] = useState("");
   const [ruleWeekday, setRuleWeekday] = useState(1);
   const [ruleStart, setRuleStart] = useState("09:00");
@@ -87,21 +88,48 @@ export default function DoctorDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  function startEditRule(r: AvailabilityRule) {
+    setEditingRuleId(r.id);
+    setRuleBranch(r.branch_id);
+    setRuleWeekday(r.weekday);
+    setRuleStart(r.starts_at.slice(0, 5));
+    setRuleEnd(r.ends_at.slice(0, 5));
+    setRuleFrom(r.effective_from);
+    setRuleTo(r.effective_to ?? "");
+    setRuleCadence(r.slot_cadence_minutes);
+    setShowRuleForm(true);
+  }
+
+  function resetRuleForm() {
+    setEditingRuleId(null);
+    setShowRuleForm(false);
+    setRuleBranch("");
+    setRuleWeekday(1);
+    setRuleStart("09:00");
+    setRuleEnd("17:00");
+    setRuleFrom(new Date().toISOString().slice(0, 10));
+    setRuleTo("");
+    setRuleCadence(15);
+  }
+
   async function addRule(e: FormEvent) {
     e.preventDefault();
     if (!doctor || !ruleBranch) return;
     setBusy(true);
     try {
+      if (editingRuleId) {
+        await api(`/api/v1/scheduling/availability-rules/${editingRuleId}`, { method: "DELETE", headers: writeHeaders() });
+      }
       await post("/api/v1/scheduling/availability-rules", {
         branch_id: ruleBranch, doctor_id: doctorId, weekday: ruleWeekday,
         starts_at: ruleStart + ":00", ends_at: ruleEnd + ":00",
         effective_from: ruleFrom, effective_to: ruleTo || null,
         slot_cadence_minutes: ruleCadence,
       });
-      toast.success("Availability rule added.");
-      setShowRuleForm(false);
+      toast.success(editingRuleId ? "Availability rule updated." : "Availability rule added.");
+      resetRuleForm();
       await load();
-    } catch (reason) { toast.error(errorMessage(reason, "Could not add rule.")); }
+    } catch (reason) { toast.error(errorMessage(reason, "Could not save rule.")); }
     finally { setBusy(false); }
   }
 
@@ -328,7 +356,7 @@ export default function DoctorDetailPage() {
         <div className="doctor-detail-card surface-card">
           <div className="surface-card-heading">
             <div><p className="eyebrow">WORKING HOURS</p><h2>Availability ({doctor.availability.length} rules)</h2></div>
-            <button className="button button-primary" type="button" onClick={() => { setRuleBranch(doctor.branches[0]?.id ?? ""); setShowRuleForm(!showRuleForm); }}>
+            <button className="button button-primary" type="button" onClick={() => { if (showRuleForm) { resetRuleForm(); } else { setRuleBranch(doctor.branches[0]?.id ?? ""); setShowRuleForm(true); } }}>
               {showRuleForm ? "Cancel" : "Add rule"} <span>{showRuleForm ? "×" : "+"}</span>
             </button>
           </div>
@@ -358,8 +386,8 @@ export default function DoctorDetailPage() {
                 </label>
               </div>
               <div className="form-actions">
-                <button className="button button-secondary" type="button" onClick={() => setShowRuleForm(false)}>Cancel</button>
-                <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add rule"}</button>
+                <button className="button button-secondary" type="button" onClick={resetRuleForm}>Cancel</button>
+                <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : editingRuleId ? "Update rule" : "Add rule"}</button>
               </div>
             </form>
           )}
@@ -380,6 +408,7 @@ export default function DoctorDetailPage() {
                           {fmtTime(r.starts_at)} – {fmtTime(r.ends_at)}
                           <span style={{ color: "var(--muted)" }}>{r.branch_name}</span>
                           <span style={{ color: "var(--muted)" }}>({r.slot_cadence_minutes}min slots)</span>
+                          <button className="ghost-button" type="button" style={{ fontSize: 11, padding: "2px 6px" }} onClick={() => startEditRule(r)} disabled={busy}>Edit</button>
                           <button className="ghost-button" type="button" style={{ fontSize: 11, color: "var(--coral)", padding: "2px 6px" }} onClick={() => void deleteRule(r.id)} disabled={busy}>×</button>
                         </span>
                       ))}

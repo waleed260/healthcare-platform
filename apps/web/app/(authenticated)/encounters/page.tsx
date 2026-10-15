@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -43,6 +43,7 @@ export default function EncountersPage() {
   const [filter, setFilter] = useState<string>("all");
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<Patient[]>([]);
@@ -158,6 +159,17 @@ export default function EncountersPage() {
   const counts: Record<string, number> = {};
   for (const e of encounters) counts[e.status] = (counts[e.status] ?? 0) + 1;
 
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return encounters;
+    const q = searchQuery.toLowerCase();
+    return encounters.filter((e) =>
+      e.patient_name.toLowerCase().includes(q) ||
+      e.doctor_name.toLowerCase().includes(q) ||
+      (e.chief_complaint && e.chief_complaint.toLowerCase().includes(q)) ||
+      (e.diagnosis && e.diagnosis.toLowerCase().includes(q))
+    );
+  }, [encounters, searchQuery]);
+
   return (
     <main className="dash-content">
       <div className="dash-topline">
@@ -185,6 +197,7 @@ export default function EncountersPage() {
             <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{statusLabel(s)}</button>
           ))}
         </div>
+        <input type="search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by patient, doctor, complaint, diagnosis…" style={{ padding: "6px 12px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 12, background: "var(--surface, var(--bg))", color: "var(--fg)", minWidth: 220 }} />
       </div>
 
       {showForm && (
@@ -236,14 +249,14 @@ export default function EncountersPage() {
       )}
 
       <section className="surface-card">
-        <div className="surface-card-heading"><div><p className="eyebrow">ENCOUNTERS</p><h2>{filter === "all" ? "All encounters" : statusLabel(filter)}</h2></div><span className="muted-mono">{encounters.length} RECORDS</span></div>
+        <div className="surface-card-heading"><div><p className="eyebrow">ENCOUNTERS</p><h2>{filter === "all" ? "All encounters" : statusLabel(filter)}</h2></div><span className="muted-mono">{filtered.length} RECORDS</span></div>
 
         {loading && <div className="dashboard-empty" role="status"><strong>Loading encounters…</strong></div>}
-        {!loading && encounters.length === 0 && <div className="dashboard-empty"><strong>No encounters</strong><span>Create an encounter to start documenting.</span></div>}
+        {!loading && filtered.length === 0 && <div className="dashboard-empty"><strong>{searchQuery ? "No matching encounters" : "No encounters"}</strong><span>{searchQuery ? "Try a different search term." : "Create an encounter to start documenting."}</span></div>}
 
-        {!loading && encounters.length > 0 && (
+        {!loading && filtered.length > 0 && (
           <div>
-            {encounters.map((enc) => (
+            {filtered.map((enc) => (
               <div className="enc-row" key={enc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

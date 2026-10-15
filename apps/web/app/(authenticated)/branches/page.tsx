@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, writeHeaders, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 
@@ -50,22 +50,39 @@ function formatAddress(address: Record<string, string> | null): string {
   return Object.values(address).filter(Boolean).join(", ");
 }
 
-function timeDisplay(value: string | null): string {
+function timeDisplay(value: string | null, use24h: boolean): string {
   if (!value) return "—";
-  return value.slice(0, 5);
+  const hhmm = value.slice(0, 5);
+  if (use24h) return hhmm;
+  const [hStr, mStr] = hhmm.split(":");
+  let h = parseInt(hStr, 10);
+  const ampm = h >= 12 ? "PM" : "AM";
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${h}:${mStr} ${ampm}`;
 }
 
-type HourDraft = { opens: string; closes: string; closed: boolean };
+type SlotDraft = { opens: string; closes: string; closed: boolean };
 
-function defaultHourDrafts(hours: BranchHour[]): HourDraft[] {
-  const drafts: HourDraft[] = WEEKDAY_NAMES.map((_, i) => ({ opens: "09:00", closes: "17:00", closed: i === 6 }));
+function defaultSlotDrafts(hours: BranchHour[]): SlotDraft[][] {
+  const drafts: SlotDraft[][] = WEEKDAY_NAMES.map((_, i) => [{ opens: "09:00", closes: "17:00", closed: i === 6 }]);
+  const grouped = new Map<number, BranchHour[]>();
   for (const h of hours) {
-    if (h.weekday >= 0 && h.weekday < 7 && h.interval_index === 0) {
-      drafts[h.weekday] = {
-        opens: h.opens_at ? h.opens_at.slice(0, 5) : "09:00",
-        closes: h.closes_at ? h.closes_at.slice(0, 5) : "17:00",
-        closed: h.is_closed,
-      };
+    if (h.weekday >= 0 && h.weekday < 7) {
+      const list = grouped.get(h.weekday) ?? [];
+      list.push(h);
+      grouped.set(h.weekday, list);
+    }
+  }
+  for (const [weekday, wHours] of grouped) {
+    const sorted = wHours.sort((a, b) => a.interval_index - b.interval_index);
+    drafts[weekday] = sorted.map((h) => ({
+      opens: h.opens_at ? h.opens_at.slice(0, 5) : "09:00",
+      closes: h.closes_at ? h.closes_at.slice(0, 5) : "17:00",
+      closed: h.is_closed,
+    }));
+    if (drafts[weekday].length === 0) {
+      drafts[weekday] = [{ opens: "09:00", closes: "17:00", closed: weekday === 6 }];
     }
   }
   return drafts;
@@ -77,12 +94,14 @@ export default function BranchesPage() {
   const [branchDoctors, setBranchDoctors] = useState<Record<string, Doctor[]>>({});
   const [branchServices, setBranchServices] = useState<Record<string, Service[]>>({});
   const [branchHours, setBranchHours] = useState<Record<string, BranchHour[]>>({});
-  const [hourDrafts, setHourDrafts] = useState<Record<string, HourDraft[]>>({});
+  const [slotDrafts, setSlotDrafts] = useState<Record<string, SlotDraft[][]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [savingDay, setSavingDay] = useState<string | null>(null);
+  const [use24h, setUse24h] = useState(true);
+  const [copiedSlots, setCopiedSlots] = useState<SlotDraft[] | null>(null);
 
   const canEditHours = permissions.includes("schedule.manage");
 
@@ -119,39 +138,96 @@ export default function BranchesPage() {
         setBranchServices((prev) => ({ ...prev, [branchId]: svcs ?? [] }));
         const hoursData = hrs ?? [];
         setBranchHours((prev) => ({ ...prev, [branchId]: hoursData }));
-        setHourDrafts((prev) => ({ ...prev, [branchId]: defaultHourDrafts(hoursData) }));
+        setSlotDrafts((prev) => ({ ...prev, [branchId]: defaultSlotDrafts(hoursData) }));
       } catch { /* silent */ }
     }
   }
 
-  function updateDraft(branchId: string, weekday: number, field: keyof HourDraft, value: string | boolean) {
-    setHourDrafts((prev) => {
-      const drafts = [...(prev[branchId] ?? defaultHourDrafts([]))];
-      drafts[weekday] = { ...drafts[weekday], [field]: value };
-      return { ...prev, [branchId]: drafts };
+  function updateSlot(branchId: string, weekday: number, slotIdx: number, field: keyof SlotDraft, value: string | boolean) {
+    setSlotDrafts((prev) => {
+      const allDays = [...(prev[branchId] ?? defaultSlotDrafts([]))];
+      const daySlots = [...allDays[weekday]];
+      daySlots[slotIdx] = { ...daySlots[slotIdx], [field]: value };
+      allDays[weekday] = daySlots;
+      return { ...prev, [branchId]: allDays };
     });
   }
 
+  function addSlot(branchId: string, weekday: number) {
+    setSlotDrafts((prev) => {
+      const allDays = [...(prev[branchId] ?? defaultSlotDrafts([]))];
+      const daySlots = [...allDays[weekday]];
+      daySlots.push({ opens: "09:00", closes: "17:00", closed: false });
+      allDays[weekday] = daySlots;
+      return { ...prev, [branchId]: allDays };
+    });
+  }
+
+  function removeSlot(branchId: string, weekday: number, slotIdx: number) {
+    setSlotDrafts((prev) => {
+      const allDays = [...(prev[branchId] ?? defaultSlotDrafts([]))];
+      const daySlots = allDays[weekday].filter((_, i) => i !== slotIdx);
+      if (daySlots.length === 0) daySlots.push({ opens: "09:00", closes: "17:00", closed: true });
+      allDays[weekday] = daySlots;
+      return { ...prev, [branchId]: allDays };
+    });
+  }
+
+  function copyDay(branchId: string, weekday: number) {
+    const drafts = slotDrafts[branchId];
+    if (!drafts) return;
+    setCopiedSlots(drafts[weekday].map((s) => ({ ...s })));
+    toast.success(`${WEEKDAY_NAMES[weekday]} hours copied.`);
+  }
+
+  function pasteDay(branchId: string, weekday: number) {
+    if (!copiedSlots) return;
+    setSlotDrafts((prev) => {
+      const allDays = [...(prev[branchId] ?? defaultSlotDrafts([]))];
+      allDays[weekday] = copiedSlots.map((s) => ({ ...s }));
+      return { ...prev, [branchId]: allDays };
+    });
+    toast.success(`Pasted to ${WEEKDAY_NAMES[weekday]}.`);
+  }
+
+  function applyToAll(branchId: string, weekday: number) {
+    const drafts = slotDrafts[branchId];
+    if (!drafts) return;
+    const source = drafts[weekday].map((s) => ({ ...s }));
+    setSlotDrafts((prev) => {
+      const allDays = [...(prev[branchId] ?? defaultSlotDrafts([]))];
+      for (let d = 0; d < 7; d++) {
+        allDays[d] = source.map((s) => ({ ...s }));
+      }
+      return { ...prev, [branchId]: allDays };
+    });
+    toast.success("Applied to all days.");
+  }
+
   async function saveDay(branchId: string, weekday: number) {
-    const draft = hourDrafts[branchId]?.[weekday];
-    if (!draft) return;
+    const daySlots = slotDrafts[branchId]?.[weekday];
+    if (!daySlots) return;
     const key = `${branchId}-${weekday}`;
     setSavingDay(key);
     try {
-      await api(`/api/v1/branches/${branchId}/hours/${weekday}`, {
-        method: "PUT",
-        headers: writeHeaders(),
-        body: JSON.stringify({
-          weekday,
-          interval_index: 0,
-          opens_at: draft.closed ? null : `${draft.opens}:00`,
-          closes_at: draft.closed ? null : `${draft.closes}:00`,
-          is_closed: draft.closed,
-        }),
-      });
+      for (let idx = 0; idx < daySlots.length; idx++) {
+        const slot = daySlots[idx];
+        await api(`/api/v1/branches/${branchId}/hours/${weekday}`, {
+          method: "PUT",
+          headers: writeHeaders(),
+          body: JSON.stringify({
+            weekday,
+            interval_index: idx,
+            opens_at: slot.closed ? null : `${slot.opens}:00`,
+            closes_at: slot.closed ? null : `${slot.closes}:00`,
+            is_closed: slot.closed,
+          }),
+        });
+      }
       toast.success(`${WEEKDAY_NAMES[weekday]} hours saved.`);
       const hrs = await api<BranchHour[]>(`/api/v1/branches/${branchId}/hours`);
       setBranchHours((prev) => ({ ...prev, [branchId]: hrs ?? [] }));
+      setSlotDrafts((prev) => ({ ...prev, [branchId]: defaultSlotDrafts(hrs ?? []) }));
     } catch (reason) {
       toast.error(errorMessage(reason, "Could not save hours."));
     } finally {
@@ -160,27 +236,31 @@ export default function BranchesPage() {
   }
 
   async function saveAllDays(branchId: string) {
-    const drafts = hourDrafts[branchId];
-    if (!drafts) return;
+    const allDays = slotDrafts[branchId];
+    if (!allDays) return;
     setSavingDay(`${branchId}-all`);
     try {
       for (let weekday = 0; weekday < 7; weekday++) {
-        const draft = drafts[weekday];
-        await api(`/api/v1/branches/${branchId}/hours/${weekday}`, {
-          method: "PUT",
-          headers: writeHeaders(),
-          body: JSON.stringify({
-            weekday,
-            interval_index: 0,
-            opens_at: draft.closed ? null : `${draft.opens}:00`,
-            closes_at: draft.closed ? null : `${draft.closes}:00`,
-            is_closed: draft.closed,
-          }),
-        });
+        const daySlots = allDays[weekday];
+        for (let idx = 0; idx < daySlots.length; idx++) {
+          const slot = daySlots[idx];
+          await api(`/api/v1/branches/${branchId}/hours/${weekday}`, {
+            method: "PUT",
+            headers: writeHeaders(),
+            body: JSON.stringify({
+              weekday,
+              interval_index: idx,
+              opens_at: slot.closed ? null : `${slot.opens}:00`,
+              closes_at: slot.closed ? null : `${slot.closes}:00`,
+              is_closed: slot.closed,
+            }),
+          });
+        }
       }
       toast.success("All hours saved.");
       const hrs = await api<BranchHour[]>(`/api/v1/branches/${branchId}/hours`);
       setBranchHours((prev) => ({ ...prev, [branchId]: hrs ?? [] }));
+      setSlotDrafts((prev) => ({ ...prev, [branchId]: defaultSlotDrafts(hrs ?? []) }));
     } catch (reason) {
       toast.error(errorMessage(reason, "Could not save hours."));
     } finally {
@@ -209,7 +289,7 @@ export default function BranchesPage() {
           const docs = branchDoctors[b.id] ?? [];
           const svcs = branchServices[b.id] ?? [];
           const hrs = branchHours[b.id] ?? [];
-          const drafts = hourDrafts[b.id] ?? defaultHourDrafts([]);
+          const allDayDrafts = slotDrafts[b.id] ?? defaultSlotDrafts([]);
           const addr = formatAddress(b.address);
           return (
             <article className="branch-card panel-card" key={b.id}>
@@ -267,28 +347,52 @@ export default function BranchesPage() {
                     </div>
                   )}
 
-                  <p className="eyebrow" style={{ marginBottom: 8 }}>OPENING HOURS</p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <p className="eyebrow" style={{ margin: 0 }}>OPENING HOURS</p>
+                    <button className="ghost-button" type="button" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setUse24h((v) => !v)}>
+                      {use24h ? "12h" : "24h"}
+                    </button>
+                  </div>
                   {hrs.length === 0 && !canEditHours && <p style={{ color: "var(--muted)", fontSize: 12 }}>No hours configured.</p>}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {drafts.map((draft, weekday) => (
-                      <div key={weekday} style={{ display: "grid", gridTemplateColumns: canEditHours ? "85px 70px 1fr 1fr auto" : "85px 1fr", gap: 8, alignItems: "center", fontSize: "0.82rem" }}>
-                        <span style={{ fontWeight: 500 }}>{WEEKDAY_NAMES[weekday]}</span>
-                        {canEditHours ? <>
-                          <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.78rem", cursor: "pointer" }}>
-                            <input type="checkbox" checked={draft.closed} onChange={(e) => updateDraft(b.id, weekday, "closed", e.target.checked)} /> Closed
-                          </label>
-                          {draft.closed
-                            ? <span style={{ gridColumn: "span 2", color: "var(--muted)", fontSize: "0.78rem" }}>—</span>
-                            : <>
-                              <input type="time" value={draft.opens} onChange={(e) => updateDraft(b.id, weekday, "opens", e.target.value)} style={{ fontSize: "0.8rem", padding: "2px 4px", border: "1px solid var(--line)", borderRadius: 4 }} />
-                              <input type="time" value={draft.closes} onChange={(e) => updateDraft(b.id, weekday, "closes", e.target.value)} style={{ fontSize: "0.8rem", padding: "2px 4px", border: "1px solid var(--line)", borderRadius: 4 }} />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {allDayDrafts.map((daySlots, weekday) => (
+                      <div key={weekday} style={{ borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 500, fontSize: "0.82rem", minWidth: 85 }}>{WEEKDAY_NAMES[weekday]}</span>
+                          {canEditHours && (
+                            <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+                              <button className="ghost-button" type="button" style={{ fontSize: 10, padding: "1px 6px" }} onClick={() => copyDay(b.id, weekday)} title="Copy this day's hours">Copy</button>
+                              {copiedSlots && <button className="ghost-button" type="button" style={{ fontSize: 10, padding: "1px 6px" }} onClick={() => pasteDay(b.id, weekday)} title="Paste copied hours">Paste</button>}
+                              <button className="ghost-button" type="button" style={{ fontSize: 10, padding: "1px 6px" }} onClick={() => applyToAll(b.id, weekday)} title="Apply this day to all days">All</button>
+                              <button className="ghost-button" type="button" style={{ fontSize: "0.75rem", padding: "2px 8px" }} disabled={savingDay !== null} onClick={() => void saveDay(b.id, weekday)}>{savingDay === `${b.id}-${weekday}` ? "…" : "Save"}</button>
+                            </div>
+                          )}
+                        </div>
+                        {daySlots.map((slot, slotIdx) => (
+                          <div key={slotIdx} style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 85, marginBottom: 2 }}>
+                            {canEditHours ? <>
+                              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.78rem", cursor: "pointer" }}>
+                                <input type="checkbox" checked={slot.closed} onChange={(e) => updateSlot(b.id, weekday, slotIdx, "closed", e.target.checked)} /> Closed
+                              </label>
+                              {slot.closed
+                                ? <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>—</span>
+                                : <>
+                                  <input type="time" value={slot.opens} onChange={(e) => updateSlot(b.id, weekday, slotIdx, "opens", e.target.value)} style={{ fontSize: "0.8rem", padding: "2px 4px", border: "1px solid var(--line)", borderRadius: 4 }} />
+                                  <input type="time" value={slot.closes} onChange={(e) => updateSlot(b.id, weekday, slotIdx, "closes", e.target.value)} style={{ fontSize: "0.8rem", padding: "2px 4px", border: "1px solid var(--line)", borderRadius: 4 }} />
+                                </>}
+                              {daySlots.length > 1 && (
+                                <button className="ghost-button" type="button" style={{ fontSize: 10, color: "var(--coral)", padding: "1px 4px" }} onClick={() => removeSlot(b.id, weekday, slotIdx)}>×</button>
+                              )}
+                            </> : <>
+                              <span style={{ color: slot.closed ? "var(--muted)" : "inherit", fontSize: "0.8rem" }}>
+                                {slot.closed ? "Closed" : `${timeDisplay(slot.opens, use24h)} – ${timeDisplay(slot.closes, use24h)}`}
+                              </span>
                             </>}
-                          <button className="ghost-button" type="button" style={{ fontSize: "0.75rem", padding: "2px 8px" }} disabled={savingDay !== null} onClick={() => void saveDay(b.id, weekday)}>{savingDay === `${b.id}-${weekday}` ? "…" : "Save"}</button>
-                        </> : <>
-                          <span style={{ color: draft.closed ? "var(--muted)" : "inherit", fontSize: "0.8rem" }}>
-                            {draft.closed ? "Closed" : `${timeDisplay(draft.opens)} – ${timeDisplay(draft.closes)}`}
-                          </span>
-                        </>}
+                          </div>
+                        ))}
+                        {canEditHours && (
+                          <button className="ghost-button" type="button" style={{ fontSize: 10, marginLeft: 85, marginTop: 2, color: "var(--accent, var(--leaf))" }} onClick={() => addSlot(b.id, weekday)}>+ Add slot</button>
+                        )}
                       </div>
                     ))}
                   </div>

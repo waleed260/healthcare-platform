@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PremiumMotion from "../../premium-motion";
+import { redirectToLogin } from "../_lib/client";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
 import BlockTimeDrawer from "../_lib/block-time-drawer";
@@ -27,7 +28,7 @@ const dayShort = (v: string) => new Intl.DateTimeFormat(undefined, { weekday: "s
 async function getData<T>(url: string): Promise<T | null> {
   try {
     const r = await fetch(url, { credentials: "include", cache: "no-store" });
-    if (r.status === 401) { window.location.href = "/login"; return null; }
+    if (r.status === 401) { redirectToLogin(); return null; }
     if (!r.ok) return null;
     const p = (await r.json().catch(() => null)) as { data?: T } | null;
     return (p?.data ?? null) as T | null;
@@ -62,7 +63,7 @@ export default function DashboardPage() {
         setPermissions(sessionData.permissions ?? []);
         if (sessionData.clinic_slug) setClinicSlug(sessionData.clinic_slug);
       }
-      if (summaryResponse.status === 401) { window.location.href = "/login"; return; }
+      if (summaryResponse.status === 401) { redirectToLogin(); return; }
       const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
       if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
       setSummary(summaryPayload?.data ?? null);
@@ -80,6 +81,11 @@ export default function DashboardPage() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const id = setInterval(() => { void load(); }, 60_000);
+    return () => clearInterval(id);
+  }, [load]);
 
   const schedule = useMemo(() => {
     const today = new Date();
@@ -116,7 +122,7 @@ export default function DashboardPage() {
 
     <div className="dash-main-grid">
       <section className="panel-card" id="schedule"><div className="card-heading"><div><p className="eyebrow">YOUR DAY</p><h2>Today&apos;s schedule</h2></div><Link className="text-link" href="/schedule">View full calendar <span>→</span></Link></div>
-        {loading && schedule.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading schedule…</strong></div> : schedule.length === 0 ? <div className="dashboard-empty"><strong>No appointments</strong><span>Your scoped schedule is clear for now.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head"><span>Time</span><span>Appointment</span><span>Status</span></div>{schedule.slice(0, 9).map((a) => <div className="dash-table-row" key={a.id}><time dateTime={a.starts_at}>{time(a.starts_at)}</time><span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span><span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span></div>)}</div>}
+        {loading && schedule.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading schedule…</strong></div> : schedule.length === 0 ? <div className="dashboard-empty"><strong>No appointments</strong><span>Your scoped schedule is clear for now.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head"><span>Time</span><span>Appointment</span><span>Status</span></div>{schedule.map((a) => <div className="dash-table-row" key={a.id}><time dateTime={a.starts_at}>{time(a.starts_at)}</time><span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span><span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span></div>)}</div>}
       </section>
 
       <div className="dash-side-col">
