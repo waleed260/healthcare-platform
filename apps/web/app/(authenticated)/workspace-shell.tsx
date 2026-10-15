@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { post, redirectToLogin } from "./_lib/client";
-import { cachedFetch } from "./_lib/session-cache";
 import type { SessionInfo } from "@contracts/entities";
 type NavItem = { href: string; label: string; icon: string; permission: string; adminOnly?: boolean };
 type NavGroup = { key: string; label: string; items: NavItem[] };
@@ -51,14 +50,6 @@ const navGroups: NavGroup[] = [
 ];
 
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
-
-async function readJson<T>(url: string): Promise<T | null> {
-  try {
-    return await cachedFetch<T>(url, 10000);
-  } catch {
-    return null;
-  }
-}
 
 export default function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();

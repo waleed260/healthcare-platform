@@ -1,5 +1,21 @@
 export type ApiEnvelope<T> = { data?: T; error?: { code?: string; message?: string; fields?: Record<string, string> } };
 
+// Single place where auth-expiry sends the user back to login. Preserves the deep
+// link as ?next= so the login page can return the user exactly where they were.
+// Uses a full navigation on purpose: it also clears in-memory client state left by
+// the expired session (caches, toasts, drawers) that router.push would keep alive.
+export function redirectToLogin(): void {
+  const here = window.location.pathname + window.location.search + window.location.hash;
+  const target = here && here !== "/" ? `?next=${encodeURIComponent(here)}` : "";
+  window.location.assign(`/login${target}`);
+}
+
+// Guard used by the login page: only same-app relative paths may be used as `next`.
+export function safeNextPath(value: string | null): string | null {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return null;
+  return value;
+}
+
 async function refreshCsrf(): Promise<string | undefined> {
   try {
     const r = await fetch("/api/v1/auth/csrf", { method: "POST", credentials: "include" });
@@ -13,7 +29,7 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (!response.ok) {
     if (response.status === 401 && payload?.error?.code === "SESSION_EXPIRED") {
-      window.location.href = "/login";
+      redirectToLogin();
       throw new Error("Session expired — redirecting to login.");
     }
     if ((payload?.error?.code === "CSRF_INVALID" || payload?.error?.code === "CSRF_REQUIRED") && init?.method && init.method !== "GET") {
@@ -25,7 +41,7 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
       const retryPayload = await retry.json().catch(() => null) as ApiEnvelope<T> | null;
       if (!retry.ok) {
         if (retry.status === 401) {
-          window.location.href = "/login";
+          redirectToLogin();
           throw new Error("Session expired — redirecting to login.");
         }
         throw new Error(retryPayload?.error?.message ?? fallback);
@@ -47,7 +63,7 @@ export async function apiPage<T>(url: string, fallback = "The request could not 
   const payload = await response.json().catch(() => null) as { data?: T[]; meta?: { next_cursor?: string | null }; error?: { message?: string } } | null;
   if (!response.ok) {
     if (response.status === 401) {
-      window.location.href = "/login";
+      redirectToLogin();
       throw new Error("Session expired — redirecting to login.");
     }
     throw new Error(payload?.error?.message ?? fallback);
