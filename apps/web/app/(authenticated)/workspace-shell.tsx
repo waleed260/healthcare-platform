@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { post } from "./_lib/client";
+import { post, redirectToLogin } from "./_lib/client";
 import { cachedFetch } from "./_lib/session-cache";
 import type { SessionInfo } from "@contracts/entities";
 type NavItem = { href: string; label: string; icon: string; permission: string; adminOnly?: boolean };
@@ -68,14 +68,19 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    void readJson<SessionInfo>("/api/v1/auth/me").then((nextSession) => {
-      if (!mounted) return;
-      if (!nextSession) {
-        setConnectionIssue(true);
-        return;
+    void (async () => {
+      try {
+        const res = await fetch("/api/v1/auth/me", { credentials: "include" });
+        if (!mounted) return;
+        if (res.status === 401) { redirectToLogin(); return; }
+        if (!res.ok) { setConnectionIssue(true); return; }
+        const body = await res.json() as { data?: SessionInfo };
+        if (body.data) setSession(body.data);
+        else setConnectionIssue(true);
+      } catch {
+        if (mounted) setConnectionIssue(true);
       }
-      setSession(nextSession);
-    });
+    })();
     return () => { mounted = false; };
   }, []);
 
@@ -128,7 +133,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     try { await post("/api/v1/auth/logout"); } catch { /* continue */ }
-    window.location.href = "/login";
+    redirectToLogin();
   }, []);
 
   return <div className="workspace-layout">
@@ -194,7 +199,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      {connectionIssue && <div className="workspace-connection-alert" role="status">Your workspace connection could not be checked. Protected pages will explain how to retry.</div>}
+      {connectionIssue && <div className="workspace-connection-alert" role="alert" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "center" }}>The API server could not be reached. Check your internet connection or try again. <button className="button button-secondary" type="button" style={{ fontSize: 11, padding: "4px 12px" }} onClick={() => window.location.reload()}>Reload</button> <button className="ghost-button" type="button" style={{ fontSize: 11, padding: "4px 8px" }} onClick={() => redirectToLogin()}>Sign in</button></div>}
       <div className="workspace-body">{children}</div>
     </div>
   </div>;

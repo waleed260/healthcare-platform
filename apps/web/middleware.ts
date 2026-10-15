@@ -23,10 +23,10 @@ export function middleware(request: NextRequest) {
   const csp = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${requestNonce}'${development ? " 'unsafe-eval'" : ""}`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: blob: https:",
     "connect-src 'self'",
-    "font-src 'self'",
+    "font-src 'self' https://fonts.gstatic.com",
     "frame-ancestors 'none'",
     "object-src 'none'",
     "base-uri 'self'",
