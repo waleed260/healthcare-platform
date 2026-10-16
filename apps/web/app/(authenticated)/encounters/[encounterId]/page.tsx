@@ -183,6 +183,7 @@ export default function EncounterDetailPage() {
   // Catalog pickers
   const [catalogServices, setCatalogServices] = useState<CatalogService[]>([]);
   const [inventoryProducts, setInventoryProducts] = useState<InventoryProduct[]>([]);
+  const [catalogLoadFailed, setCatalogLoadFailed] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = useState("");
 
@@ -267,8 +268,8 @@ export default function EncounterDetailPage() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     void api<{ user_id: string }>("/api/v1/auth/me").then((s) => { if (s?.user_id) setCurrentUserId(s.user_id); }).catch(() => {});
-    void api<CatalogService[]>("/api/v1/services?limit=100").then((d) => setCatalogServices((d ?? []).filter((s) => s.status === "active"))).catch(() => {});
-    void api<InventoryProduct[]>("/api/v1/inventory/products?limit=100").then((d) => setInventoryProducts((d ?? []).filter((p) => p.status === "active"))).catch(() => {});
+    void api<CatalogService[]>("/api/v1/services?limit=100").then((d) => setCatalogServices((d ?? []).filter((s) => s.status === "active"))).catch(() => setCatalogLoadFailed(true));
+    void api<InventoryProduct[]>("/api/v1/inventory/products?limit=100").then((d) => setInventoryProducts((d ?? []).filter((p) => p.status === "active"))).catch(() => setCatalogLoadFailed(true));
   }, []);
 
   /* ── Save (PATCH) ─────────────────────────────────────────────── */
@@ -599,6 +600,10 @@ export default function EncounterDetailPage() {
         {/* ── Tab D: Administered Treatment ──────────────────────── */}
         {tab === "treatment" && (
           <>
+            {catalogLoadFailed && <div className="workspace-alert" role="alert" style={{ marginBottom: 12, fontSize: 12 }}><strong>Could not load services or inventory.</strong> Check your permissions or refresh.</div>}
+            {!catalogLoadFailed && catalogServices.length === 0 && inventoryProducts.length === 0 && !readonly && (
+              <div style={{ padding: "10px 14px", marginBottom: 12, background: "var(--surface-1, #f8f8f7)", borderRadius: 8, fontSize: 12, color: "var(--muted)" }}>No services or inventory items found. <Link href="/services" style={{ color: "var(--accent)" }}>Add services</Link> to select them here.</div>
+            )}
             <div className="enc-section surface-card">
               <div className="surface-card-heading"><div><p className="eyebrow">ADMINISTERED</p><h2>Treatments ({treatments.length})</h2></div>
                 {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

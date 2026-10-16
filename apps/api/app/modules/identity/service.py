@@ -348,17 +348,25 @@ def consume_staff_invitation(db: Session, token: str, password: str, display_nam
     _validate_password_policy(password)
     row = db.execute(text("""
         SELECT id, clinic_id, intended_normalized_email, expires_at, consumed_at, revoked_at
-        FROM staff_invitations WHERE token_hash = :token_hash FOR UPDATE
+        FROM staff_invitations WHERE token_hash = :token_hash
     """), {"token_hash": hash_token(token)}).mappings().one_or_none()
     now = utc_now()
     if row is None or row["consumed_at"] is not None or row["revoked_at"] is not None or row["expires_at"] <= now:
+        raise TokenError()
+    set_tenant_context(db, row["clinic_id"])
+    locked = db.execute(text("""
+        SELECT id FROM staff_invitations
+        WHERE id = :id AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > :now
+        FOR UPDATE
+    """), {"id": row["id"], "now": now}).scalar_one_or_none()
+    if locked is None:
         raise TokenError()
     user_id = db.execute(text("""
         INSERT INTO users (clinic_id, normalized_email, display_name, password_hash)
         VALUES (:clinic_id, :email, :display_name, :password_hash)
         RETURNING id
     """), {"clinic_id": row["clinic_id"], "email": row["intended_normalized_email"], "display_name": display_name.strip(), "password_hash": hash_password(password)}).scalar_one()
-    role_id = db.execute(text("SELECT id FROM roles WHERE clinic_id IS NULL AND name = 'receptionist'" )).scalar_one()
+    role_id = db.execute(text("SELECT id FROM roles WHERE clinic_id IS NULL AND name = 'receptionist'")).scalar_one()
     db.execute(text("INSERT INTO user_roles (clinic_id, user_id, role_id) VALUES (:clinic_id, :user_id, :role_id)"), {"clinic_id": row["clinic_id"], "user_id": user_id, "role_id": role_id})
     db.execute(text("UPDATE staff_invitations SET consumed_at = :now WHERE id = :id"), {"now": now, "id": row["id"]})
     return user_id
