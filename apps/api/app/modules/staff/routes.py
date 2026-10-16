@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
+from app.modules.authorization.permissions import PERMISSIONS
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, create_manual_reset, create_staff_invitation, verify_csrf
 from app.modules.audit.service import record_event
-from app.modules.staff.schemas import BranchScopeCreate, ManualResetCreate, RoleAssignment, StaffInvitationCreate, StaffStatusUpdate
+from app.modules.staff.schemas import BranchScopeCreate, ManualResetCreate, RoleAssignment, RoleCreate, RoleUpdate, StaffInvitationCreate, StaffStatusUpdate
 from app.core.security import decode_cursor, encode_cursor
 
 router = APIRouter(prefix="/api/v1/staff", tags=["staff"])
@@ -61,6 +62,75 @@ def permission_list(request: Request, db: Session = Depends(get_db), session_tok
     rows = db.execute(text("SELECT code, description FROM permissions ORDER BY code")).mappings().all()
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/roles", status_code=status.HTTP_201_CREATED)
+def role_create(payload: RoleCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    invalid = [p for p in payload.permissions if p not in PERMISSIONS]
+    if invalid:
+        raise _error("INVALID_INPUT", f"Unknown permissions: {', '.join(invalid)}", status.HTTP_400_BAD_REQUEST)
+    try:
+        role_id = db.execute(text("""
+            INSERT INTO roles (clinic_id, name, is_system) VALUES (:clinic_id, :name, false) RETURNING id
+        """), {"clinic_id": session["clinic_id"], "name": payload.name.strip()}).scalar_one()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _error("CONFLICT", "A role with that name already exists.", status.HTTP_409_CONFLICT) from exc
+    if payload.permissions:
+        for code in payload.permissions:
+            db.execute(text("INSERT INTO role_permissions (role_id, permission_code) VALUES (:role_id, :code)"), {"role_id": role_id, "code": code})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="staff.role_create", entity_type="role", entity_id=role_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"name": payload.name.strip(), "permissions": payload.permissions})
+    db.commit()
+    return {"data": {"id": role_id, "name": payload.name.strip(), "is_system": False, "permissions": [{"code": c} for c in sorted(payload.permissions)]}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.patch("/roles/{role_id}")
+def role_update(role_id: UUID, payload: RoleUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    role = db.execute(text("SELECT id, clinic_id, name, is_system FROM roles WHERE id = :id AND (clinic_id = :clinic_id OR clinic_id IS NULL)"), {"id": role_id, "clinic_id": session["clinic_id"]}).mappings().one_or_none()
+    if role is None:
+        raise _error("NOT_FOUND", "Role not found.", status.HTTP_404_NOT_FOUND)
+    if role["is_system"]:
+        raise _error("FORBIDDEN", "System roles cannot be renamed. You can only change their permissions.", status.HTTP_403_FORBIDDEN)
+    if payload.name is not None:
+        try:
+            db.execute(text("UPDATE roles SET name = :name WHERE id = :id"), {"id": role_id, "name": payload.name.strip()})
+        except IntegrityError as exc:
+            db.rollback()
+            raise _error("CONFLICT", "A role with that name already exists.", status.HTTP_409_CONFLICT) from exc
+    if payload.permissions is not None:
+        invalid = [p for p in payload.permissions if p not in PERMISSIONS]
+        if invalid:
+            raise _error("INVALID_INPUT", f"Unknown permissions: {', '.join(invalid)}", status.HTTP_400_BAD_REQUEST)
+        db.execute(text("DELETE FROM role_permissions WHERE role_id = :role_id"), {"role_id": role_id})
+        for code in payload.permissions:
+            db.execute(text("INSERT INTO role_permissions (role_id, permission_code) VALUES (:role_id, :code)"), {"role_id": role_id, "code": code})
+        affected_users = db.execute(text("SELECT user_id FROM user_roles WHERE role_id = :role_id"), {"role_id": role_id}).scalars().all()
+        for uid in affected_users:
+            _revoke_user_sessions(db, uid)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="staff.role_update", entity_type="role", entity_id=role_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"name": payload.name, "permissions_changed": payload.permissions is not None})
+    final_perms = db.execute(text("SELECT permission_code AS code FROM role_permissions WHERE role_id = :role_id ORDER BY permission_code"), {"role_id": role_id}).mappings().all()
+    db.commit()
+    return {"data": {"id": role_id, "name": payload.name.strip() if payload.name else role["name"], "is_system": role["is_system"], "permissions": [dict(p) for p in final_perms]}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.delete("/roles/{role_id}")
+def role_delete(role_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    role = db.execute(text("SELECT id, clinic_id, name, is_system FROM roles WHERE id = :id AND clinic_id = :clinic_id"), {"id": role_id, "clinic_id": session["clinic_id"]}).mappings().one_or_none()
+    if role is None:
+        raise _error("NOT_FOUND", "Role not found or is a system role.", status.HTTP_404_NOT_FOUND)
+    if role["is_system"]:
+        raise _error("FORBIDDEN", "System roles cannot be deleted.", status.HTTP_403_FORBIDDEN)
+    assigned = db.execute(text("SELECT COUNT(*) FROM user_roles WHERE role_id = :role_id"), {"role_id": role_id}).scalar_one()
+    if assigned > 0:
+        raise _error("CONFLICT", f"This role is assigned to {assigned} user(s). Remove all assignments first.", status.HTTP_409_CONFLICT)
+    db.execute(text("DELETE FROM role_permissions WHERE role_id = :role_id"), {"role_id": role_id})
+    db.execute(text("DELETE FROM roles WHERE id = :id"), {"id": role_id})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="staff.role_delete", entity_type="role", entity_id=role_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"name": role["name"]})
+    db.commit()
+    return {"data": {"id": role_id, "deleted": True}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/invitations", status_code=status.HTTP_201_CREATED)

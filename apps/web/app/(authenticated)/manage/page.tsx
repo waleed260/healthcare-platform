@@ -54,6 +54,9 @@ export default function ManagePage() {
   const [staffDrawer, setStaffDrawer] = useState(false);
   const [staffDetail, setStaffDetail] = useState<StaffUser | null>(null);
   const [roleDetail, setRoleDetail] = useState<Role | null>(null);
+  const [roleDrawer, setRoleDrawer] = useState(false);
+  const [editRole, setEditRole] = useState<Role | null>(null);
+  const [allPermissions, setAllPermissions] = useState<{ code: string; description: string }[]>([]);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [serviceFilter, setServiceFilter] = useState<string>("all");
@@ -72,7 +75,7 @@ export default function ManagePage() {
       setPermissions(granted);
       if (session.user_id) setCurrentUserId(session.user_id);
       const has = (code: string) => granted.includes(code);
-      const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow] = await Promise.all([
+      const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow, permRows] = await Promise.all([
         has("service.read") ? api<Service[]>("/api/v1/services?limit=100") : Promise.resolve([]),
         has("branch.read") ? api<Branch[]>("/api/v1/branches?limit=100") : Promise.resolve([]),
         has("staff.read") ? api<StaffUser[]>("/api/v1/staff/users?limit=100") : Promise.resolve([]),
@@ -83,6 +86,7 @@ export default function ManagePage() {
         has("staff.manage") ? api<Invitation[]>("/api/v1/staff/invitations?limit=50").catch(() => []) : Promise.resolve([]),
         has("clinic.read") ? api<FeatureLimit[]>("/api/v1/governance/feature-limits").catch(() => []) : Promise.resolve([]),
         has("admin.plan.manage") ? api<Subscription>("/api/v1/governance/subscription").catch(() => null) : Promise.resolve(null),
+        has("staff.read") ? api<{ code: string; description: string }[]>("/api/v1/staff/permissions").catch(() => []) : Promise.resolve([]),
       ]);
       setServices(serviceRows ?? []);
       setBranches(branchRows ?? []);
@@ -94,6 +98,7 @@ export default function ManagePage() {
       setInvitations(inviteRows ?? []);
       setFeatureLimits(limitRows ?? []);
       setSubscription(subscriptionRow ?? null);
+      setAllPermissions(permRows ?? []);
     } catch (reason) {
       setError(errorMessage(reason, "The admin panel could not be loaded."));
     } finally {
@@ -385,21 +390,31 @@ export default function ManagePage() {
 
     {/* ═══ ROLES TAB ═══ */}
     {tab === "roles" && <section className="surface-card">
-      <div className="surface-card-heading"><div><p className="eyebrow">ACCESS CONTROL</p><h2>What each role can do.</h2></div></div>
+      <div className="surface-card-heading"><div><p className="eyebrow">ACCESS CONTROL</p><h2>What each role can do.</h2></div>
+        {can("staff.manage") && <button className="button button-primary" onClick={() => { setEditRole(null); setRoleDrawer(true); }}>Create role <span>＋</span></button>}
+      </div>
       <div className="invoice-list">{roles.map((role) => <article className="invoice-row" key={role.id} style={{ cursor: "pointer" }} onClick={() => setRoleDetail(roleDetail?.id === role.id ? null : role)}>
         <div className="invoice-mark">{role.name.slice(0, 2).toUpperCase()}</div>
         <div className="invoice-main">
-          <h3>{label(role.name)}{role.is_system ? <span style={{ fontSize: "0.7rem", color: "var(--text-muted, #6b7280)", marginLeft: 8 }}>System role</span> : null}</h3>
+          <h3>{label(role.name)}{role.is_system ? <span style={{ fontSize: "0.7rem", color: "var(--text-muted, #6b7280)", marginLeft: 8 }}>System role</span> : <span style={{ fontSize: "0.7rem", color: "var(--accent)", marginLeft: 8 }}>Custom</span>}</h3>
           <p>{role.permissions.length} permissions</p>
           {roleDetail?.id === role.id && <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--border-subtle, #e5e5e3)" }}>
             <p className="eyebrow" style={{ fontSize: "0.65rem", marginBottom: 8 }}>PERMISSIONS</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {role.permissions.map((p) => <span key={p.code} style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: 4, background: "var(--surface-2, #f0f0ee)", fontFamily: "var(--font-mono, monospace)" }}>{p.code}</span>)}
             </div>
-            <div style={{ marginTop: 12 }}>
-              <p className="eyebrow" style={{ fontSize: "0.65rem", marginBottom: 6 }}>STAFF WITH THIS ROLE</p>
-              <small style={{ color: "var(--text-muted, #6b7280)" }}>Click "Manage" on a staff member in the Staff tab to assign or remove roles.</small>
-            </div>
+            {can("staff.manage") && <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+              <button className="button button-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setEditRole(role); setRoleDrawer(true); }}>Edit permissions</button>
+              {!role.is_system && <button className="button button-danger" disabled={busy} onClick={(e) => { e.stopPropagation(); void (async () => {
+                const ok = await confirm({ message: `Delete the "${label(role.name)}" role? This cannot be undone.`, danger: true, confirmLabel: "Delete role" });
+                if (!ok) return;
+                void run(
+                  () => api(`/api/v1/staff/roles/${role.id}`, { method: "DELETE", headers: writeHeaders() }),
+                  "Role deleted.", "The role could not be deleted."
+                );
+                setRoleDetail(null);
+              })(); }}>Delete</button>}
+            </div>}
           </div>}
         </div>
       </article>)}</div>
@@ -530,6 +545,30 @@ export default function ManagePage() {
       </form>
     </Drawer>
 
+    {/* ═══ ROLE DRAWER ═══ */}
+    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"}>
+      <RoleEditor
+        role={editRole}
+        allPermissions={allPermissions}
+        busy={busy}
+        onSave={(name, perms) => {
+          if (editRole) {
+            const body: Record<string, unknown> = { permissions: perms };
+            if (!editRole.is_system) body.name = name;
+            void run(
+              () => patch(`/api/v1/staff/roles/${editRole.id}`, body),
+              "Role updated.", "The role could not be updated."
+            ).then(() => { setRoleDrawer(false); setEditRole(null); setRoleDetail(null); });
+          } else {
+            void run(
+              () => post("/api/v1/staff/roles", { name, permissions: perms }),
+              "Role created.", "The role could not be created."
+            ).then(() => { setRoleDrawer(false); setEditRole(null); });
+          }
+        }}
+      />
+    </Drawer>
+
     {/* ═══ STAFF DETAIL DRAWER ═══ */}
     <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"}>
       {staffDetail && <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -617,4 +656,85 @@ function BranchesTab({ branches, loading, busy, can, run, field }: {
       </article>)}
     </div>
   </section>;
+}
+
+
+function RoleEditor({ role, allPermissions, busy, onSave }: {
+  role: Role | null;
+  allPermissions: { code: string; description: string }[];
+  busy: boolean;
+  onSave: (name: string, permissions: string[]) => void;
+}) {
+  const [name, setName] = useState(role?.name ?? "");
+  const [selected, setSelected] = useState<Set<string>>(new Set(role?.permissions.map((p) => p.code) ?? []));
+  const [search, setSearch] = useState("");
+
+  const groups = useMemo(() => {
+    const map = new Map<string, { code: string; description: string }[]>();
+    for (const p of allPermissions) {
+      const group = p.code.split(".")[0];
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(p);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [allPermissions]);
+
+  const toggle = (code: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  };
+
+  const toggleGroup = (codes: string[]) => {
+    const allOn = codes.every((c) => selected.has(c));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const c of codes) { if (allOn) next.delete(c); else next.add(c); }
+      return next;
+    });
+  };
+
+  const filtered = search
+    ? groups.map(([g, perms]) => [g, perms.filter((p) => p.code.includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase()))] as [string, typeof perms]).filter(([, p]) => p.length > 0)
+    : groups;
+
+  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    {!(role?.is_system) && <label style={{ fontSize: "0.85rem" }}>Role name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lab Technician" style={{ marginTop: 4, width: "100%" }} /></label>}
+    {role?.is_system && <p style={{ fontSize: "0.82rem", color: "var(--text-muted, #6b7280)" }}>System role &mdash; name cannot be changed, but you can edit permissions.</p>}
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <p className="eyebrow" style={{ fontSize: "0.68rem" }}>PERMISSIONS ({selected.size}/{allPermissions.length})</p>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set(allPermissions.map((p) => p.code)))}>Select all</button>
+          <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set())}>Clear all</button>
+        </div>
+      </div>
+      <input type="search" placeholder="Filter permissions..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: "100%", marginBottom: 10, padding: "6px 10px", fontSize: "0.82rem", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, background: "var(--surface-1, #fff)" }} />
+      <div style={{ maxHeight: 400, overflowY: "auto", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 8, background: "var(--surface-1, #fff)" }}>
+        {filtered.map(([group, perms]) => (
+          <div key={group} style={{ borderBottom: "1px solid var(--border-subtle, #e5e5e3)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--surface-2, #f0f0ee)", cursor: "pointer" }} onClick={() => toggleGroup(perms.map((p) => p.code))}>
+              <input type="checkbox" checked={perms.every((p) => selected.has(p.code))} readOnly style={{ accentColor: "var(--accent)" }} />
+              <strong style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>{group}</strong>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted, #6b7280)" }}>({perms.filter((p) => selected.has(p.code)).length}/{perms.length})</span>
+            </div>
+            {perms.map((p) => (
+              <label key={p.code} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 6px 28px", cursor: "pointer", fontSize: "0.8rem" }}>
+                <input type="checkbox" checked={selected.has(p.code)} onChange={() => toggle(p.code)} style={{ accentColor: "var(--accent)" }} />
+                <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", minWidth: 160 }}>{p.code}</span>
+                <span style={{ color: "var(--text-muted, #6b7280)", fontSize: "0.72rem" }}>{p.description}</span>
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+    <div className="form-actions">
+      <button className="button button-primary" disabled={busy || (!role?.is_system && !name.trim())} onClick={() => onSave(name.trim(), Array.from(selected).sort())}>
+        {busy ? "Saving..." : role ? "Update role" : "Create role"}<span>↗</span>
+      </button>
+    </div>
+  </div>;
 }

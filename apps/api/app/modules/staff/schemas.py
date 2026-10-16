@@ -28,6 +28,20 @@ class RoleAssignment(BaseModel):
     role_id: UUID
 
 
+class RoleCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    permissions: list[str] = Field(default_factory=list, max_length=200)
+
+
+class RoleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    permissions: list[str] | None = Field(default=None, max_length=200)
+
+
 class BranchScopeCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
