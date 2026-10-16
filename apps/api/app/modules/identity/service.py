@@ -216,12 +216,15 @@ def revoke_session(db: Session, session_token: str) -> None:
 
 
 def get_session(db: Session, session_token: str) -> dict:
+    now = utc_now()
     session = db.execute(
         text("""
             SELECT s.id, s.user_id, s.csrf_token_hash, s.mfa_verified, s.idle_expires_at,
                    s.absolute_expires_at, s.ip_hash, s.user_agent, s.support_access_id,
                    u.is_platform_admin, COALESCE(u.clinic_id, support.clinic_id) AS clinic_id,
-                   u.display_name, u.normalized_email
+                   u.display_name, u.normalized_email,
+                   set_config('app.support_access_id', COALESCE(s.support_access_id::text, ''), true) AS _cfg1,
+                   set_config('app.clinic_id', COALESCE(COALESCE(u.clinic_id, support.clinic_id)::text, ''), true) AS _cfg2
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             LEFT JOIN clinics c ON c.id = u.clinic_id
@@ -229,22 +232,21 @@ def get_session(db: Session, session_token: str) -> dict:
             WHERE s.token_hash = :token_hash AND s.revoked_at IS NULL
               AND u.status = 'active'
               AND (u.clinic_id IS NULL OR (c.status = 'active' AND c.archived_at IS NULL))
+              AND s.idle_expires_at > :now AND s.absolute_expires_at > :now
               AND (
                   s.support_access_id IS NULL
                   OR (u.is_platform_admin AND support.revoked_at IS NULL AND support.starts_at <= now() AND support.expires_at > now())
               )
         """),
-        {"token_hash": hash_token(session_token)},
+        {"token_hash": hash_token(session_token), "now": now},
     ).mappings().one_or_none()
-    now = utc_now()
-    if session is None or session["idle_expires_at"] <= now or session["absolute_expires_at"] <= now:
+    if session is None:
         raise SessionError()
-    db.execute(text("""
-        SELECT set_config('app.support_access_id', :support_access_id, true),
-               set_config('app.clinic_id', :clinic_id, true)
-    """), {"support_access_id": str(session["support_access_id"] or ""), "clinic_id": str(session["clinic_id"] or "")})
     idle_duration = timedelta(minutes=30) if session["clinic_id"] is None else timedelta(hours=8)
-    db.execute(text("UPDATE sessions SET last_seen_at = :now, idle_expires_at = :idle_expires_at WHERE id = :id"), {"id": session["id"], "now": now, "idle_expires_at": min(now + idle_duration, session["absolute_expires_at"])})
+    remaining = (session["idle_expires_at"] - now).total_seconds()
+    if remaining < idle_duration.total_seconds() * 0.5:
+        new_idle = min(now + idle_duration, session["absolute_expires_at"])
+        db.execute(text("UPDATE sessions SET last_seen_at = :now, idle_expires_at = :idle_expires_at WHERE id = :id"), {"id": session["id"], "now": now, "idle_expires_at": new_idle})
     return dict(session)
 
 

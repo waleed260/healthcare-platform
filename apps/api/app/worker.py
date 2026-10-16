@@ -16,6 +16,7 @@ from uuid import UUID
 from app.db.session import SessionLocal
 from app.modules.files.jobs import run_next_document_metadata_encryption, run_next_stored_document_scan
 from app.modules.governance.jobs import run_expired_artifact_cleanup, run_next_export_job
+from app.modules.identity.jobs import run_session_cleanup
 from app.modules.operations.jobs import run_overdue_follow_up_job
 from app.modules.websites.scanner import run_next_stored_website_media_scan
 from app.modules.clinical_media.scanner import run_next_stored_patient_media_scan
@@ -37,6 +38,9 @@ def process_once(clinic_id: UUID, job_type: str) -> str | int | None:
     if job_type == "follow_up_overdue_notification":
         with SessionLocal() as db:
             return run_overdue_follow_up_job(db, clinic_id)
+    if job_type == "session_cleanup":
+        with SessionLocal() as db:
+            return run_session_cleanup(db, clinic_id)
     handler = HANDLERS[job_type]
     with SessionLocal() as db:
         return handler(db, clinic_id)
@@ -64,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--clinic-id", required=True, type=UUID)
     parser.add_argument(
         "--job-type",
-        choices=[*sorted(HANDLERS), "follow_up_overdue_notification"],
+        choices=[*sorted(HANDLERS), "follow_up_overdue_notification", "session_cleanup"],
         default="document_scan",
     )
     parser.add_argument("--poll-interval", type=float, default=5.0)

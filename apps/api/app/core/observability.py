@@ -64,33 +64,38 @@ def initialize_sentry(settings: Any) -> None:
 
 
 class RequestMetrics:
-    """Small bounded metrics collector; labels never contain request values or IDs."""
+    """Small bounded metrics collector; labels never contain request values or IDs.
 
-    def __init__(self, sample_limit: int = 4096) -> None:
+    observe() is lock-free (deque.append is thread-safe in CPython) so the async
+    middleware hot path never blocks. Aggregation happens in snapshot() only.
+    """
+
+    def __init__(self, sample_limit: int = 8192) -> None:
         self._lock = Lock()
-        self._counts: dict[tuple[str, str, int], int] = defaultdict(int)
-        self._latencies: dict[tuple[str, str], deque[float]] = defaultdict(lambda: deque(maxlen=sample_limit))
+        self._samples: deque[tuple[str, str, int, float]] = deque(maxlen=sample_limit)
 
     def observe(self, method: str, route: str, status_code: int, elapsed_ms: float) -> None:
-        key = (method, route, status_code)
-        latency_key = (method, route)
-        with self._lock:
-            self._counts[key] += 1
-            self._latencies[latency_key].append(elapsed_ms)
+        self._samples.append((method, route, status_code, elapsed_ms))
 
     def snapshot(self) -> dict[str, object]:
         with self._lock:
-            counts = [{"method": method, "route": route, "status_code": status, "count": count} for (method, route, status), count in sorted(self._counts.items())]
-            latency = []
-            for (method, route), values in sorted(self._latencies.items()):
-                ordered = sorted(values)
-                if not ordered:
-                    continue
-                def percentile(percent: float) -> float:
-                    index = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * percent)))
-                    return round(ordered[index], 2)
-                latency.append({"method": method, "route": route, "sample_count": len(ordered), "p50_ms": percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99)})
-            return {"requests": counts, "latency": latency}
+            samples = list(self._samples)
+        counts: dict[tuple[str, str, int], int] = defaultdict(int)
+        latencies: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for method, route, status_code, elapsed_ms in samples:
+            counts[(method, route, status_code)] += 1
+            latencies[(method, route)].append(elapsed_ms)
+        count_list = [{"method": m, "route": r, "status_code": s, "count": c} for (m, r, s), c in sorted(counts.items())]
+        latency_list = []
+        for (method, route), values in sorted(latencies.items()):
+            ordered = sorted(values)
+            if not ordered:
+                continue
+            def percentile(percent: float, data: list[float] = ordered) -> float:
+                index = min(len(data) - 1, max(0, round((len(data) - 1) * percent)))
+                return round(data[index], 2)
+            latency_list.append({"method": method, "route": route, "sample_count": len(ordered), "p50_ms": percentile(.50), "p95_ms": percentile(.95), "p99_ms": percentile(.99)})
+        return {"requests": count_list, "latency": latency_list}
 
 
 request_metrics = RequestMetrics()

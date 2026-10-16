@@ -109,28 +109,33 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db), 
 def me(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _session_or_401(db, session_token)
     permissions: list[str] = []
-    if session["clinic_id"] is not None:
-        permissions = list(db.execute(text("""
-            SELECT DISTINCT rp.permission_code
-            FROM user_roles ur
-            JOIN role_permissions rp ON rp.role_id = ur.role_id
-            WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id
-            ORDER BY rp.permission_code
-        """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"]}).scalars().all())
-        support_permissions = db.execute(text("""
-            SELECT DISTINCT jsonb_object_keys(s.permissions) AS permission_code
-            FROM support_access_sessions s
-            WHERE s.clinic_id = :clinic_id
-              AND s.revoked_at IS NULL
-              AND s.starts_at <= now()
-              AND s.expires_at > now()
-              AND s.permissions IS NOT NULL
-              AND s.id::text = NULLIF(current_setting('app.support_access_id', true), '')
-        """), {"clinic_id": session["clinic_id"]}).scalars().all()
-        permissions = sorted(set(permissions).union(support_permissions))
     clinic_slug = None
     if session["clinic_id"] is not None:
-        clinic_slug = db.execute(text("SELECT slug FROM clinics WHERE id = :id"), {"id": session["clinic_id"]}).scalar_one_or_none()
+        row = db.execute(text("""
+            SELECT
+                c.slug,
+                ARRAY(
+                    SELECT DISTINCT rp.permission_code
+                    FROM user_roles ur
+                    JOIN role_permissions rp ON rp.role_id = ur.role_id
+                    WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id
+                ) AS role_permissions,
+                ARRAY(
+                    SELECT DISTINCT jsonb_object_keys(s.permissions)
+                    FROM support_access_sessions s
+                    WHERE s.clinic_id = :clinic_id
+                      AND s.revoked_at IS NULL
+                      AND s.starts_at <= now()
+                      AND s.expires_at > now()
+                      AND s.permissions IS NOT NULL
+                      AND s.id::text = NULLIF(current_setting('app.support_access_id', true), '')
+                ) AS support_permissions
+            FROM clinics c
+            WHERE c.id = :clinic_id
+        """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"]}).mappings().one_or_none()
+        if row is not None:
+            clinic_slug = row["slug"]
+            permissions = sorted(set(row["role_permissions"]).union(row["support_permissions"]))
     db.commit()
     return {"data": {"user_id": session["user_id"], "clinic_id": session["clinic_id"], "clinic_slug": clinic_slug, "display_name": session["display_name"], "email": session["normalized_email"], "is_platform_admin": bool(session.get("is_platform_admin", False)), "permissions": permissions}, "meta": {"request_id": request.state.request_id}}
 

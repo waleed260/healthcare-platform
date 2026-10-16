@@ -19,8 +19,8 @@ RUN chmod +x scripts/docker-entrypoint.sh \
 USER appuser
 EXPOSE 8000
 ENTRYPOINT ["scripts/docker-entrypoint.sh"]
-# $PORT overrides the port on platforms that inject one; one worker keeps memory small.
+# $PORT overrides the port on platforms that inject one; WEB_CONCURRENCY controls worker count.
 # Proxy headers let per-IP rate limits see the real client behind the tunnel/Vercel proxy,
 # but we only trust forwarded headers from FORWARDED_ALLOW_IPS (the proxy's IP/CIDR) so a
 # direct client cannot spoof its address. Defaults to loopback; override per deployment.
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]
