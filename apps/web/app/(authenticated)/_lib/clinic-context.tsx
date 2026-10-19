@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useContext, useEffect, useState } from "react";
-import { api } from "./client";
+import { cachedFetch } from "./session-cache";
 
 type ClinicData = { default_currency: string };
 
@@ -16,7 +16,7 @@ export function ClinicProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    void api<{ default_currency?: string }>("/api/v1/clinic/context")
+    void cachedFetch<{ default_currency?: string }>("/api/v1/clinic/context", 60_000)
       .then((data) => { if (mounted && data?.default_currency) setClinic({ default_currency: data.default_currency }); })
       .catch(() => {});
     return () => { mounted = false; };

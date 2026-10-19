@@ -17,6 +17,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Each module under `apps/api/app/modules/<name>/` typically has: `routes.py` (FastAPI router), `schemas.py` (Pydantic models), `service.py` (business logic). Some add `merge.py`, `admin_routes.py`, etc. Routes import auth helpers (`_session_or_401`, `_validate_origin`, `verify_csrf`) from `identity.routes` and permission checks from `authorization.service.require_permission`.
 
+### Module cross-references
+
+- **blueprint_core** contains invoices, payments, and refund CRUD. Finance routes import `_authorized`, `_write_authorized`, and `invoice_receipt` from `blueprint_core.routes`.
+- **catalog** (`/api/v1/services`, `/api/v1/branches`, `/api/v1/doctors`) manages the clinic's service catalog, branch-service and doctor-service assignments, rooms, resources, holidays, and service templates.
+- **encounters** reference services via `administered_treatments[].service_id` and inventory via `administered_treatments[].inventory_product_id` and `medications[].inventory_product_id`.
+- **finance** provides cashier summary, expenses, commissions, and provider revenue — all derived from the invoices/payments in blueprint_core.
+
 ### Frontend patterns
 
 - API client: `apps/web/app/(authenticated)/_lib/client.ts` — `api<T>()` and `apiPage<T>()` with auto CSRF refresh and session-expiry redirect.
@@ -89,6 +96,10 @@ Two PostgreSQL roles: `healthcare_migrator` (owns schema, runs Alembic) and `hea
 ## Deployment
 
 API runs behind a reverse proxy (ngrok static domain or Cloudflare tunnel). Web deploys to Vercel with `API_URL` env var pointing to the API origin. See `infra/TUNNEL.md`.
+
+## Workflow chain
+
+The clinical workflow flows: **Inventory** → **Services** → **Encounters** → **Billing** → **Finance**. Encounters reference services (via `service_id` on treatments/procedures) and inventory products (via `inventory_product_id` on treatments/medications). Billing creates invoices from encounter data. Finance aggregates billing data for cashier summaries and provider revenue.
 
 ## Key conventions
 

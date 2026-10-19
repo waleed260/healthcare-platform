@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, errorMessage, money, patch, post } from "../_lib/client";
+import { api, errorMessage, money, patch, post, writeHeaders } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
@@ -9,6 +9,8 @@ import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Service = { id: string; name: string; category: string | null; short_description: string | null; full_description: string | null; duration_minutes: number; buffer_before_minutes: number; buffer_after_minutes: number; price_mode: string; amount_minor: number | null; currency: string | null; approval_mode: string; visibility: string; status: string; version: number };
 type ServiceTemplate = { id: string; name: string; category: string | null; specialty_code: string | null; duration_minutes: number; amount_minor: number | null; currency: string | null };
+type MaterialLink = { id: string; inventory_product_id: string; product_name: string; product_type: string; unit: string; default_quantity: number; notes: string | null };
+type InvProduct = { id: string; name: string; product_type: string; unit: string; status: string };
 
 const CATEGORIES = ["General", "Skin", "Hair", "Dental", "Dermatology", "Laser", "Injectable", "Surgery", "Consultation", "Lab", "Imaging"];
 
@@ -28,6 +30,11 @@ export default function ServicesPage() {
   const [editService, setEditService] = useState<Service | null>(null);
   const [filter, setFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+
+  // Materials
+  const [materials, setMaterials] = useState<MaterialLink[]>([]);
+  const [invProducts, setInvProducts] = useState<InvProduct[]>([]);
+  const [matBusy, setMatBusy] = useState(false);
 
   const can = useCallback((p: string) => permissions.includes(p), [permissions]);
 
@@ -53,6 +60,36 @@ export default function ServicesPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    void api<InvProduct[]>("/api/v1/inventory/products?limit=100").then((d) => setInvProducts((d ?? []).filter((p) => p.status === "active"))).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!editService) { setMaterials([]); return; }
+    void api<MaterialLink[]>(`/api/v1/services/${editService.id}/materials`).then((d) => setMaterials(d ?? [])).catch(() => setMaterials([]));
+  }, [editService]);
+
+  async function addMaterial(serviceId: string, productId: string) {
+    setMatBusy(true);
+    try {
+      await post(`/api/v1/services/${serviceId}/materials`, { inventory_product_id: productId, default_quantity: 1 });
+      const fresh = await api<MaterialLink[]>(`/api/v1/services/${serviceId}/materials`);
+      setMaterials(fresh ?? []);
+      toast.success("Material linked.");
+    } catch (reason) { toast.error(errorMessage(reason, "Could not link material.")); }
+    finally { setMatBusy(false); }
+  }
+
+  async function removeMaterial(serviceId: string, productId: string) {
+    setMatBusy(true);
+    try {
+      await api(`/api/v1/services/${serviceId}/materials/${productId}`, { method: "DELETE", headers: writeHeaders() });
+      setMaterials((prev) => prev.filter((m) => m.inventory_product_id !== productId));
+      toast.success("Material removed.");
+    } catch (reason) { toast.error(errorMessage(reason, "Could not remove material.")); }
+    finally { setMatBusy(false); }
+  }
 
   async function run(action: () => Promise<unknown>, success: string, fallback: string) {
     setBusy(true);
@@ -168,6 +205,26 @@ export default function ServicesPage() {
         <label>Price ({clinicCurrency})<input name="amount" type="number" step="0.01" min={0} defaultValue={editService?.amount_minor != null ? (editService.amount_minor / 100).toFixed(2) : ""} /></label>
         <label>Approval<select name="approval_mode" defaultValue={editService?.approval_mode ?? "staff_approval"}><option value="staff_approval">Staff approval</option><option value="auto_confirm">Auto-confirm</option></select></label>
         <label>Visibility<select name="visibility" defaultValue={editService?.visibility ?? "public"}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
+
+        {editService && (
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 8 }}>
+            <p className="eyebrow" style={{ marginBottom: 8 }}>REQUIRED MATERIALS ({materials.length})</p>
+            {materials.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>No materials linked. Link inventory products that this service uses.</p>}
+            {materials.map((m) => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12 }}>
+                <span><strong>{m.product_name}</strong> <span style={{ color: "var(--muted)" }}>· {m.product_type} · {m.unit} × {m.default_quantity}</span></span>
+                <button className="ghost-button" type="button" disabled={matBusy} onClick={() => void removeMaterial(editService.id, m.inventory_product_id)} style={{ color: "var(--coral)", fontSize: 11 }}>Remove</button>
+              </div>
+            ))}
+            {invProducts.length > 0 && (
+              <select disabled={matBusy} style={{ marginTop: 8, width: "100%", fontSize: 12 }} value="" onChange={(e) => { if (e.target.value) void addMaterial(editService.id, e.target.value); }}>
+                <option value="">+ Add material from inventory...</option>
+                {invProducts.filter((p) => !materials.some((m) => m.inventory_product_id === p.id)).map((p) => <option key={p.id} value={p.id}>{p.name} ({p.product_type} · {p.unit})</option>)}
+              </select>
+            )}
+          </div>
+        )}
+
         <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving..." : editService ? "Update" : "Create"}</button>
       </form>
     </Drawer>

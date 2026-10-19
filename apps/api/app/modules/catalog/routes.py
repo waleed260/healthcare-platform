@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.authorization.service import ForbiddenError, require_permission
-from app.modules.catalog.schemas import BranchCreate, BranchHoursUpsert, BranchUpdate, CatalogStatusUpdate, DoctorCreate, DoctorUpdate, HolidayCreate, ResourceCreate, ResourceUpdate, RoomCreate, RoomUpdate, ServiceCreate, ServiceTemplateImport, ServiceUpdate
+from app.modules.catalog.schemas import BranchCreate, BranchHoursUpsert, BranchUpdate, CatalogStatusUpdate, DoctorCreate, DoctorUpdate, HolidayCreate, ResourceCreate, ResourceUpdate, RoomCreate, RoomUpdate, ServiceCreate, ServiceMaterialAssign, ServiceTemplateImport, ServiceUpdate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -821,3 +821,57 @@ def service_status(service_id: str, payload: CatalogStatusUpdate, request: Reque
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="service.status_change", entity_type="service", entity_id=row["id"], outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"status": payload.status})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+# ── Service materials ────────────────────────────────────────────────
+
+@router.get("/{service_id}/materials")
+def list_service_materials(service_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "service.read")
+    rows = db.execute(text("""
+        SELECT sm.id, sm.inventory_product_id, ip.name AS product_name, ip.product_type, ip.unit,
+               sm.default_quantity, sm.notes, sm.created_at
+        FROM service_materials sm
+        JOIN inventory_products ip ON ip.clinic_id = sm.clinic_id AND ip.id = sm.inventory_product_id
+        WHERE sm.clinic_id = :clinic_id AND sm.service_id = :service_id
+        ORDER BY ip.name, sm.id
+    """), {"clinic_id": session["clinic_id"], "service_id": service_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(r) for r in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/{service_id}/materials", status_code=status.HTTP_201_CREATED)
+def add_service_material(service_id: str, payload: ServiceMaterialAssign, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "service.manage", csrf_token)
+    svc = db.execute(text("SELECT id FROM services WHERE clinic_id = :cid AND id = :sid"), {"cid": session["clinic_id"], "sid": service_id}).one_or_none()
+    if svc is None:
+        raise _error("NOT_FOUND", "Service not found.", status.HTTP_404_NOT_FOUND)
+    prod = db.execute(text("SELECT id FROM inventory_products WHERE clinic_id = :cid AND id = :pid"), {"cid": session["clinic_id"], "pid": payload.inventory_product_id}).one_or_none()
+    if prod is None:
+        raise _error("NOT_FOUND", "Inventory product not found.", status.HTTP_404_NOT_FOUND)
+    existing = db.execute(text("SELECT id FROM service_materials WHERE clinic_id = :cid AND service_id = :sid AND inventory_product_id = :pid"), {"cid": session["clinic_id"], "sid": service_id, "pid": payload.inventory_product_id}).one_or_none()
+    if existing is not None:
+        raise _error("DUPLICATE", "This product is already linked to the service.", status.HTTP_409_CONFLICT)
+    row = db.execute(text("""
+        INSERT INTO service_materials (clinic_id, service_id, inventory_product_id, default_quantity, notes)
+        VALUES (:cid, :sid, :pid, :qty, :notes)
+        RETURNING id, service_id, inventory_product_id, default_quantity, notes, created_at
+    """), {"cid": session["clinic_id"], "sid": service_id, "pid": payload.inventory_product_id, "qty": payload.default_quantity, "notes": payload.notes}).mappings().one()
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="service.material_add", entity_type="service", entity_id=service_id, outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"product_id": payload.inventory_product_id})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.delete("/{service_id}/materials/{product_id}", status_code=status.HTTP_200_OK)
+def remove_service_material(service_id: str, product_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "service.manage", csrf_token)
+    row = db.execute(text("""
+        DELETE FROM service_materials
+        WHERE clinic_id = :cid AND service_id = :sid AND inventory_product_id = :pid
+        RETURNING id
+    """), {"cid": session["clinic_id"], "sid": service_id, "pid": product_id}).one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Material link not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="service.material_remove", entity_type="service", entity_id=service_id, outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"product_id": product_id})
+    db.commit()
+    return {"data": {"removed": True}, "meta": {"request_id": request.state.request_id}}

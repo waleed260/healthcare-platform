@@ -500,6 +500,121 @@ def encounter_by_appointment(
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
+# ── Invoice status for encounter ─────────────────────────────────────
+@router.get("/{encounter_id}/invoice")
+def encounter_invoice(
+    encounter_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias="healthcare_session"),
+) -> dict:
+    session = _authorized(db, session_token, "clinical.read")
+    enc = db.execute(text("SELECT 1 FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": encounter_id}).scalar_one_or_none()
+    if enc is None:
+        raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
+    invoice = db.execute(text("""
+        SELECT id, invoice_number, status, total_minor, currency,
+               COALESCE((SELECT sum(pa.amount_minor) FROM payment_allocations pa WHERE pa.clinic_id = i.clinic_id AND pa.invoice_id = i.id), 0) AS paid_minor
+        FROM invoices i
+        WHERE i.clinic_id = :clinic_id AND i.encounter_id = :eid AND i.status <> 'void'
+        ORDER BY i.issued_at DESC LIMIT 1
+    """), {"clinic_id": session["clinic_id"], "eid": encounter_id}).mappings().one_or_none()
+    db.commit()
+    return {"data": dict(invoice) if invoice else None, "meta": {"request_id": request.state.request_id}}
+
+
+# ── Generate invoice ──────────────────────────────────────────────────
+@router.post("/{encounter_id}/generate-invoice", status_code=status.HTTP_201_CREATED)
+def encounter_generate_invoice(
+    encounter_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    session_token: str | None = Cookie(default=None, alias="healthcare_session"),
+    csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict:
+    session = _write_authorized(db, request, session_token, "clinical.read", csrf_token)
+    from app.modules.authorization.service import ForbiddenError as _FE
+    try:
+        require_permission(db, session["user_id"], session["clinic_id"], "billing.manage")
+    except _FE as exc:
+        raise _error("FORBIDDEN", "You do not have billing permission.", status.HTTP_403_FORBIDDEN) from exc
+
+    enc = db.execute(text("""
+        SELECT id, patient_id, doctor_id, status, administered_treatments, administered_procedures
+        FROM encounter_forms
+        WHERE clinic_id = :clinic_id AND id = :encounter_id AND archived_at IS NULL
+    """), {"clinic_id": session["clinic_id"], "encounter_id": encounter_id}).mappings().one_or_none()
+    if enc is None:
+        raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
+    if enc["status"] not in ("discharged", "finalized"):
+        raise _error("INVALID_TRANSITION", "Only discharged or finalized encounters can generate an invoice.", status.HTTP_400_BAD_REQUEST)
+
+    existing = db.execute(text("SELECT id, invoice_number, status FROM invoices WHERE clinic_id = :clinic_id AND encounter_id = :eid AND status <> 'void'"), {"clinic_id": session["clinic_id"], "eid": encounter_id}).mappings().one_or_none()
+    if existing is not None:
+        raise _error("DUPLICATE", f"Invoice {existing['invoice_number']} already exists for this encounter.", status.HTTP_409_CONFLICT)
+
+    lines = []
+    treatments = enc["administered_treatments"] or []
+    for t in treatments:
+        price = t.get("unit_price_minor") or 0
+        if price <= 0:
+            continue
+        qty = t.get("quantity") or 1
+        lines.append({"description": t.get("name", "Treatment"), "quantity": int(qty), "unit_price_minor": int(price), "service_id": t.get("service_id"), "provider_id": str(enc["doctor_id"])})
+
+    procedures = enc["administered_procedures"] or []
+    for p in procedures:
+        price = p.get("unit_price_minor") or 0
+        if price <= 0:
+            continue
+        lines.append({"description": p.get("name", "Procedure"), "quantity": 1, "unit_price_minor": int(price), "service_id": p.get("service_id"), "provider_id": str(enc["doctor_id"])})
+
+    if not lines:
+        raise _error("INVALID_INPUT", "No billable items found on this encounter. Add treatments or procedures with prices first.", status.HTTP_400_BAD_REQUEST)
+
+    currency = "PKR"
+    for t in treatments:
+        if t.get("currency"):
+            currency = t["currency"]
+            break
+
+    subtotal = sum(l["quantity"] * l["unit_price_minor"] for l in lines)
+    total = subtotal
+
+    from datetime import datetime as _dt, timezone as _tz
+    sequence_year = _dt.now(_tz.utc).year
+    db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:sequence_key AS text), 0))"), {"sequence_key": f"invoice-sequence:{session['clinic_id']}:{sequence_year}"})
+    sequence = db.execute(text("""
+        INSERT INTO invoice_number_sequences (clinic_id, sequence_year, next_value)
+        VALUES (:clinic_id, :sequence_year, 2)
+        ON CONFLICT (clinic_id, sequence_year) DO UPDATE SET next_value = invoice_number_sequences.next_value + 1
+        RETURNING next_value - 1 AS sequence_value
+    """), {"clinic_id": session["clinic_id"], "sequence_year": sequence_year}).scalar_one()
+    invoice_number = f"CLINIC-{sequence_year}-{sequence:06d}"
+
+    invoice = db.execute(text("""
+        INSERT INTO invoices (clinic_id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, notes, created_by_user_id)
+        VALUES (:clinic_id, :patient_id, :encounter_id, :invoice_number, :currency, :subtotal, 0, 0, :total, :notes, :user_id)
+        RETURNING id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, status, issued_at, version
+    """), {"clinic_id": session["clinic_id"], "patient_id": enc["patient_id"], "encounter_id": encounter_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "total": total, "notes": f"Generated from encounter", "user_id": session["user_id"]}).mappings().one()
+
+    for line in lines:
+        svc_id = line["service_id"]
+        if svc_id:
+            try:
+                svc_id = str(svc_id)
+            except Exception:
+                svc_id = None
+        db.execute(text("""
+            INSERT INTO invoice_lines (clinic_id, invoice_id, service_id, provider_id, description, quantity, unit_price_minor, tax_minor, line_total_minor)
+            VALUES (:clinic_id, :invoice_id, CAST(:service_id AS uuid), CAST(:provider_id AS uuid), :description, :quantity, :unit_price, 0, :line_total)
+        """), {"clinic_id": session["clinic_id"], "invoice_id": invoice["id"], "service_id": svc_id, "provider_id": line["provider_id"], "description": line["description"], "quantity": line["quantity"], "unit_price": line["unit_price_minor"], "line_total": line["quantity"] * line["unit_price_minor"]})
+
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="invoice.generate_from_encounter", entity_type="invoice", entity_id=invoice["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"encounter_id": str(encounter_id), "total_minor": total, "line_count": len(lines)})
+    db.commit()
+    return {"data": dict(invoice), "meta": {"request_id": request.state.request_id}}
+
+
 # ── Archive ───────────────────────────────────────────────────────────
 @router.delete("/{encounter_id}")
 def encounter_archive(

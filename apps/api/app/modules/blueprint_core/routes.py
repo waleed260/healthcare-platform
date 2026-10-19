@@ -343,7 +343,7 @@ def invoice_list(request: Request, patient_id: UUID | None = None, cursor: str |
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
     rows = db.execute(text("""
-        SELECT i.id, i.patient_id, i.invoice_number, i.currency, i.subtotal_minor, i.discount_minor, i.tax_minor, i.total_minor,
+        SELECT i.id, i.patient_id, i.encounter_id, i.invoice_number, i.currency, i.subtotal_minor, i.discount_minor, i.tax_minor, i.total_minor,
                COALESCE((SELECT sum(pa.amount_minor) FROM payment_allocations pa WHERE pa.clinic_id = i.clinic_id AND pa.invoice_id = i.id), 0) AS paid_minor,
                i.status, i.issued_at, i.notes, i.version
         FROM invoices i
@@ -362,7 +362,7 @@ def invoice_list(request: Request, patient_id: UUID | None = None, cursor: str |
 def invoice_detail(invoice_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "billing.read")
     invoice = db.execute(text("""
-        SELECT i.id, i.patient_id, i.invoice_number, i.currency, i.subtotal_minor, i.discount_minor, i.tax_minor,
+        SELECT i.id, i.patient_id, i.encounter_id, i.invoice_number, i.currency, i.subtotal_minor, i.discount_minor, i.tax_minor,
                i.total_minor, i.status, i.issued_at, i.notes, i.void_reason, i.voided_at, i.version,
                p.full_name AS patient_name, p.patient_number
         FROM invoices i JOIN patients p ON p.clinic_id = i.clinic_id AND p.id = i.patient_id
@@ -405,11 +405,15 @@ def invoice_create(payload: InvoiceCreate, request: Request, db: Session = Depen
         RETURNING next_value - 1 AS sequence_value
     """), {"clinic_id": session["clinic_id"], "sequence_year": sequence_year}).scalar_one()
     invoice_number = f"CLINIC-{sequence_year}-{sequence:06d}"
+    if payload.encounter_id is not None:
+        enc_exists = db.execute(text("SELECT 1 FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :eid AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "eid": payload.encounter_id}).scalar_one_or_none()
+        if enc_exists is None:
+            raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
     invoice = db.execute(text("""
-        INSERT INTO invoices (clinic_id, patient_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, notes, created_by_user_id)
-        VALUES (:clinic_id, :patient_id, :invoice_number, :currency, :subtotal, :discount, :tax, :total, :notes, :user_id)
-        RETURNING id, patient_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, status, issued_at, version
-    """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "discount": payload.discount_minor, "tax": tax, "total": total, "notes": payload.notes, "user_id": session["user_id"]}).mappings().one()
+        INSERT INTO invoices (clinic_id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, notes, created_by_user_id)
+        VALUES (:clinic_id, :patient_id, :encounter_id, :invoice_number, :currency, :subtotal, :discount, :tax, :total, :notes, :user_id)
+        RETURNING id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, status, issued_at, version
+    """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "encounter_id": payload.encounter_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "discount": payload.discount_minor, "tax": tax, "total": total, "notes": payload.notes, "user_id": session["user_id"]}).mappings().one()
     for line in payload.lines:
         db.execute(text("""
             INSERT INTO invoice_lines (clinic_id, invoice_id, service_id, provider_id, description, quantity, unit_price_minor, tax_minor, line_total_minor)

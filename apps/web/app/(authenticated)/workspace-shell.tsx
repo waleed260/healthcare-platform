@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { post, redirectToLogin } from "./_lib/client";
+import { api, post, redirectToLogin } from "./_lib/client";
+import { invalidateCache } from "./_lib/session-cache";
 import type { SessionInfo } from "@contracts/entities";
 type NavItem = { href: string; label: string; icon: string; permission: string; adminOnly?: boolean };
 type NavGroup = { key: string; label: string; items: NavItem[] };
@@ -59,19 +60,9 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/v1/auth/me", { credentials: "include" });
-        if (!mounted) return;
-        if (res.status === 401) { redirectToLogin(); return; }
-        if (!res.ok) { setConnectionIssue(true); return; }
-        const body = await res.json() as { data?: SessionInfo };
-        if (body.data) setSession(body.data);
-        else setConnectionIssue(true);
-      } catch {
-        if (mounted) setConnectionIssue(true);
-      }
-    })();
+    void api<SessionInfo>("/api/v1/auth/me")
+      .then((data) => { if (mounted) setSession(data); })
+      .catch(() => { if (mounted) setConnectionIssue(true); });
     return () => { mounted = false; };
   }, []);
 
@@ -123,6 +114,7 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
   useEffect(() => { setMobileNavOpen(false); }, [pathname]);
 
   const signOut = useCallback(async () => {
+    invalidateCache();
     try { await post("/api/v1/auth/logout"); } catch { /* continue */ }
     redirectToLogin();
   }, []);

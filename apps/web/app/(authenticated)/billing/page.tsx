@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, apiPage, post, money, label, errorMessage } from "../_lib/client";
@@ -8,7 +9,7 @@ import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 import Pagination, { usePagination } from "../_lib/pagination";
 import type { PatientRef, InvoiceSummary, ServiceRef, SessionInfo } from "@contracts/entities";
-type InvoiceDetail = InvoiceSummary & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
+type InvoiceDetail = InvoiceSummary & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; encounter_id: string | null; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
 type InvoiceLine = { id: string; service_id: string | null; provider_id: string | null; provider_name: string | null; description: string; quantity: number; unit_price_minor: number; tax_minor: number; line_total_minor: number };
 type Payment = { id: string; amount_minor: number; currency: string; method: string; reference: string | null; paid_at: string };
 type Refund = { id: string; amount_minor: number; currency: string; reason: string; method: string; reference: string | null; created_at: string };
@@ -250,6 +251,7 @@ export default function BillingPage() {
           <h1>Make the numbers <em>legible.</em></h1>
         </div>
         <div className="header-actions">
+          <Link className="button button-secondary" href="/finance" style={{ fontSize: 11 }}>Daily Summary</Link>
           <button className="button button-secondary" type="button" onClick={() => void reload()} disabled={pageLoading}>Refresh <span>↻</span></button>
           {can("billing.manage") && <button className="button button-primary" type="button" onClick={() => setShowForm((v) => !v)}>{showForm ? "Close form" : "New invoice"} <span>＋</span></button>}
         </div>
@@ -390,6 +392,7 @@ export default function BillingPage() {
                 <h2>{detail.invoice_number}</h2>
                 <p className="drawer-note">{detail.patient_name} · {detail.patient_number}</p>
                 <span className={`pipeline-status status-${detail.status}`}>{label(detail.status)}</span>
+                {detail.encounter_id && <p style={{ marginTop: 6 }}><Link href={`/encounters/${detail.encounter_id}`} style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>View Encounter →</Link></p>}
 
                 {detail.void_reason && <p className="void-reason">Voided: {detail.void_reason}</p>}
 

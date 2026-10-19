@@ -84,10 +84,19 @@ class InvoiceCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     patient_id: UUID
+    encounter_id: UUID | None = None
     currency: str = Field(min_length=3, max_length=3)
     discount_minor: int = Field(default=0, ge=0)
     notes: str | None = Field(default=None, max_length=2000)
     lines: list[InvoiceLineCreate] = Field(min_length=1, max_length=100)
+
+
+class InvoiceFromEncounter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    currency: str = Field(min_length=3, max_length=3)
+    discount_minor: int = Field(default=0, ge=0)
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class PaymentCreate(BaseModel):

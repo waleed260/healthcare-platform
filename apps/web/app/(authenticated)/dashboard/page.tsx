@@ -1,13 +1,15 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PremiumMotion from "../../premium-motion";
 import { redirectToLogin } from "../_lib/client";
-import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
-import AddPatientDrawer from "../_lib/add-patient-drawer";
-import BlockTimeDrawer from "../_lib/block-time-drawer";
-import FollowUpDrawer from "../_lib/follow-up-drawer";
+
+const AddAppointmentDrawer = dynamic(() => import("../_lib/add-appointment-drawer"), { ssr: false });
+const AddPatientDrawer = dynamic(() => import("../_lib/add-patient-drawer"), { ssr: false });
+const BlockTimeDrawer = dynamic(() => import("../_lib/block-time-drawer"), { ssr: false });
+const FollowUpDrawer = dynamic(() => import("../_lib/follow-up-drawer"), { ssr: false });
 
 type Summary = { today_appointments: number; pending_approvals: number; followups_due: number; waiting_patients: number; no_shows: number };
 type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string };
@@ -55,9 +57,13 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [sessionData, summaryResponse] = await Promise.all([
+      const [sessionData, summaryResponse, appts, requested, q, f] = await Promise.all([
         getData<Session>("/api/v1/auth/me"),
         fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" }),
+        getData<Appointment[]>("/api/v1/appointments?limit=100"),
+        getData<Appointment[]>("/api/v1/appointments?status=requested&limit=10"),
+        getData<QueueEntry[]>("/api/v1/operations/queue"),
+        getData<FollowUp[]>("/api/v1/operations/follow-ups?status=due&limit=10"),
       ]);
       if (sessionData) {
         setPermissions(sessionData.permissions ?? []);
@@ -67,12 +73,6 @@ export default function DashboardPage() {
       const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
       if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
       setSummary(summaryPayload?.data ?? null);
-      const [appts, requested, q, f] = await Promise.all([
-        getData<Appointment[]>("/api/v1/appointments?limit=100"),
-        getData<Appointment[]>("/api/v1/appointments?status=requested&limit=10"),
-        getData<QueueEntry[]>("/api/v1/operations/queue"),
-        getData<FollowUp[]>("/api/v1/operations/follow-ups?status=due&limit=10"),
-      ]);
       setAppointments(appts ?? []);
       setRequests(requested ?? []);
       setQueue(q ?? []); setFollowups(f ?? []);
@@ -129,7 +129,7 @@ export default function DashboardPage() {
         <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">NOW</p><h2>Live patient queue</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
           {loading && queue.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading…</strong></div> : queue.length === 0 ? <div className="dashboard-empty"><strong>Queue is empty</strong><span>No one is waiting right now.</span></div> : <div className="queue-list">{queue.slice(0, 5).map((e, i) => <div className="queue-row" key={e.id}><span className="queue-num">{String(i + 1).padStart(2, "0")}</span><div className="queue-main"><strong>{e.full_name}</strong><small>{e.checked_in_at ? `in ${time(e.checked_in_at)}` : e.reference}</small></div><span className={`queue-state state-${e.status.replaceAll("_", "-")}`}>{e.status.replaceAll("_", " ")}</span><Link className="queue-action" href="/queue">Start →</Link></div>)}</div>}
         </section>
-        <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">⚡ QUICK ACTIONS</p><h2>Do it now</h2></div></div><div className="quick-grid"><button className="quick-btn" type="button" onClick={() => setAddApptOpen(true)}>＋ Add appointment <span>→</span></button><button className="quick-btn" type="button" onClick={() => setAddPatientOpen(true)}>👤 Add patient <span>→</span></button><button className="quick-btn" type="button" onClick={() => setBlockTimeOpen(true)}>⏱ Block time <span>→</span></button><button className="quick-btn" type="button" onClick={() => setFollowUpOpen(true)}>🗎 Create follow-up <span>→</span></button></div></section>
+        <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">⚡ QUICK ACTIONS</p><h2>Do it now</h2></div></div><div className="quick-grid"><button className="quick-btn" type="button" onClick={() => setAddApptOpen(true)}>＋ Add appointment <span>→</span></button><button className="quick-btn" type="button" onClick={() => setAddPatientOpen(true)}>👤 Add patient <span>→</span></button><Link className="quick-btn" href="/encounters">✍ Encounters <span>→</span></Link><Link className="quick-btn" href="/billing">₿ Billing <span>→</span></Link><Link className="quick-btn" href="/finance">∑ Finance <span>→</span></Link><button className="quick-btn" type="button" onClick={() => setFollowUpOpen(true)}>🗎 Create follow-up <span>→</span></button></div></section>
       </div>
     </div>
 

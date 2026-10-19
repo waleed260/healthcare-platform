@@ -204,6 +204,11 @@ export default function EncounterDetailPage() {
   const [amendNewValue, setAmendNewValue] = useState("");
   const [amendReason, setAmendReason] = useState("");
 
+  // Invoice
+  const [invoiceData, setInvoiceData] = useState<{ id: string; invoice_number: string; status: string; total_minor: number; currency: string; paid_minor: number } | null>(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -271,6 +276,31 @@ export default function EncounterDetailPage() {
     void api<CatalogService[]>("/api/v1/services?limit=100").then((d) => setCatalogServices((d ?? []).filter((s) => s.status === "active"))).catch(() => setCatalogLoadFailed(true));
     void api<InventoryProduct[]>("/api/v1/inventory/products?limit=100").then((d) => setInventoryProducts((d ?? []).filter((p) => p.status === "active"))).catch(() => setCatalogLoadFailed(true));
   }, []);
+
+  useEffect(() => {
+    if (!encounterId) return;
+    setInvoiceLoading(true);
+    void api<{ id: string; invoice_number: string; status: string; total_minor: number; currency: string; paid_minor: number }>(`/api/v1/encounters/${encounterId}/invoice`)
+      .then((d) => { if (d) setInvoiceData(d); })
+      .catch(() => {})
+      .finally(() => setInvoiceLoading(false));
+  }, [encounterId]);
+
+  async function generateInvoice() {
+    if (!enc) return;
+    setBusy(true);
+    try {
+      const currency = treatments.find((t) => t.currency)?.currency ?? adminProcedures.find((p) => p.currency)?.currency ?? "PKR";
+      const res = await api<{ id: string; invoice_number: string; status: string; total_minor: number; currency: string }>(`/api/v1/encounters/${encounterId}/generate-invoice`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ currency, discount_minor: 0 }) });
+      if (res) {
+        setInvoiceData({ ...res, paid_minor: 0 });
+        setShowInvoicePreview(false);
+        toast.success(`Invoice ${res.invoice_number} created successfully.`);
+      }
+    } catch (reason) {
+      toast.error(errorMessage(reason, "Could not generate invoice."));
+    } finally { setBusy(false); }
+  }
 
   /* ── Save (PATCH) ─────────────────────────────────────────────── */
   async function save(e: FormEvent) {
@@ -428,7 +458,7 @@ export default function EncounterDetailPage() {
 
   /* ── Treatment helpers ────────────────────────────────────────── */
   function addTreatment() { setTreatments([...treatments, { name: "", dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }]); }
-  function updateTreatment(idx: number, field: keyof AdministeredTreatment, val: string) { setTreatments(treatments.map((t, i) => i === idx ? { ...t, [field]: val } : t)); }
+  function updateTreatment(idx: number, field: keyof AdministeredTreatment, val: string) { setTreatments(treatments.map((t, i) => i === idx ? { ...t, [field]: field === "quantity" ? Math.max(1, parseInt(val) || 1) : val } : t)); }
   function removeTreatment(idx: number) { setTreatments(treatments.filter((_, i) => i !== idx)); }
 
   function addProcedure() { setAdminProcedures([...adminProcedures, { name: "", performed_at: "", performer: "", findings: "", notes: "" }]); }
@@ -437,8 +467,15 @@ export default function EncounterDetailPage() {
 
   /* ── Catalog picker helpers ──────────────────────────────────── */
   function addTreatmentFromService(svc: CatalogService) {
-    setTreatments([...treatments, { name: svc.name, service_id: svc.id, unit_price_minor: svc.amount_minor ?? undefined, currency: svc.currency ?? undefined, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }]);
+    const svcRow: AdministeredTreatment = { name: svc.name, service_id: svc.id, unit_price_minor: svc.amount_minor ?? undefined, currency: svc.currency ?? undefined, quantity: 1, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" };
+    setTreatments((prev) => [...prev, svcRow]);
     setPickerOpen(null); setPickerSearch("");
+    void api<{ inventory_product_id: string; product_name: string; default_quantity: number; unit: string }[]>(`/api/v1/services/${svc.id}/materials`).then((mats) => {
+      if (!mats?.length) return;
+      const newRows: AdministeredTreatment[] = mats.map((m) => ({ name: `${m.product_name} (for ${svc.name})`, inventory_product_id: m.inventory_product_id, quantity: m.default_quantity, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }));
+      setTreatments((prev) => [...prev, ...newRows]);
+      toast.success(`Added ${mats.length} material${mats.length > 1 ? "s" : ""} for ${svc.name}.`);
+    }).catch(() => {});
   }
   function addTreatmentFromInventory(prod: InventoryProduct) {
     setTreatments([...treatments, { name: prod.name, inventory_product_id: prod.id, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }]);
@@ -483,7 +520,15 @@ export default function EncounterDetailPage() {
           {enc.status === "draft" && currentUserId && currentUserId === enc.doctor_user_id && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
           {enc.status === "in_progress" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("ready_for_discharge")}>Ready for Discharge</button>}
           {enc.status === "discharged" && <button className="button button-primary" type="button" disabled={busy} onClick={() => void changeStatus("finalized")}>Finalize</button>}
-          {(enc.status === "discharged" || enc.status === "finalized") && <Link className="button button-secondary" href={enc.appointment_id ? `/billing?from_appointment=${enc.appointment_id}` : "/billing"} style={{ fontSize: 11 }}>Go to Billing</Link>}
+          {(enc.status === "discharged" || enc.status === "finalized") && !invoiceLoading && !invoiceData && (
+            <button className="button button-primary" type="button" disabled={busy} onClick={() => setShowInvoicePreview(true)} style={{ fontSize: 11 }}>Generate Invoice</button>
+          )}
+          {invoiceData && (
+            <Link className="button button-secondary" href={`/billing?invoice=${invoiceData.id}`} style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: invoiceData.status === "paid" ? "var(--leaf)" : invoiceData.status === "void" ? "var(--coral)" : "var(--accent)", color: "#fff" }}>{invoiceData.status.toUpperCase()}</span>
+              {invoiceData.invoice_number}
+            </Link>
+          )}
           {enc.mrn && <span className="muted-mono">MRN: {enc.mrn}</span>}
         </div>
       </div>
@@ -494,6 +539,14 @@ export default function EncounterDetailPage() {
         {enc.discharge_datetime && <div><span className="eyebrow">DISCHARGED</span><strong style={{ fontSize: 13 }}>{fmtDateTime(enc.discharge_datetime)}</strong></div>}
         {enc.finalized_at && <div><span className="eyebrow">FINALIZED</span><strong style={{ fontSize: 13 }}>{fmtDateTime(enc.finalized_at)}</strong></div>}
         <div><span className="eyebrow">TYPE</span><strong style={{ fontSize: 13 }}>{typeLabel(enc.encounter_type)}</strong></div>
+        {(() => {
+          const tTotal = (enc.administered_treatments ?? []).reduce((s, t) => s + (t.unit_price_minor ?? 0) * (t.quantity ?? 1), 0);
+          const pTotal = (enc.administered_procedures ?? []).reduce((s, p) => s + (p.unit_price_minor ?? 0), 0);
+          const grand = tTotal + pTotal;
+          if (grand <= 0) return null;
+          const cur = (enc.administered_treatments ?? []).find((t) => t.currency)?.currency ?? (enc.administered_procedures ?? []).find((p) => p.currency)?.currency ?? "PKR";
+          return <div><span className="eyebrow">CHARGES</span><strong style={{ fontSize: 13, color: "var(--leaf)" }}>{formatPrice(grand, cur)}</strong></div>;
+        })()}
       </div>
 
       {/* Tabs */}
@@ -504,6 +557,48 @@ export default function EncounterDetailPage() {
           ))}
         </div>
       </div>
+
+      {/* Invoice preview confirmation */}
+      {showInvoicePreview && enc && (() => {
+        const lines: { name: string; qty: number; price: number; currency: string }[] = [];
+        for (const t of enc.administered_treatments ?? []) {
+          if (t.unit_price_minor && t.unit_price_minor > 0) lines.push({ name: t.name, qty: t.quantity ?? 1, price: t.unit_price_minor, currency: t.currency ?? "PKR" });
+        }
+        for (const p of enc.administered_procedures ?? []) {
+          if (p.unit_price_minor && p.unit_price_minor > 0) lines.push({ name: p.name, qty: 1, price: p.unit_price_minor, currency: p.currency ?? "PKR" });
+        }
+        const total = lines.reduce((s, l) => s + l.price * l.qty, 0);
+        const cur = lines[0]?.currency ?? "PKR";
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setShowInvoicePreview(false)}>
+            <div className="surface-card" style={{ maxWidth: 520, width: "100%", maxHeight: "80vh", overflow: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+              <h2 style={{ margin: "0 0 4px" }}>Generate Invoice</h2>
+              <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Review line items from this encounter before generating the invoice.</p>
+              {lines.length === 0 ? (
+                <p style={{ padding: "16px 0", color: "var(--muted)", textAlign: "center" }}>No priced treatments or procedures found. Add prices to treatments first.</p>
+              ) : (
+                <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+                  <thead><tr style={{ borderBottom: "2px solid var(--line)", textAlign: "left" }}><th style={{ padding: "6px 0" }}>Item</th><th style={{ padding: "6px 8px", textAlign: "right" }}>Qty</th><th style={{ padding: "6px 0", textAlign: "right" }}>Amount</th></tr></thead>
+                  <tbody>
+                    {lines.map((l, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
+                        <td style={{ padding: "8px 0" }}>{l.name}</td>
+                        <td style={{ padding: "8px 8px", textAlign: "right" }}>{l.qty}</td>
+                        <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 600 }}>{formatPrice(l.price * l.qty, l.currency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr style={{ borderTop: "2px solid var(--line)" }}><td colSpan={2} style={{ padding: "10px 0", fontWeight: 700 }}>Total</td><td style={{ padding: "10px 0", textAlign: "right", fontWeight: 700, color: "var(--leaf)" }}>{formatPrice(total, cur)}</td></tr></tfoot>
+                </table>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+                <button className="button button-secondary" type="button" onClick={() => setShowInvoicePreview(false)}>Cancel</button>
+                {lines.length > 0 && <button className="button button-primary" type="button" disabled={busy} onClick={() => void generateInvoice()}>{busy ? "Generating..." : "Confirm & Generate"}</button>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <form onSubmit={(e) => void save(e)}>
 
@@ -653,6 +748,7 @@ export default function EncounterDetailPage() {
                   </label>
                   <label style={{ fontSize: 11 }}>Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                   <label style={{ fontSize: 11 }}>Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
+                  <label style={{ fontSize: 11 }}>Qty<input type="number" min={1} value={t.quantity ?? 1} onChange={(e) => updateTreatment(idx, "quantity", e.target.value)} disabled={readonly} style={{ width: 60 }} /></label>
                   <label style={{ fontSize: 11 }}>Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11 }}>Given by<input value={t.administered_by ?? ""} onChange={(e) => updateTreatment(idx, "administered_by", e.target.value)} disabled={readonly} /></label>
                   <label style={{ fontSize: 11 }}>Response<input value={t.response ?? ""} onChange={(e) => updateTreatment(idx, "response", e.target.value)} disabled={readonly} /></label>
@@ -705,6 +801,33 @@ export default function EncounterDetailPage() {
                 <label>Adverse reactions<textarea value={adverseReactions} onChange={(e) => setAdverseReactions(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Any adverse reactions observed" /></label>
               </div>
             </div>
+            {/* Charges summary */}
+            {(() => {
+              const tTotal = treatments.reduce((s, t) => s + (t.unit_price_minor ?? 0) * (t.quantity ?? 1), 0);
+              const pTotal = adminProcedures.reduce((s, p) => s + (p.unit_price_minor ?? 0), 0);
+              if (tTotal + pTotal <= 0) return null;
+              const cur = treatments.find((t) => t.currency)?.currency ?? adminProcedures.find((p) => p.currency)?.currency ?? "PKR";
+              return (
+                <div className="enc-section surface-card" style={{ marginTop: 16, background: "var(--bg-alt, rgba(0,0,0,0.03))" }}>
+                  <div className="surface-card-heading"><div><p className="eyebrow">BILLING</p><h2>Charges Summary</h2></div></div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, padding: "8px 0", fontSize: 13 }}>
+                    <div><span style={{ color: "var(--muted)" }}>Treatments ({treatments.filter((t) => t.unit_price_minor).length})</span><br /><strong>{formatPrice(tTotal, cur)}</strong></div>
+                    <div><span style={{ color: "var(--muted)" }}>Procedures ({adminProcedures.filter((p) => p.unit_price_minor).length})</span><br /><strong>{formatPrice(pTotal, cur)}</strong></div>
+                    <div><span style={{ color: "var(--muted)" }}>Grand Total</span><br /><strong style={{ fontSize: 15, color: "var(--leaf)" }}>{formatPrice(tTotal + pTotal, cur)}</strong></div>
+                  </div>
+                  {invoiceData ? (
+                    <div style={{ marginTop: 8, padding: "8px 12px", background: "var(--surface, var(--bg))", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                      <span>Invoice <strong>{invoiceData.invoice_number}</strong> — <span style={{ color: invoiceData.status === "paid" ? "var(--leaf)" : "var(--accent)" }}>{invoiceData.status.toUpperCase()}</span></span>
+                      <Link href={`/billing?invoice=${invoiceData.id}`} style={{ color: "var(--accent)", fontWeight: 600 }}>View Invoice</Link>
+                    </div>
+                  ) : readonly && (
+                    <div style={{ marginTop: 8 }}>
+                      <button className="button button-primary" type="button" disabled={busy} onClick={() => setShowInvoicePreview(true)} style={{ fontSize: 12 }}>Generate Invoice from Encounter</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
 

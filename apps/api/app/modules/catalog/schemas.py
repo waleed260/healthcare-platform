@@ -209,6 +209,14 @@ class ResourceUpdate(BaseModel):
         return self
 
 
+class ServiceMaterialAssign(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    inventory_product_id: str = Field(min_length=1, max_length=36)
+    default_quantity: float = Field(default=1, gt=0, le=99999)
+    notes: str | None = Field(default=None, max_length=500)
+
+
 class CatalogStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

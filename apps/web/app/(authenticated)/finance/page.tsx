@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, label, money, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
@@ -106,6 +107,7 @@ export default function FinancePage() {
           <p className="workspace-page-intro">Cashier summary by payment method, with optional clinic expenses for a basic profitability view.</p>
         </div>
         <div className="header-actions">
+          <Link className="button button-secondary" href="/billing" style={{ fontSize: 11 }}>View Invoices</Link>
           <label className="report-period">Day <input type="date" value={day} max={today()} onChange={(e) => setDay(e.target.value || today())} /></label>
           <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
         </div>
@@ -116,7 +118,7 @@ export default function FinancePage() {
       {summary && (
         <div className="billing-summary">
           <div><span className="eyebrow">COLLECTED</span><strong>{money(summary.collected_minor, clinicCurrency)}</strong><small className="muted-mono">{summary.payment_methods.reduce((t, r) => t + r.payments, 0)} PAYMENTS</small></div>
-          <div><span className="eyebrow">INVOICED</span><strong>{money(summary.invoiced_minor, clinicCurrency)}</strong><small className="muted-mono">{summary.invoices} INVOICES</small></div>
+          <div><span className="eyebrow">INVOICED</span><strong>{money(summary.invoiced_minor, clinicCurrency)}</strong><small className="muted-mono"><Link href="/billing" style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: 2 }}>{summary.invoices} INVOICES</Link></small></div>
           <div><span className="eyebrow">{summary.net_minor == null ? "EXPENSES" : "NET"}</span><strong>{summary.net_minor == null ? "Restricted" : money(summary.net_minor, clinicCurrency)}</strong><small className="muted-mono">{summary.expenses_minor == null ? "NO expense.read" : `${money(summary.expenses_minor, clinicCurrency)} SPENT`}</small></div>
         </div>
       )}
