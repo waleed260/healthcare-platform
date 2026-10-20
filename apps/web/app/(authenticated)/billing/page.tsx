@@ -8,7 +8,7 @@ import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 import Pagination, { usePagination } from "../_lib/pagination";
-import type { PatientRef, InvoiceSummary, ServiceRef, SessionInfo } from "@contracts/entities";
+import type { PatientRef, InvoiceSummary, ServiceRef, SessionInfo } from "../_lib/contracts";
 type InvoiceDetail = InvoiceSummary & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; encounter_id: string | null; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
 type InvoiceLine = { id: string; service_id: string | null; provider_id: string | null; provider_name: string | null; description: string; quantity: number; unit_price_minor: number; tax_minor: number; line_total_minor: number };
 type Payment = { id: string; amount_minor: number; currency: string; method: string; reference: string | null; paid_at: string };

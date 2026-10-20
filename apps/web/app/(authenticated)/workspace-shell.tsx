@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, post, redirectToLogin } from "./_lib/client";
 import { invalidateCache } from "./_lib/session-cache";
-import type { SessionInfo } from "@contracts/entities";
+import type { SessionInfo } from "./_lib/contracts";
 type NavItem = { href: string; label: string; icon: string; permission: string; adminOnly?: boolean };
 type NavGroup = { key: string; label: string; items: NavItem[] };
 

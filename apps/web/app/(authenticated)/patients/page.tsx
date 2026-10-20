@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { apiPage } from "../_lib/client";
 import Pagination, { usePagination } from "../_lib/pagination";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
-import type { PatientSummary } from "@contracts/entities";
+import type { PatientSummary } from "../_lib/contracts";
 
 const statuses = ["active", "inactive", "discharged", "deceased"];
 

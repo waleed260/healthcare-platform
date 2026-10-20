@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "./fixtures";
 import type { Page } from "@playwright/test";
-import type { SessionInfo, PatientSummary } from "@contracts/entities";
+import type { SessionInfo, PatientSummary } from "../app/(authenticated)/_lib/contracts";
 
 const clinic = {
   id: "00000000-0000-0000-0000-000000000001",
