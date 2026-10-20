@@ -123,20 +123,26 @@ export default function InventoryPage() {
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
-    try {
-      const [sess, productRows, stockRows, branchRows, categoryRows] = await Promise.all([
-        api<Session>("/api/v1/auth/me"),
-        api<Product[]>("/api/v1/inventory/products?limit=100"),
-        api<Stock[]>("/api/v1/inventory/stock"),
-        api<Branch[]>("/api/v1/branches?limit=100"),
-        api<Category[]>("/api/v1/inventory/categories").catch(() => []),
-      ]);
-      setSession(sess); setPermissions(sess.permissions ?? []);
-      setProducts(productRows ?? []); setStock(stockRows ?? []);
-      setBranches(branchRows ?? []); setCategories(categoryRows ?? []);
-      if (!productId && productRows?.[0]) setProductId(productRows[0].id);
-      if (!branchId && branchRows?.[0]) setBranchId(branchRows[0].id);
-    } catch (r) { setError(errorMessage(r, "Inventory could not be loaded.")); } finally { setLoading(false); }
+    const [sessResult, productResult, stockResult, branchResult, categoryResult] = await Promise.allSettled([
+      api<Session>("/api/v1/auth/me"),
+      api<Product[]>("/api/v1/inventory/products?limit=100"),
+      api<Stock[]>("/api/v1/inventory/stock"),
+      api<Branch[]>("/api/v1/branches?limit=100"),
+      api<Category[]>("/api/v1/inventory/categories"),
+    ]);
+    if (sessResult.status === "fulfilled") {
+      setSession(sessResult.value); setPermissions(sessResult.value.permissions ?? []);
+    }
+    const productRows = productResult.status === "fulfilled" ? (productResult.value ?? []) : [];
+    const stockRows = stockResult.status === "fulfilled" ? (stockResult.value ?? []) : [];
+    const branchRows = branchResult.status === "fulfilled" ? (branchResult.value ?? []) : [];
+    const categoryRows = categoryResult.status === "fulfilled" ? (categoryResult.value ?? []) : [];
+    setProducts(productRows); setStock(stockRows); setBranches(branchRows); setCategories(categoryRows);
+    if (!productId && productRows[0]) setProductId(productRows[0].id);
+    if (!branchId && branchRows[0]) setBranchId(branchRows[0].id);
+    const failed = [sessResult, productResult, stockResult, branchResult].filter((r) => r.status === "rejected");
+    if (failed.length > 0) setError(errorMessage((failed[0] as PromiseRejectedResult).reason, "Some inventory data could not be loaded."));
+    setLoading(false);
   }, [branchId, productId]);
 
   const loadSuppliers = useCallback(async () => {
