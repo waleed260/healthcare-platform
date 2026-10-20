@@ -389,12 +389,13 @@ export default function InventoryPage() {
   const activeProducts = useMemo(() => products.filter((p) => p.status === "active"), [products]);
 
   /* ── tab permission check ──────────────────────────────────────── */
+  const canInventory = can("inventory.read") || can("inventory.manage");
   const tabVisible = (t: Tab): boolean => {
     switch (t) {
-      case "Suppliers": return can("supplier.read") || can("supplier.manage");
-      case "Purchases": return can("purchase.read") || can("purchase.manage");
-      case "Warehouses": return can("warehouse.read") || can("warehouse.manage");
-      case "Transfers": return can("transfer.read") || can("transfer.manage");
+      case "Suppliers": return can("supplier.read") || can("supplier.manage") || canInventory;
+      case "Purchases": return can("purchase.read") || can("purchase.manage") || canInventory;
+      case "Warehouses": return can("warehouse.read") || can("warehouse.manage") || canInventory;
+      case "Transfers": return can("transfer.read") || can("transfer.manage") || canInventory;
       default: return true;
     }
   };
