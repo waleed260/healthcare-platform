@@ -126,7 +126,7 @@ export default function InventoryPage() {
     try {
       const [sess, productRows, stockRows, branchRows, categoryRows] = await Promise.all([
         api<Session>("/api/v1/auth/me"),
-        api<Product[]>("/api/v1/inventory/products?limit=200"),
+        api<Product[]>("/api/v1/inventory/products?limit=100"),
         api<Stock[]>("/api/v1/inventory/stock"),
         api<Branch[]>("/api/v1/branches?limit=100"),
         api<Category[]>("/api/v1/inventory/categories").catch(() => []),
