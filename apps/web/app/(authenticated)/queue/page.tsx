@@ -66,8 +66,10 @@ export default function QueuePage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const interval = setInterval(() => { void load(); }, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => { if (!document.hidden) void load(); }, 30000);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
   }, [load]);
 
   async function loadTodayConfirmed() {

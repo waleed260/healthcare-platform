@@ -83,8 +83,10 @@ export default function DashboardPage() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    const id = setInterval(() => { void load(); }, 60_000);
-    return () => clearInterval(id);
+    const id = setInterval(() => { if (!document.hidden) void load(); }, 60_000);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [load]);
 
   const schedule = useMemo(() => {

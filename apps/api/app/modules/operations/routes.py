@@ -120,38 +120,41 @@ def _follow_up_context(db: Session, session_token: str | None, follow_up_id: str
 def dashboard_summary(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "appointment.read")
     clinic_id = session["clinic_id"]
-    counts = db.execute(text("""
-        SELECT
-          COUNT(*) FILTER (WHERE (a.starts_at AT TIME ZONE b.timezone)::date = (now() AT TIME ZONE b.timezone)::date) AS today_appointments,
-          COUNT(*) FILTER (WHERE a.status = 'requested') AS pending_approvals,
-          COUNT(*) FILTER (WHERE a.status = 'no_show') AS no_shows
-        FROM appointments a JOIN branches b ON b.id = a.branch_id AND b.clinic_id = a.clinic_id
-        WHERE a.clinic_id = :clinic_id AND a.archived_at IS NULL
-          AND b.status = 'active' AND b.archived_at IS NULL
-          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
-    """), {"clinic_id": clinic_id, "user_id": session["user_id"]}).mappings().one()
-    queue_count = db.execute(text("""
-        SELECT COUNT(*)
-        FROM queue_entries q
-        JOIN appointments a ON a.clinic_id = q.clinic_id AND a.id = q.appointment_id
-        JOIN branches b ON b.clinic_id = a.clinic_id AND b.id = a.branch_id
-        WHERE q.clinic_id = :clinic_id AND q.status IN ('waiting', 'in_consultation')
-          AND a.archived_at IS NULL AND b.status = 'active' AND b.archived_at IS NULL
-          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
-    """), {"clinic_id": clinic_id, "user_id": session["user_id"]}).scalar_one()
-    followups_due = db.execute(text("""
-        SELECT COUNT(*) FROM follow_up_tasks f
-        JOIN patients p ON p.clinic_id = f.clinic_id AND p.id = f.patient_id
-        LEFT JOIN appointments a ON a.clinic_id = f.clinic_id AND a.id = f.appointment_id
-        WHERE f.clinic_id = :clinic_id AND f.status IN ('due', 'contacted', 'booked') AND f.due_at <= now() AND p.archived_at IS NULL
-          AND (a.branch_id IS NULL
-               OR NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
-    """), {"clinic_id": clinic_id, "user_id": session["user_id"]}).scalar_one()
+    params = {"clinic_id": clinic_id, "user_id": session["user_id"]}
+    row = db.execute(text("""
+        WITH appt_counts AS (
+            SELECT
+              COUNT(*) FILTER (WHERE (a.starts_at AT TIME ZONE b.timezone)::date = (now() AT TIME ZONE b.timezone)::date) AS today_appointments,
+              COUNT(*) FILTER (WHERE a.status = 'requested') AS pending_approvals,
+              COUNT(*) FILTER (WHERE a.status = 'no_show') AS no_shows
+            FROM appointments a JOIN branches b ON b.id = a.branch_id AND b.clinic_id = a.clinic_id
+            WHERE a.clinic_id = :clinic_id AND a.archived_at IS NULL
+              AND b.status = 'active' AND b.archived_at IS NULL
+              AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+                   OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
+        ), queue_count AS (
+            SELECT COUNT(*) AS waiting_patients
+            FROM queue_entries q
+            JOIN appointments a ON a.clinic_id = q.clinic_id AND a.id = q.appointment_id
+            JOIN branches b ON b.clinic_id = a.clinic_id AND b.id = a.branch_id
+            WHERE q.clinic_id = :clinic_id AND q.status IN ('waiting', 'in_consultation')
+              AND a.archived_at IS NULL AND b.status = 'active' AND b.archived_at IS NULL
+              AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+                   OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
+        ), followup_count AS (
+            SELECT COUNT(*) AS followups_due FROM follow_up_tasks f
+            JOIN patients p ON p.clinic_id = f.clinic_id AND p.id = f.patient_id
+            LEFT JOIN appointments a ON a.clinic_id = f.clinic_id AND a.id = f.appointment_id
+            WHERE f.clinic_id = :clinic_id AND f.status IN ('due', 'contacted', 'booked') AND f.due_at <= now() AND p.archived_at IS NULL
+              AND (a.branch_id IS NULL
+                   OR NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
+                   OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
+        )
+        SELECT ac.today_appointments, ac.pending_approvals, ac.no_shows, qc.waiting_patients, fc.followups_due
+        FROM appt_counts ac, queue_count qc, followup_count fc
+    """), params).mappings().one()
     db.commit()
-    return {"data": {**dict(counts), "waiting_patients": queue_count, "followups_due": followups_due}, "meta": {"request_id": request.state.request_id}}
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/reporting-summary")
@@ -170,11 +173,35 @@ def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=3
                OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id))
         GROUP BY a.status ORDER BY a.status
     """), params).mappings().all()
-    patient_count = db.execute(text("""
-        SELECT COUNT(*) FROM patients p
-        WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL
-          AND p.created_at >= now() - (:days * INTERVAL '1 day')
-    """), params).scalar_one()
+    stats = db.execute(text("""
+        WITH patient_stats AS (
+            SELECT COUNT(*) AS patient_count FROM patients p
+            WHERE p.clinic_id = :clinic_id AND p.archived_at IS NULL
+              AND p.created_at >= now() - (:days * INTERVAL '1 day')
+        ), package_stats AS (
+            SELECT COUNT(*) AS packages, COALESCE(SUM(total_sessions), 0) AS sessions_purchased,
+                   COALESCE(SUM(used_sessions), 0) AS sessions_used,
+                   COALESCE(SUM(total_sessions - used_sessions), 0) AS sessions_remaining
+            FROM patient_packages
+            WHERE clinic_id = :clinic_id AND purchased_at >= now() - (:days * INTERVAL '1 day')
+        ), inventory_stats AS (
+            SELECT COUNT(*) AS low_inventory
+            FROM inventory_stock stock
+            JOIN inventory_products product ON product.clinic_id = stock.clinic_id AND product.id = stock.product_id
+            WHERE stock.clinic_id = :clinic_id AND product.status = 'active' AND product.archived_at IS NULL
+              AND stock.quantity <= product.minimum_stock
+              AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id)
+                   OR EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id AND scope.branch_id = stock.branch_id))
+        ), operational_stats AS (
+            SELECT
+              (SELECT COUNT(*) FROM queue_entries q WHERE q.clinic_id = :clinic_id AND q.status IN ('waiting', 'in_consultation')) AS waiting_patients,
+              (SELECT COUNT(*) FROM follow_up_tasks f WHERE f.clinic_id = :clinic_id AND f.status IN ('due', 'contacted', 'booked') AND f.due_at <= now()) AS followups_due,
+              (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = :clinic_id AND a.status = 'no_show' AND a.created_at >= now() - (:days * INTERVAL '1 day')) AS no_shows
+        )
+        SELECT ps.patient_count, pk.packages, pk.sessions_purchased, pk.sessions_used, pk.sessions_remaining,
+               inv.low_inventory, op.waiting_patients, op.followups_due, op.no_shows
+        FROM patient_stats ps, package_stats pk, inventory_stats inv, operational_stats op
+    """), params).mappings().one()
     lead_counts = db.execute(text("""
         SELECT l.status, COUNT(*) AS count FROM leads l
         WHERE l.clinic_id = :clinic_id AND l.created_at >= now() - (:days * INTERVAL '1 day')
@@ -184,72 +211,58 @@ def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=3
     financial = None
     try:
         require_permission(db, session["user_id"], clinic_id, "billing.read")
-        financial = db.execute(text("""
-            SELECT COUNT(*) AS invoices, COALESCE(SUM(i.total_minor), 0) AS invoiced_minor,
-                   COALESCE(SUM(i.total_minor - COALESCE(paid.paid_minor, 0)), 0) AS outstanding_minor,
-                   COALESCE(SUM(paid.paid_minor), 0) AS paid_minor
-            FROM invoices i
-            LEFT JOIN (
-                SELECT invoice_id, SUM(amount_minor) AS paid_minor
-                FROM payment_allocations WHERE clinic_id = :clinic_id GROUP BY invoice_id
-            ) paid ON paid.invoice_id = i.id
-            WHERE i.clinic_id = :clinic_id AND i.issued_at >= now() - (:days * INTERVAL '1 day')
-        """), params).mappings().one()
-        payment_methods = db.execute(text("""
-            SELECT p.method, COUNT(*) AS payments, COALESCE(SUM(p.amount_minor), 0) AS paid_minor
-            FROM payments p
-            WHERE p.clinic_id = :clinic_id AND p.paid_at >= now() - (:days * INTERVAL '1 day')
-            GROUP BY p.method ORDER BY paid_minor DESC, p.method
-        """), params).mappings().all()
-        aging = db.execute(text("""
-            SELECT bucket, COUNT(*) AS invoices, COALESCE(SUM(outstanding_minor), 0) AS outstanding_minor
-            FROM (
-                SELECT CASE
-                    WHEN now() - i.issued_at < INTERVAL '30 days' THEN '0_29'
-                    WHEN now() - i.issued_at < INTERVAL '60 days' THEN '30_59'
-                    WHEN now() - i.issued_at < INTERVAL '90 days' THEN '60_89'
-                    ELSE '90_plus'
-                END AS bucket,
-                i.total_minor - COALESCE(paid.paid_minor, 0) AS outstanding_minor
+        fin_row = db.execute(text("""
+            WITH fin_summary AS (
+                SELECT COUNT(*) AS invoices, COALESCE(SUM(i.total_minor), 0) AS invoiced_minor,
+                       COALESCE(SUM(i.total_minor - COALESCE(paid.paid_minor, 0)), 0) AS outstanding_minor,
+                       COALESCE(SUM(paid.paid_minor), 0) AS paid_minor
                 FROM invoices i
                 LEFT JOIN (
                     SELECT invoice_id, SUM(amount_minor) AS paid_minor
                     FROM payment_allocations WHERE clinic_id = :clinic_id GROUP BY invoice_id
                 ) paid ON paid.invoice_id = i.id
-                WHERE i.clinic_id = :clinic_id
-                  AND i.status NOT IN ('paid', 'refunded', 'void')
-                  AND i.total_minor - COALESCE(paid.paid_minor, 0) > 0
-            ) open_invoices
-            GROUP BY bucket
-            ORDER BY CASE bucket WHEN '0_29' THEN 1 WHEN '30_59' THEN 2 WHEN '60_89' THEN 3 ELSE 4 END
-        """), params).mappings().all()
-        financial = {**dict(financial), "payment_methods": [dict(row) for row in payment_methods], "aging": [dict(row) for row in aging]}
+                WHERE i.clinic_id = :clinic_id AND i.issued_at >= now() - (:days * INTERVAL '1 day')
+            ), payment_methods_agg AS (
+                SELECT COALESCE(json_agg(json_build_object('method', sub.method, 'payments', sub.payments, 'paid_minor', sub.paid_minor) ORDER BY sub.paid_minor DESC, sub.method), '[]'::json) AS methods
+                FROM (
+                    SELECT p.method, COUNT(*) AS payments, COALESCE(SUM(p.amount_minor), 0) AS paid_minor
+                    FROM payments p
+                    WHERE p.clinic_id = :clinic_id AND p.paid_at >= now() - (:days * INTERVAL '1 day')
+                    GROUP BY p.method
+                ) sub
+            ), aging_agg AS (
+                SELECT COALESCE(json_agg(json_build_object('bucket', sub.bucket, 'invoices', sub.invoices, 'outstanding_minor', sub.outstanding_minor)
+                    ORDER BY CASE sub.bucket WHEN '0_29' THEN 1 WHEN '30_59' THEN 2 WHEN '60_89' THEN 3 ELSE 4 END), '[]'::json) AS buckets
+                FROM (
+                    SELECT bucket, COUNT(*) AS invoices, COALESCE(SUM(outstanding_minor), 0) AS outstanding_minor
+                    FROM (
+                        SELECT CASE
+                            WHEN now() - i.issued_at < INTERVAL '30 days' THEN '0_29'
+                            WHEN now() - i.issued_at < INTERVAL '60 days' THEN '30_59'
+                            WHEN now() - i.issued_at < INTERVAL '90 days' THEN '60_89'
+                            ELSE '90_plus'
+                        END AS bucket,
+                        i.total_minor - COALESCE(paid.paid_minor, 0) AS outstanding_minor
+                        FROM invoices i
+                        LEFT JOIN (
+                            SELECT invoice_id, SUM(amount_minor) AS paid_minor
+                            FROM payment_allocations WHERE clinic_id = :clinic_id GROUP BY invoice_id
+                        ) paid ON paid.invoice_id = i.id
+                        WHERE i.clinic_id = :clinic_id
+                          AND i.status NOT IN ('paid', 'refunded', 'void')
+                          AND i.total_minor - COALESCE(paid.paid_minor, 0) > 0
+                    ) open_invoices
+                    GROUP BY bucket
+                ) sub
+            )
+            SELECT fs.invoices, fs.invoiced_minor, fs.outstanding_minor, fs.paid_minor, pm.methods, ag.buckets
+            FROM fin_summary fs, payment_methods_agg pm, aging_agg ag
+        """), params).mappings().one()
+        financial = {"invoices": fin_row["invoices"], "invoiced_minor": fin_row["invoiced_minor"], "outstanding_minor": fin_row["outstanding_minor"], "paid_minor": fin_row["paid_minor"], "payment_methods": fin_row["methods"], "aging": fin_row["buckets"]}
     except ForbiddenError:
         financial = None
-    package_utilization = db.execute(text("""
-        SELECT COUNT(*) AS packages, COALESCE(SUM(total_sessions), 0) AS sessions_purchased,
-               COALESCE(SUM(used_sessions), 0) AS sessions_used,
-               COALESCE(SUM(total_sessions - used_sessions), 0) AS sessions_remaining
-        FROM patient_packages
-        WHERE clinic_id = :clinic_id AND purchased_at >= now() - (:days * INTERVAL '1 day')
-    """), params).mappings().one()
-    low_inventory = db.execute(text("""
-        SELECT COUNT(*)
-        FROM inventory_stock stock
-        JOIN inventory_products product ON product.clinic_id = stock.clinic_id AND product.id = stock.product_id
-        WHERE stock.clinic_id = :clinic_id AND product.status = 'active' AND product.archived_at IS NULL
-          AND stock.quantity <= product.minimum_stock
-          AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id AND scope.branch_id = stock.branch_id))
-    """), params).scalar_one()
-    operational = db.execute(text("""
-        SELECT
-          (SELECT COUNT(*) FROM queue_entries q WHERE q.clinic_id = :clinic_id AND q.status IN ('waiting', 'in_consultation')) AS waiting_patients,
-          (SELECT COUNT(*) FROM follow_up_tasks f WHERE f.clinic_id = :clinic_id AND f.status IN ('due', 'contacted', 'booked') AND f.due_at <= now()) AS followups_due,
-          (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = :clinic_id AND a.status = 'no_show' AND a.created_at >= now() - (:days * INTERVAL '1 day')) AS no_shows
-    """), params).mappings().one()
     db.commit()
-    return {"data": {"period_days": days, "appointments": [dict(row) for row in appointment_counts], "patients_created": patient_count, "leads": [dict(row) for row in lead_counts], "financial": financial, "package_utilization": dict(package_utilization), "operational": {**dict(operational), "low_inventory": low_inventory}}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"period_days": days, "appointments": [dict(row) for row in appointment_counts], "patients_created": stats["patient_count"], "leads": [dict(row) for row in lead_counts], "financial": financial, "package_utilization": {"packages": stats["packages"], "sessions_purchased": stats["sessions_purchased"], "sessions_used": stats["sessions_used"], "sessions_remaining": stats["sessions_remaining"]}, "operational": {"waiting_patients": stats["waiting_patients"], "followups_due": stats["followups_due"], "no_shows": stats["no_shows"], "low_inventory": stats["low_inventory"]}}, "meta": {"request_id": request.state.request_id}}
 
 
 def _parse_range(value: str) -> int:

@@ -20,6 +20,11 @@ def set_tenant_context(db: Session | Connection, clinic_id: UUID, user_id: UUID 
         db.execute(text("SELECT set_config('app.user_id', :user_id, true)"), {"user_id": str(user_id)})
 
 
+def apply_rls_config(db: Session | Connection, clinic_id: UUID | None, support_access_id: UUID | None = None) -> None:
+    """Lightweight RLS setup for cached session paths — no table access, just set_config."""
+    db.execute(text("SELECT set_config('app.support_access_id', :sa_id, true), set_config('app.clinic_id', :c_id, true)"), {"sa_id": str(support_access_id) if support_access_id else "", "c_id": str(clinic_id) if clinic_id else ""})
+
+
 def set_platform_context(db: Session | Connection, user_id: UUID) -> None:
     """Mark a validated platform-admin transaction without selecting a clinic."""
     db.execute(text("SELECT set_config('app.is_platform_admin', 'true', true)"))

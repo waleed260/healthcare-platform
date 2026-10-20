@@ -72,18 +72,26 @@ def _session_or_401(db: Session, session_token: str | None, require_mfa: bool = 
 
 @router.post("/login")
 def login(payload: LoginRequest, response: Response, request: Request, db: Session = Depends(get_db)) -> dict:
+    import logging
     _validate_origin(request)
     try:
         result = authenticate(db, payload.email, payload.password, request.client.host if request.client else "unknown", request.headers.get("user-agent"))
         if result.clinic_id is not None:
             set_tenant_context(db, result.clinic_id, result.user_id)
-            record_event(db, clinic_id=result.clinic_id, actor_user_id=result.user_id, action="auth.login", entity_type="session", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
+            try:
+                record_event(db, clinic_id=result.clinic_id, actor_user_id=result.user_id, action="auth.login", entity_type="session", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
+            except Exception:
+                logging.getLogger("healthcare.auth").warning("audit_record_failed_during_login request_id=%s user_id=%s", request.state.request_id, result.user_id, exc_info=True)
         _set_session_cookies(response, result.session_token, result.csrf_token, result.clinic_id)
         db.commit()
         return {"data": {"mfa_required": result.mfa_required, "mfa_enrollment_required": result.mfa_enrollment_required, "user_id": result.user_id, "display_name": result.display_name}, "meta": {"request_id": request.state.request_id}}
     except AuthenticationError as exc:
         db.rollback()
         raise _error(exc.code, "The email or password is not correct.", status.HTTP_401_UNAUTHORIZED) from exc
+    except Exception as exc:
+        logging.getLogger("healthcare.auth").exception("login_transient_failure request_id=%s", request.state.request_id)
+        db.rollback()
+        raise _error("LOGIN_UNAVAILABLE", "Login is temporarily unavailable. Please try again.", status.HTTP_503_SERVICE_UNAVAILABLE) from exc
 
 
 @router.post("/logout")
@@ -96,10 +104,14 @@ def logout(response: Response, request: Request, db: Session = Depends(get_db), 
         verify_csrf(session, csrf_token)
     except SessionError as exc:
         raise _error("CSRF_INVALID", "The CSRF token is invalid.", status.HTTP_403_FORBIDDEN) from exc
+    import logging
     revoke_session(db, session_token or "")
     if session["clinic_id"] is not None:
         set_tenant_context(db, session["clinic_id"], session["user_id"])
-        record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="auth.logout", entity_type="session", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
+        try:
+            record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="auth.logout", entity_type="session", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
+        except Exception:
+            logging.getLogger("healthcare.auth").warning("audit_record_failed_during_logout request_id=%s", request.state.request_id, exc_info=True)
     db.commit()
     _clear_session_cookies(response)
     return {"data": {"logged_out": True}, "meta": {"request_id": request.state.request_id}}

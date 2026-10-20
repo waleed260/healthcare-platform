@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import hmac
+import threading
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
+from cachetools import TTLCache
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.tenant import set_tenant_context
+from app.db.tenant import apply_rls_config, set_tenant_context
 from app.core.security import (
     encrypt_field,
     generate_recovery_codes,
@@ -23,6 +25,10 @@ from app.core.security import (
     verify_password,
     verify_totp,
 )
+
+
+_session_cache: TTLCache[str, dict] = TTLCache(maxsize=2048, ttl=30)
+_session_cache_lock = threading.Lock()
 
 
 class AuthenticationError(RuntimeError):
@@ -212,11 +218,26 @@ def _start_session(db: Session, user: dict, ip_address: str, user_agent: str | N
 
 
 def revoke_session(db: Session, session_token: str) -> None:
-    db.execute(text("UPDATE sessions SET revoked_at = :now WHERE token_hash = :token_hash"), {"now": utc_now(), "token_hash": hash_token(session_token)})
+    token_hash = hash_token(session_token)
+    db.execute(text("UPDATE sessions SET revoked_at = :now WHERE token_hash = :token_hash"), {"now": utc_now(), "token_hash": token_hash})
+    with _session_cache_lock:
+        _session_cache.pop(token_hash, None)
 
 
 def get_session(db: Session, session_token: str) -> dict:
     now = utc_now()
+    token_hash = hash_token(session_token)
+
+    with _session_cache_lock:
+        cached = _session_cache.get(token_hash)
+    if cached is not None:
+        if cached["idle_expires_at"] <= now or cached["absolute_expires_at"] <= now:
+            with _session_cache_lock:
+                _session_cache.pop(token_hash, None)
+        else:
+            apply_rls_config(db, cached.get("clinic_id"), cached.get("support_access_id"))
+            return dict(cached)
+
     session = db.execute(
         text("""
             SELECT s.id, s.user_id, s.csrf_token_hash, s.mfa_verified, s.idle_expires_at,
@@ -238,16 +259,21 @@ def get_session(db: Session, session_token: str) -> dict:
                   OR (u.is_platform_admin AND support.revoked_at IS NULL AND support.starts_at <= now() AND support.expires_at > now())
               )
         """),
-        {"token_hash": hash_token(session_token), "now": now},
+        {"token_hash": token_hash, "now": now},
     ).mappings().one_or_none()
     if session is None:
         raise SessionError()
-    idle_duration = timedelta(minutes=30) if session["clinic_id"] is None else timedelta(hours=8)
-    remaining = (session["idle_expires_at"] - now).total_seconds()
+    result = dict(session)
+    idle_duration = timedelta(minutes=30) if result["clinic_id"] is None else timedelta(hours=8)
+    remaining = (result["idle_expires_at"] - now).total_seconds()
     if remaining < idle_duration.total_seconds() * 0.5:
-        new_idle = min(now + idle_duration, session["absolute_expires_at"])
-        db.execute(text("UPDATE sessions SET last_seen_at = :now, idle_expires_at = :idle_expires_at WHERE id = :id"), {"id": session["id"], "now": now, "idle_expires_at": new_idle})
-    return dict(session)
+        new_idle = min(now + idle_duration, result["absolute_expires_at"])
+        db.execute(text("UPDATE sessions SET last_seen_at = :now, idle_expires_at = :idle_expires_at WHERE id = :id"), {"id": result["id"], "now": now, "idle_expires_at": new_idle})
+        result["idle_expires_at"] = new_idle
+
+    with _session_cache_lock:
+        _session_cache[token_hash] = dict(result)
+    return result
 
 
 def verify_csrf(session: dict, csrf_token: str) -> None:
@@ -286,6 +312,8 @@ def consume_manual_reset(db: Session, token: str, new_password: str) -> UUID:
     db.execute(text("UPDATE users SET password_hash = :password_hash, version = version + 1 WHERE id = :user_id"), {"password_hash": hash_password(new_password), "user_id": row["user_id"]})
     db.execute(text("UPDATE password_reset_tokens SET consumed_at = :now WHERE id = :id"), {"now": now, "id": row["id"]})
     db.execute(text("UPDATE sessions SET revoked_at = :now WHERE user_id = :user_id AND revoked_at IS NULL"), {"now": now, "user_id": row["user_id"]})
+    with _session_cache_lock:
+        _session_cache.clear()
     return row["user_id"]
 
 

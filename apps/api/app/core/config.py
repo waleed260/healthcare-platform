@@ -13,9 +13,9 @@ class Settings(BaseSettings):
     api_version: str = "v1"
     database_url: str = "postgresql+psycopg://healthcare_runtime:healthcare_runtime_dev@localhost:5432/healthcare"
     database_migration_url: str = ""
-    database_connect_timeout: int = Field(default=2, ge=1, le=60)
-    db_pool_size: int = Field(default=5, ge=1, le=100)
-    db_max_overflow: int = Field(default=10, ge=0, le=200)
+    database_connect_timeout: int = Field(default=5, ge=1, le=60)
+    db_pool_size: int = Field(default=10, ge=1, le=100)
+    db_max_overflow: int = Field(default=20, ge=0, le=200)
     db_pool_timeout: int = Field(default=30, ge=5, le=120)
     db_pool_recycle: int = Field(default=300, ge=60, le=3600)
     session_hmac_key: str = "local-development-session-hmac-key-change-me"

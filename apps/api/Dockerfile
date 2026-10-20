@@ -23,4 +23,4 @@ ENTRYPOINT ["scripts/docker-entrypoint.sh"]
 # Proxy headers let per-IP rate limits see the real client behind the tunnel/Vercel proxy,
 # but we only trust forwarded headers from FORWARDED_ALLOW_IPS (the proxy's IP/CIDR) so a
 # direct client cannot spoof its address. Defaults to loopback; override per deployment.
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]
+CMD ["sh", "-c", "exec gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-4} --keep-alive 65 --graceful-timeout 30 --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]

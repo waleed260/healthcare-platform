@@ -109,6 +109,19 @@ app.add_middleware(
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     started = monotonic()
+    path = request.url.path
+    if path.startswith("/api/v1/") and not path.startswith("/api/v1/public/") and not path.startswith("/api/v1/auth/login"):
+        cookie_val = request.cookies.get(settings.session_cookie_name)
+        if cookie_val:
+            from app.core.rate_limit import check_rate_limit
+            is_write = request.method not in ("GET", "HEAD", "OPTIONS")
+            retry_after = check_rate_limit(cookie_val, "global", is_write)
+            if retry_after is not None:
+                return JSONResponse(
+                    status_code=429,
+                    content={"error": {"code": "RATE_LIMITED", "message": "Too many requests. Please slow down."}},
+                    headers={"Retry-After": str(retry_after)},
+                )
     incoming_id = request.headers.get("X-Request-ID", "")
     try:
         from uuid import UUID
@@ -174,6 +187,34 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again.", "fields": None}, "meta": {"request_id": request_id}})
 
 
+
+
+@app.on_event("startup")
+def _warm_pool():
+    """Pre-create pool_size connections so first burst avoids cold-start."""
+    import logging
+    import time
+    pool_size = settings.db_pool_size
+    for attempt in range(3):
+        conns = []
+        try:
+            for _ in range(pool_size):
+                conns.append(engine.connect())
+            for c in conns:
+                c.execute(text("SELECT 1"))
+            logging.getLogger("healthcare.startup").info("connection_pool_warmed count=%d", pool_size)
+            return
+        except Exception:
+            logging.getLogger("healthcare.startup").warning("pool_warmup_attempt_%d_failed", attempt + 1)
+            if attempt < 2:
+                time.sleep(1 * (attempt + 1))
+        finally:
+            for c in conns:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+    logging.getLogger("healthcare.startup").error("pool_warmup_exhausted_retries")
 
 
 @app.get("/health/live", tags=["system"])

@@ -12,3 +12,5 @@ pyotp==2.9.0
 bleach==6.4.0
 dnspython==2.7.0
 sentry-sdk[fastapi]>=2.22,<3
+cachetools>=5.3,<6
+gunicorn>=22,<23

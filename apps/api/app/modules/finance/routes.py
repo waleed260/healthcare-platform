@@ -43,16 +43,25 @@ def cashier_summary(request: Request, day: date | None = Query(default=None, ali
     session = _authorized(db, session_token, "billing.read")
     params = {"clinic_id": session["clinic_id"], "day": day}
     tz_day = "(now() AT TIME ZONE c.timezone)::date"
-    methods = db.execute(text(f"""
-        SELECT p.method, COUNT(*) AS payments, COALESCE(SUM(p.amount_minor), 0) AS collected_minor
-        FROM payments p JOIN clinics c ON c.id = p.clinic_id
-        WHERE p.clinic_id = :clinic_id AND (p.paid_at AT TIME ZONE c.timezone)::date = COALESCE(:day, {tz_day})
-        GROUP BY p.method ORDER BY collected_minor DESC, p.method
-    """), params).mappings().all()
-    invoiced = db.execute(text(f"""
-        SELECT COUNT(*) AS invoices, COALESCE(SUM(i.total_minor), 0) AS invoiced_minor
-        FROM invoices i JOIN clinics c ON c.id = i.clinic_id
-        WHERE i.clinic_id = :clinic_id AND i.status <> 'void' AND (i.issued_at AT TIME ZONE c.timezone)::date = COALESCE(:day, {tz_day})
+    summary = db.execute(text(f"""
+        WITH resolved AS (
+            SELECT COALESCE(:day, (now() AT TIME ZONE timezone)::date) AS day FROM clinics WHERE id = :clinic_id
+        ), methods AS (
+            SELECT p.method, COUNT(*) AS payments, COALESCE(SUM(p.amount_minor), 0) AS collected_minor
+            FROM payments p JOIN clinics c ON c.id = p.clinic_id
+            WHERE p.clinic_id = :clinic_id AND (p.paid_at AT TIME ZONE c.timezone)::date = (SELECT day FROM resolved)
+            GROUP BY p.method ORDER BY collected_minor DESC, p.method
+        ), invoiced AS (
+            SELECT COUNT(*) AS invoices, COALESCE(SUM(i.total_minor), 0) AS invoiced_minor
+            FROM invoices i JOIN clinics c ON c.id = i.clinic_id
+            WHERE i.clinic_id = :clinic_id AND i.status <> 'void' AND (i.issued_at AT TIME ZONE c.timezone)::date = (SELECT day FROM resolved)
+        )
+        SELECT r.day AS resolved_day, inv.invoices, inv.invoiced_minor,
+               COALESCE(json_agg(json_build_object('method', m.method, 'payments', m.payments, 'collected_minor', m.collected_minor)) FILTER (WHERE m.method IS NOT NULL), '[]'::json) AS payment_methods,
+               COALESCE(SUM(m.collected_minor), 0) AS collected_minor
+        FROM resolved r, invoiced inv
+        LEFT JOIN methods m ON true
+        GROUP BY r.day, inv.invoices, inv.invoiced_minor
     """), params).mappings().one()
     try:
         _authorized(db, session_token, "expense.read")
@@ -61,12 +70,11 @@ def cashier_summary(request: Request, day: date | None = Query(default=None, ali
             FROM expenses e JOIN clinics c ON c.id = e.clinic_id
             WHERE e.clinic_id = :clinic_id AND e.voided_at IS NULL AND e.incurred_on = COALESCE(:day, {tz_day})
         """), params).scalar_one()
-    except HTTPException:  # expense.read is optional for cashiers
+    except HTTPException:
         spent = None
-    resolved_day = day or db.execute(text("SELECT (now() AT TIME ZONE timezone)::date FROM clinics WHERE id = :clinic_id"), params).scalar_one()
-    collected = sum(row["collected_minor"] for row in methods)
+    collected = summary["collected_minor"]
     db.commit()
-    return {"data": {"date": resolved_day.isoformat(), "payment_methods": [dict(row) for row in methods], "collected_minor": collected, "invoices": invoiced["invoices"], "invoiced_minor": invoiced["invoiced_minor"], "expenses_minor": spent, "net_minor": None if spent is None else collected - spent}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"date": summary["resolved_day"].isoformat(), "payment_methods": summary["payment_methods"], "collected_minor": collected, "invoices": summary["invoices"], "invoiced_minor": summary["invoiced_minor"], "expenses_minor": spent, "net_minor": None if spent is None else collected - spent}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/expenses")
@@ -147,18 +155,28 @@ def provider_revenue_report(request: Request, start: date = Query(), end: date =
     if end < start or (end - start).days > 366:
         raise _error("INVALID_INPUT", "Choose a range of at most one year with the end on or after the start.", status.HTTP_400_BAD_REQUEST)
     params = {"c": session["clinic_id"], "start": start, "end": end}
-    allocations = db.execute(text("""
-        SELECT pa.invoice_id, SUM(pa.amount_minor)::bigint AS amount
-        FROM payment_allocations pa JOIN payments p ON p.clinic_id = pa.clinic_id AND p.id = pa.payment_id
-        WHERE pa.clinic_id = :c AND p.paid_at >= :start AND p.paid_at < CAST(:end AS date) + 1
-        GROUP BY pa.invoice_id
+    combined = db.execute(text("""
+        WITH alloc AS (
+            SELECT pa.invoice_id, SUM(pa.amount_minor)::bigint AS amount
+            FROM payment_allocations pa JOIN payments p ON p.clinic_id = pa.clinic_id AND p.id = pa.payment_id
+            WHERE pa.clinic_id = :c AND p.paid_at >= :start AND p.paid_at < CAST(:end AS date) + 1
+            GROUP BY pa.invoice_id
+        ), lines AS (
+            SELECT il.invoice_id, il.provider_id, SUM(il.line_total_minor)::bigint AS total
+            FROM invoice_lines il
+            WHERE il.clinic_id = :c AND il.invoice_id IN (SELECT invoice_id FROM alloc)
+            GROUP BY il.invoice_id, il.provider_id
+        )
+        SELECT a.invoice_id, a.amount, l.provider_id, l.total AS line_total
+        FROM alloc a LEFT JOIN lines l ON l.invoice_id = a.invoice_id
     """), params).mappings().all()
-    invoice_ids = [row["invoice_id"] for row in allocations]
+    alloc_map: dict = {}
     line_totals: dict = {}
-    if invoice_ids:
-        for row in db.execute(text("SELECT invoice_id, provider_id, SUM(line_total_minor)::bigint AS total FROM invoice_lines WHERE clinic_id = :c AND invoice_id = ANY(:ids) GROUP BY invoice_id, provider_id"), {"c": session["clinic_id"], "ids": invoice_ids}).mappings().all():
-            line_totals.setdefault(row["invoice_id"], {})[row["provider_id"]] = row["total"]
-    revenue = provider_revenue([(row["invoice_id"], row["amount"]) for row in allocations], line_totals)
+    for row in combined:
+        alloc_map[row["invoice_id"]] = row["amount"]
+        if row["provider_id"] is not None:
+            line_totals.setdefault(row["invoice_id"], {})[row["provider_id"]] = row["line_total"]
+    revenue = provider_revenue(list(alloc_map.items()), line_totals)
     providers = {row["id"]: row for row in db.execute(text("""
         SELECT d.id, d.public_name, r.percent_bp, COALESCE(r.active, false) AS active
         FROM doctor_profiles d LEFT JOIN provider_commission_rules r ON r.clinic_id = d.clinic_id AND r.doctor_id = d.id WHERE d.clinic_id = :c

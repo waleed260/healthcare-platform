@@ -53,5 +53,15 @@ def run_session_cleanup(db: Session, clinic_id: UUID) -> int:
     total += deleted
     LOGGER.info("cleaned %d expired reset tokens", deleted)
 
+    deleted = db.execute(text("""
+        DELETE FROM public_rate_limit_buckets WHERE bucket_key IN (
+            SELECT bucket_key FROM public_rate_limit_buckets
+            WHERE window_start < now() - interval '1 hour'
+            LIMIT :batch
+        )
+    """), {"batch": BATCH_SIZE}).rowcount
+    total += deleted
+    LOGGER.info("cleaned %d stale public rate-limit buckets", deleted)
+
     db.commit()
     return total

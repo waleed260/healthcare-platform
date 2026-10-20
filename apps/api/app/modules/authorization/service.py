@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import threading
 from uuid import UUID
 
+from cachetools import TTLCache
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.authorization.permissions import validate_permission_code
+
+_permission_cache: TTLCache[tuple, bool] = TTLCache(maxsize=4096, ttl=60)
+_permission_cache_lock = threading.Lock()
 
 
 class ForbiddenError(RuntimeError):
@@ -13,6 +18,12 @@ class ForbiddenError(RuntimeError):
 
 
 def has_permission(db: Session, user_id: UUID, clinic_id: UUID, permission_code: str, branch_id: UUID | None = None) -> bool:
+    cache_key = (user_id, clinic_id, permission_code, branch_id)
+    with _permission_cache_lock:
+        cached = _permission_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     branch_clause = ""
     params: dict[str, object] = {"user_id": user_id, "clinic_id": clinic_id, "permission_code": permission_code}
     if branch_id is not None:
@@ -26,7 +37,7 @@ def has_permission(db: Session, user_id: UUID, clinic_id: UUID, permission_code:
             )
         """
         params["branch_id"] = branch_id
-    return bool(db.execute(text(f"""
+    result = bool(db.execute(text(f"""
         SELECT EXISTS (
             SELECT 1
             FROM user_roles ur
@@ -50,6 +61,10 @@ def has_permission(db: Session, user_id: UUID, clinic_id: UUID, permission_code:
             )
         )
     """), params).scalar_one())
+
+    with _permission_cache_lock:
+        _permission_cache[cache_key] = result
+    return result
 
 
 def require_permission(db: Session, user_id: UUID, clinic_id: UUID, permission_code: str, branch_id: UUID | None = None) -> None:
