@@ -23,6 +23,10 @@ from app.modules.blueprint_core.routes import billing_router, lead_router, speci
 from app.modules.clinical.routes import prescription_router, router as clinical_router
 from app.modules.packages.routes import router as packages_router
 from app.modules.inventory.routes import router as inventory_router
+from app.modules.inventory.supplier_routes import router as supplier_router
+from app.modules.inventory.warehouse_routes import router as warehouse_router
+from app.modules.inventory.purchase_routes import router as purchase_router
+from app.modules.inventory.transfer_routes import router as transfer_router
 from app.modules.identity.security_routes import router as account_security_router
 from app.modules.identity.google import router as google_auth_router
 from app.modules.clinical_tools.routes import router as clinical_tools_router
@@ -78,6 +82,10 @@ app.include_router(clinical_router)
 app.include_router(prescription_router)
 app.include_router(packages_router)
 app.include_router(inventory_router)
+app.include_router(supplier_router)
+app.include_router(warehouse_router)
+app.include_router(purchase_router)
+app.include_router(transfer_router)
 app.include_router(receipt_router)
 app.include_router(finance_router)
 app.include_router(upgrade_router)
