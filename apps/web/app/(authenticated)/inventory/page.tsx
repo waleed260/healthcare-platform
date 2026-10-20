@@ -390,6 +390,7 @@ export default function InventoryPage() {
 
   /* ── tab permission check ──────────────────────────────────────── */
   const canInventory = can("inventory.read") || can("inventory.manage");
+  const canManage = can("inventory.manage");
   const tabVisible = (t: Tab): boolean => {
     switch (t) {
       case "Suppliers": return can("supplier.read") || can("supplier.manage") || canInventory;
@@ -539,7 +540,7 @@ export default function InventoryPage() {
 
     {/* ── SUPPLIERS TAB ─────────────────────────────────────────── */}
     {tab === "Suppliers" && <>
-      {can("supplier.manage") && <div className="header-actions" style={{ marginBottom: 12 }}>
+      {(can("supplier.manage") || canManage) && <div className="header-actions" style={{ marginBottom: 12 }}>
         <button className="button button-primary" onClick={() => setShowSupplierForm((v) => !v)}>New supplier</button>
       </div>}
 
@@ -567,7 +568,7 @@ export default function InventoryPage() {
             </div>
             <div className="invoice-actions">
               <StatusBadge status={s.status} />
-              {can("supplier.manage") && <button className="text-control" disabled={busy} onClick={() => void toggleSupplierStatus(s)}>{s.status === "active" ? "Archive" : "Reactivate"}</button>}
+              {(can("supplier.manage") || canManage) && <button className="text-control" disabled={busy} onClick={() => void toggleSupplierStatus(s)}>{s.status === "active" ? "Archive" : "Reactivate"}</button>}
             </div>
           </article>)}
         </div>}
@@ -576,7 +577,7 @@ export default function InventoryPage() {
 
     {/* ── PURCHASES TAB ─────────────────────────────────────────── */}
     {tab === "Purchases" && <>
-      {can("purchase.manage") && <div className="header-actions" style={{ marginBottom: 12 }}>
+      {(can("purchase.manage") || canManage) && <div className="header-actions" style={{ marginBottom: 12 }}>
         <button className="button button-primary" onClick={() => setShowPOForm((v) => !v)}>New purchase order</button>
       </div>}
 
@@ -647,7 +648,7 @@ export default function InventoryPage() {
           </table>
 
           {/* Receive form */}
-          {(poDetail.status === "ordered" || poDetail.status === "partially_received") && can("purchase.manage") && <div style={{ marginTop: 20 }}>
+          {(poDetail.status === "ordered" || poDetail.status === "partially_received") && (can("purchase.manage") || canManage) && <div style={{ marginTop: 20 }}>
             <p className="eyebrow" style={{ marginBottom: 8 }}>RECEIVE GOODS</p>
             {poReceiveLines.map((rl, i) => {
               const line = poDetail.lines.find((l) => l.id === rl.line_id);
@@ -661,11 +662,11 @@ export default function InventoryPage() {
 
           {/* Actions */}
           <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-            {poDetail.status === "draft" && can("purchase.manage") && <>
+            {poDetail.status === "draft" && (can("purchase.manage") || canManage) && <>
               <button className="button button-primary" disabled={busy} onClick={() => void orderPO()}>Mark ordered</button>
               <button className="button button-danger" disabled={busy} onClick={() => void cancelPO()}>Cancel</button>
             </>}
-            {(poDetail.status === "ordered" || poDetail.status === "partially_received") && can("purchase.manage") && <button className="button button-danger" disabled={busy} onClick={() => void cancelPO()}>Cancel</button>}
+            {(poDetail.status === "ordered" || poDetail.status === "partially_received") && (can("purchase.manage") || canManage) && <button className="button button-danger" disabled={busy} onClick={() => void cancelPO()}>Cancel</button>}
           </div>
         </>}
       </Drawer>
@@ -673,7 +674,7 @@ export default function InventoryPage() {
 
     {/* ── WAREHOUSES TAB ────────────────────────────────────────── */}
     {tab === "Warehouses" && <>
-      {can("warehouse.manage") && <div className="header-actions" style={{ marginBottom: 12 }}>
+      {(can("warehouse.manage") || canManage) && <div className="header-actions" style={{ marginBottom: 12 }}>
         <button className="button button-primary" onClick={() => setShowWarehouseForm((v) => !v)}>New warehouse</button>
       </div>}
 
@@ -702,7 +703,7 @@ export default function InventoryPage() {
             </div>
             <div className="invoice-actions">
               <StatusBadge status={w.status} />
-              {can("warehouse.manage") && <button className="text-control" disabled={busy} onClick={() => void toggleWarehouseStatus(w)}>{w.status === "active" ? "Archive" : "Reactivate"}</button>}
+              {(can("warehouse.manage") || canManage) && <button className="text-control" disabled={busy} onClick={() => void toggleWarehouseStatus(w)}>{w.status === "active" ? "Archive" : "Reactivate"}</button>}
             </div>
           </article>)}
         </div>}
@@ -712,7 +713,7 @@ export default function InventoryPage() {
     {/* ── TRANSFERS TAB ─────────────────────────────────────────── */}
     {tab === "Transfers" && <>
       <div className="header-actions" style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        {can("transfer.manage") && <button className="button button-primary" onClick={() => setShowTFForm((v) => !v)}>New transfer</button>}
+        {(can("transfer.manage") || canManage) && <button className="button button-primary" onClick={() => setShowTFForm((v) => !v)}>New transfer</button>}
         <div className="pipeline-tabs" role="tablist" style={{ fontSize: "0.78rem" }}>
           {["all", "created", "handover_for_transit", "received", "cancelled"].map((s) => <button key={s} role="tab" aria-selected={tfStatusFilter === s} className={tfStatusFilter === s ? "active" : ""} onClick={() => setTFStatusFilter(s)}>{s === "all" ? "All" : label(s)}</button>)}
         </div>
@@ -804,7 +805,7 @@ export default function InventoryPage() {
           </div>
 
           {/* CREATED: Handover form */}
-          {tfDetail.status === "created" && can("transfer.manage") && <div className="no-print" style={{ marginTop: 20 }}>
+          {tfDetail.status === "created" && (can("transfer.manage") || canManage) && <div className="no-print" style={{ marginTop: 20 }}>
             <p className="eyebrow" style={{ marginBottom: 8 }}>HANDOVER TO DRIVER</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
               <label style={{ flex: 1, minWidth: 140 }}>Driver name<input required value={handoverName} onChange={(e) => setHandoverName(e.target.value)} placeholder="Rider name" /></label>
@@ -814,7 +815,7 @@ export default function InventoryPage() {
           </div>}
 
           {/* HANDOVER_FOR_TRANSIT: Receiving checklist */}
-          {tfDetail.status === "handover_for_transit" && can("transfer.manage") && <div className="no-print" style={{ marginTop: 20 }}>
+          {tfDetail.status === "handover_for_transit" && (can("transfer.manage") || canManage) && <div className="no-print" style={{ marginTop: 20 }}>
             <p className="eyebrow" style={{ marginBottom: 8 }}>RECEIVING CHECKLIST</p>
             {receiveLines.map((rl, i) => {
               const line = tfDetail.lines.find((l) => l.id === rl.line_id);
@@ -831,7 +832,7 @@ export default function InventoryPage() {
           {/* Cancel + Print */}
           <div className="no-print" style={{ marginTop: 16, display: "flex", gap: 8 }}>
             <button className="button button-secondary" onClick={printTransfer}>Print form</button>
-            {tfDetail.status !== "received" && tfDetail.status !== "cancelled" && can("transfer.manage") && <button className="button button-danger" disabled={busy} onClick={() => void cancelTransfer()}>Cancel transfer</button>}
+            {tfDetail.status !== "received" && tfDetail.status !== "cancelled" && (can("transfer.manage") || canManage) && <button className="button button-danger" disabled={busy} onClick={() => void cancelTransfer()}>Cancel transfer</button>}
           </div>
         </div>}
       </Drawer>
