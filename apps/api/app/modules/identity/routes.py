@@ -275,6 +275,20 @@ def manual_invite_consume(payload: InvitationConsumeRequest, request: Request, d
         if clinic_id is not None:
             set_tenant_context(db, clinic_id, user_id)
             record_event(db, clinic_id=clinic_id, actor_user_id=user_id, action="auth.invitation_consume", entity_type="user", entity_id=user_id, outcome="success", request_id=UUID(request.state.request_id))
+            invite_row = db.execute(text("""
+                SELECT si.invited_by, u.display_name AS new_user_name
+                FROM staff_invitations si
+                JOIN users u ON u.id = :user_id
+                WHERE si.clinic_id = :clinic_id
+                  AND si.intended_normalized_email = u.normalized_email
+                  AND si.consumed_at IS NOT NULL
+                ORDER BY si.consumed_at DESC LIMIT 1
+            """), {"clinic_id": clinic_id, "user_id": user_id}).mappings().one_or_none()
+            if invite_row and invite_row["invited_by"]:
+                db.execute(text("""
+                    INSERT INTO notifications (clinic_id, user_id, kind, title, body)
+                    VALUES (:clinic_id, :user_id, 'staff.invitation_accepted', 'New team member joined', :body)
+                """), {"clinic_id": clinic_id, "user_id": invite_row["invited_by"], "body": f"{invite_row['new_user_name']} has accepted the invitation and created their account."})
         db.commit()
         return {"data": {"user_id": user_id, "activated": True}, "meta": {"request_id": request.state.request_id}}
     except (TokenError, AuthenticationError) as exc:

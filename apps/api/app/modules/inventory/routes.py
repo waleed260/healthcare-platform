@@ -13,7 +13,7 @@ from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
-from app.modules.inventory.schemas import InventoryAdjustmentCreate, InventoryProductCreate, InventoryProductUpdate, InventoryStatusUpdate
+from app.modules.inventory.schemas import InventoryAdjustmentCreate, InventoryCategoryCreate, InventoryCategoryUpdate, InventoryProductCreate, InventoryProductUpdate, InventoryStatusUpdate
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 
@@ -50,7 +50,8 @@ def product_list(request: Request, cursor: str | None = Query(default=None, max_
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
     rows = db.execute(text("""
-        SELECT id, sku, name, product_type, unit, minimum_stock, status, version, created_at, updated_at
+        SELECT id, sku, name, product_type, unit, minimum_stock, status, version, created_at, updated_at,
+               category_id, cost_minor, selling_price_minor, currency, tax_inclusive
         FROM inventory_products
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (:after_name IS NULL OR name > :after_name OR (name = :after_name AND id > CAST(:after_id AS uuid)))
@@ -67,9 +68,9 @@ def product_create(payload: InventoryProductCreate, request: Request, db: Sessio
     session = _write_authorized(db, request, session_token, "inventory.manage", csrf_token)
     try:
         row = db.execute(text("""
-            INSERT INTO inventory_products (clinic_id, sku, name, product_type, unit, minimum_stock)
-            VALUES (:clinic_id, :sku, :name, :product_type, :unit, :minimum_stock)
-            RETURNING id, sku, name, product_type, unit, minimum_stock, status, version, created_at
+            INSERT INTO inventory_products (clinic_id, sku, name, product_type, unit, minimum_stock, category_id, cost_minor, selling_price_minor, currency, tax_inclusive)
+            VALUES (:clinic_id, :sku, :name, :product_type, :unit, :minimum_stock, :category_id, :cost_minor, :selling_price_minor, :currency, :tax_inclusive)
+            RETURNING id, sku, name, product_type, unit, minimum_stock, status, version, created_at, category_id, cost_minor, selling_price_minor, currency, tax_inclusive
         """), {"clinic_id": session["clinic_id"], **payload.model_dump()}).mappings().one()
     except Exception as exc:
         db.rollback()
@@ -89,7 +90,7 @@ def product_update(product_id: UUID, payload: InventoryProductUpdate, request: R
         raise _error("INVALID_INPUT", "At least one product field must be provided.", status.HTTP_400_BAD_REQUEST)
     assignments = ", ".join(f"{field} = :{field}" for field in values)
     try:
-        row = db.execute(text(f"UPDATE inventory_products SET {assignments}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL AND version = :expected_version RETURNING id, sku, name, product_type, unit, minimum_stock, status, version, updated_at"), {"clinic_id": session["clinic_id"], "id": product_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
+        row = db.execute(text(f"UPDATE inventory_products SET {assignments}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL AND version = :expected_version RETURNING id, sku, name, product_type, unit, minimum_stock, status, version, updated_at, category_id, cost_minor, selling_price_minor, currency, tax_inclusive"), {"clinic_id": session["clinic_id"], "id": product_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
     except Exception as exc:
         db.rollback()
         if "uq_inventory_products_sku" in str(exc):
@@ -118,7 +119,7 @@ def stock_list(request: Request, branch_id: UUID | None = Query(default=None), l
     session = _authorized(db, session_token, "inventory.read", branch_id=branch_id)
     rows = db.execute(text("""
         SELECT stock.id, stock.branch_id, b.name AS branch_name, stock.product_id, p.name AS product_name,
-               p.product_type, p.unit, p.minimum_stock, stock.quantity, stock.version, stock.updated_at,
+               p.product_type, p.unit, p.minimum_stock, p.category_id, stock.quantity, stock.version, stock.updated_at,
                (stock.quantity <= p.minimum_stock) AS low_stock
         FROM inventory_stock stock
         JOIN inventory_products p ON p.clinic_id = stock.clinic_id AND p.id = stock.product_id
@@ -136,7 +137,7 @@ def stock_list(request: Request, branch_id: UUID | None = Query(default=None), l
 
 @router.post("/adjustments", status_code=status.HTTP_201_CREATED)
 def stock_adjust(payload: InventoryAdjustmentCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
-    session = _write_authorized(db, request, "inventory.manage", csrf_token, branch_id=payload.branch_id)
+    session = _write_authorized(db, request, session_token, "inventory.manage", csrf_token, branch_id=payload.branch_id)
     product = db.execute(text("SELECT id FROM inventory_products WHERE clinic_id = :clinic_id AND id = :product_id AND status = 'active' AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "product_id": payload.product_id}).scalar_one_or_none()
     if product is None:
         raise _error("NOT_FOUND", "Inventory product not found.", status.HTTP_404_NOT_FOUND)
@@ -156,3 +157,62 @@ def stock_adjust(payload: InventoryAdjustmentCreate, request: Request, db: Sessi
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="inventory.stock.adjust", entity_type="inventory_adjustment", entity_id=adjustment["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"branch_id": str(payload.branch_id), "product_id": str(payload.product_id), "delta": str(payload.delta), "new_quantity": str(new_quantity)})
     db.commit()
     return {"data": {**dict(adjustment), "stock_id": stock_id, "quantity": new_quantity}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/categories")
+def category_list(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "inventory.read")
+    rows = db.execute(text("SELECT id, name, slug, display_order, created_at FROM inventory_categories WHERE clinic_id = :clinic_id ORDER BY display_order, name"), {"clinic_id": session["clinic_id"]}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/categories", status_code=status.HTTP_201_CREATED)
+def category_create(payload: InventoryCategoryCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "inventory.manage", csrf_token)
+    try:
+        row = db.execute(text("""
+            INSERT INTO inventory_categories (clinic_id, name, slug, display_order)
+            VALUES (:clinic_id, :name, :slug, :display_order)
+            RETURNING id, name, slug, display_order, created_at
+        """), {"clinic_id": session["clinic_id"], **payload.model_dump()}).mappings().one()
+    except Exception as exc:
+        db.rollback()
+        if "uq_inventory_categories_slug" in str(exc):
+            raise _error("DUPLICATE", "A category with this slug already exists.", status.HTTP_409_CONFLICT) from exc
+        raise
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="inventory.category.create", entity_type="inventory_category", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.patch("/categories/{category_id}")
+def category_update(category_id: UUID, payload: InventoryCategoryUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "inventory.manage", csrf_token)
+    values = payload.model_dump(exclude_unset=True)
+    if not values:
+        raise _error("INVALID_INPUT", "At least one field must be provided.", status.HTTP_400_BAD_REQUEST)
+    assignments = ", ".join(f"{field} = :{field}" for field in values)
+    try:
+        row = db.execute(text(f"UPDATE inventory_categories SET {assignments} WHERE clinic_id = :clinic_id AND id = :id RETURNING id, name, slug, display_order, created_at"), {"clinic_id": session["clinic_id"], "id": category_id, **values}).mappings().one_or_none()
+    except Exception as exc:
+        db.rollback()
+        if "uq_inventory_categories_slug" in str(exc):
+            raise _error("DUPLICATE", "A category with this slug already exists.", status.HTTP_409_CONFLICT) from exc
+        raise
+    if row is None:
+        raise _error("NOT_FOUND", "Category not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="inventory.category.update", entity_type="inventory_category", entity_id=category_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.delete("/categories/{category_id}")
+def category_delete(category_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "inventory.manage", csrf_token)
+    row = db.execute(text("DELETE FROM inventory_categories WHERE clinic_id = :clinic_id AND id = :id RETURNING id"), {"clinic_id": session["clinic_id"], "id": category_id}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Category not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="inventory.category.delete", entity_type="inventory_category", entity_id=category_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": {"id": category_id, "deleted": True}, "meta": {"request_id": request.state.request_id}}

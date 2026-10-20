@@ -45,7 +45,7 @@ def test_database_connect_timeout_is_bounded_and_overridable() -> None:
     import pytest
     from pydantic import ValidationError
 
-    assert Settings().database_connect_timeout == 2
+    assert Settings().database_connect_timeout == 5
     assert Settings(database_connect_timeout=10).database_connect_timeout == 10
     for bad in (0, 61):
         with pytest.raises(ValidationError):

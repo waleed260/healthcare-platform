@@ -150,9 +150,41 @@ def create_invitation(payload: StaffInvitationCreate, request: Request, db: Sess
     except ForbiddenError as exc:
         raise _error("FORBIDDEN", "You do not have permission to invite staff.", status.HTTP_403_FORBIDDEN) from exc
     token = create_staff_invitation(db, session["clinic_id"], session["user_id"], payload.email)
+    db.execute(text("""
+        INSERT INTO notifications (clinic_id, user_id, kind, title, body)
+        VALUES (:clinic_id, :user_id, 'staff.invitation_sent', 'Staff invitation sent', :body)
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "body": f"An invitation has been sent to {payload.email}."})
     db.commit()
     setup_url = f"{get_settings().public_app_url.rstrip('/')}/setup/staff?token={token}"
     return {"data": {"setup_url": setup_url, "expires_in_seconds": 24 * 60 * 60}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/invitations")
+def invitation_list(request: Request, limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _session_or_401(db, session_token)
+    if session["clinic_id"] is None:
+        raise _error("FORBIDDEN", "A clinic context is required.", status.HTTP_403_FORBIDDEN)
+    set_tenant_context(db, session["clinic_id"], session["user_id"])
+    try:
+        require_permission(db, session["user_id"], session["clinic_id"], "staff.manage")
+    except ForbiddenError as exc:
+        raise _error("FORBIDDEN", "You do not have permission to view invitations.", status.HTTP_403_FORBIDDEN) from exc
+    rows = db.execute(text("""
+        SELECT id, intended_normalized_email AS email,
+               CASE
+                   WHEN consumed_at IS NOT NULL THEN 'consumed'
+                   WHEN revoked_at IS NOT NULL THEN 'revoked'
+                   WHEN expires_at <= now() THEN 'expired'
+                   ELSE 'pending'
+               END AS status,
+               created_at
+        FROM staff_invitations
+        WHERE clinic_id = :clinic_id
+        ORDER BY created_at DESC
+        LIMIT :limit
+    """), {"clinic_id": session["clinic_id"], "limit": limit}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
 
 def _authorized(db: Session, session_token: str | None, permission: str) -> dict:
