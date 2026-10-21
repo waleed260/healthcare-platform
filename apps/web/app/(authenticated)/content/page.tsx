@@ -48,14 +48,22 @@ export default function ContentPage() {
     try {
       const session = await api<Session>("/api/v1/auth/me");
       setPermissions(session.permissions ?? []);
-      const [formRows, postRows, testimonialRows, sites] = await Promise.all([
+      const results = await Promise.allSettled([
         api<Form[]>("/api/v1/website-content/forms"), api<Post[]>("/api/v1/website-content/posts"),
         api<Testimonial[]>("/api/v1/website-content/testimonials"), api<Website[]>("/api/v1/websites"),
       ]);
-      setForms(Array.isArray(formRows) ? formRows : []); setPosts(Array.isArray(postRows) ? postRows : []); setTestimonials(Array.isArray(testimonialRows) ? testimonialRows : []);
+      const val = <T,>(r: PromiseSettledResult<T | null>, fallback: T): T => r.status === "fulfilled" ? (r.value ?? fallback) : fallback;
+      setForms(val(results[0], []) as Form[]); setPosts(val(results[1], []) as Post[]); setTestimonials(val(results[2], []) as Testimonial[]);
+      const sites = val(results[3], []) as Website[];
       const first = Array.isArray(sites) ? sites[0] ?? null : null;
       setWebsite(first);
       setPages(first ? (await api<Page[]>(`/api/v1/websites/${first.id}/pages?limit=100`)) ?? [] : []);
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length === results.length) {
+        setError(errorMessage((failed[0] as PromiseRejectedResult).reason, "Content could not be loaded."));
+      } else if (failed.length > 0) {
+        setError(`${failed.length} of ${results.length} content sections could not be loaded.`);
+      }
     } catch (reason) { setError(errorMessage(reason, "Content could not be loaded.")); }
   }, []);
   useEffect(() => { void load(); }, [load]);

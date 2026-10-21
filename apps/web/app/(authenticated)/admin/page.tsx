@@ -5,6 +5,7 @@ import { api, errorMessage, label, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import Drawer from "../_lib/drawer";
+import PlatformOverview from "./platform-overview";
 
 type Clinic = { id: string; name: string; slug: string; status: string; timezone: string; locale: string; version: number; created_at: string; updated_at: string; subscription_status: string | null; renewal_at: string | null; subscription_ends_at: string | null; plan_name: string | null; plan_code: string | null };
 type Metrics = { http: Record<string, unknown>; database_pool: { size: number; checked_out: number; overflow: number }; background_jobs: { queued: number; running: number; failed: number; oldest_queued_at: string | null }; telemetry: { appointments: Record<string, number>; booking: Record<string, number | null>; scan_backlog: number; storage_failures: number; publish_failures: number }; billing: Record<string, number> };
@@ -14,7 +15,7 @@ type Plan = { id: string; code: string; name: string; active: boolean; created_a
 type Announcement = { id: string; title: string; body: string; severity: string; starts_at: string; ends_at: string | null; created_at: string };
 type Session = { is_platform_admin?: boolean };
 
-type Tab = "clinics" | "metrics" | "support" | "audit" | "plans" | "announcements";
+type Tab = "clinics" | "metrics" | "support" | "audit" | "plans" | "announcements" | "business";
 
 function date(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -162,6 +163,7 @@ export default function AdminPage() {
     { key: "audit", label: "Audit", count: audit.length },
     { key: "plans", label: "Plans", count: plans.length },
     { key: "announcements", label: "Announcements", count: announcements.length },
+    { key: "business", label: "Business" },
   ];
   return <main className="workspace-page admin-page">
     <div className="workspace-page-header">
@@ -383,6 +385,8 @@ export default function AdminPage() {
             </article>)}
           </div>}
       </section>}
+
+      {tab === "business" && <PlatformOverview />}
 
       {/* Clinic detail drawer */}
       <Drawer open={!!clinicDrawer} onClose={() => setClinicDrawer(null)} title={clinicDrawer?.name ?? ""} subtitle={clinicDrawer?.slug}>

@@ -144,6 +144,7 @@ class PostCreate(BaseModel):
     body: str = Field(default="", max_length=50000)
     seo_title: str | None = Field(default=None, max_length=160)
     seo_description: str | None = Field(default=None, max_length=320)
+    canonical_url: str | None = Field(default=None, max_length=500)
 
 
 class PostUpdate(BaseModel):
@@ -156,6 +157,7 @@ class PostUpdate(BaseModel):
     body: str | None = Field(default=None, max_length=50000)
     seo_title: str | None = Field(default=None, max_length=160)
     seo_description: str | None = Field(default=None, max_length=320)
+    canonical_url: str | None = Field(default=None, max_length=500)
 
 
 class PostStatus(BaseModel):
@@ -172,6 +174,8 @@ class TestimonialCreate(BaseModel):
     author_name: str = Field(min_length=1, max_length=120)
     rating: int = Field(ge=1, le=5)
     body: str = Field(min_length=1, max_length=1500)
+    display_name: Literal["full", "initials", "anonymous"] = "full"
+    show_rating: bool = True
     consent_confirmed: bool
 
 

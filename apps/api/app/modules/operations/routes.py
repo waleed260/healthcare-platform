@@ -376,11 +376,16 @@ def analytics_top_services(request: Request, range: str = Query(default="30d", a
     rows = db.execute(text("""
         SELECT s.name,
                COUNT(DISTINCT a.id) AS count,
-               COALESCE(SUM(il.line_total_minor), 0)::bigint AS revenue_minor
+               COALESCE((
+                   SELECT SUM(il.line_total_minor)
+                   FROM invoice_lines il
+                   JOIN invoices i ON i.clinic_id = il.clinic_id AND i.id = il.invoice_id
+                   WHERE il.clinic_id = s.clinic_id AND il.service_id = s.id
+                     AND i.status NOT IN ('void', 'refunded')
+                     AND i.issued_at >= now() - (:days * INTERVAL '1 day')
+               ), 0)::bigint AS revenue_minor
         FROM services s
         JOIN appointments a ON a.clinic_id = s.clinic_id AND a.service_id = s.id
-        LEFT JOIN invoices i ON i.clinic_id = a.clinic_id AND i.appointment_id = a.id AND i.status NOT IN ('void', 'refunded')
-        LEFT JOIN invoice_lines il ON il.clinic_id = i.clinic_id AND il.invoice_id = i.id
         WHERE s.clinic_id = :clinic_id AND a.archived_at IS NULL
           AND a.starts_at >= now() - (:days * INTERVAL '1 day')
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes sc WHERE sc.clinic_id = :clinic_id AND sc.user_id = :user_id)

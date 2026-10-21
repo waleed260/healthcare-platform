@@ -151,7 +151,7 @@ def public_form_submit(clinic_slug: str, form_id: UUID, payload: FormSubmission,
 
 
 # ---------------------------------------------------------------- blog
-_POST_COLUMNS = "id, slug, title, excerpt, body, status, published_at, seo_title, seo_description, version, created_at, updated_at"
+_POST_COLUMNS = "id, slug, title, excerpt, body, status, published_at, seo_title, seo_description, canonical_url, version, created_at, updated_at"
 
 
 @router.get("/posts")
@@ -167,8 +167,8 @@ def post_create(payload: PostCreate, request: Request, db: Session = Depends(get
     session = _write(request, db, session_token, csrf_token)
     try:
         row = db.execute(text(f"""
-            INSERT INTO website_posts (clinic_id, slug, title, excerpt, body, seo_title, seo_description, author_user_id)
-            VALUES (:c, :slug, :title, :excerpt, :body, :seo_title, :seo_description, :user) RETURNING {_POST_COLUMNS}
+            INSERT INTO website_posts (clinic_id, slug, title, excerpt, body, seo_title, seo_description, canonical_url, author_user_id)
+            VALUES (:c, :slug, :title, :excerpt, :body, :seo_title, :seo_description, :canonical_url, :user) RETURNING {_POST_COLUMNS}
         """), {"c": session["clinic_id"], "user": session["user_id"], **payload.model_dump() | {"body": sanitize_rich_text(payload.body)}}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
@@ -236,7 +236,7 @@ def public_post(clinic_slug: str, post_slug: str, request: Request, db: Session 
 
 
 # ---------------------------------------------------------------- testimonials
-_TESTIMONIAL_COLUMNS = "id, author_name, rating, body, source, consent_confirmed, status, moderated_at, version, created_at"
+_TESTIMONIAL_COLUMNS = "id, author_name, rating, body, source, display_name, show_rating, consent_confirmed, status, moderated_at, version, created_at"
 
 
 @router.get("/testimonials")
@@ -252,7 +252,7 @@ def testimonial_create(payload: TestimonialCreate, request: Request, db: Session
     session = _write(request, db, session_token, csrf_token)
     if not payload.consent_confirmed:
         raise _error("CONSENT_REQUIRED", "Confirm the author consented to publishing this testimonial.", status.HTTP_400_BAD_REQUEST)
-    row = db.execute(text(f"INSERT INTO website_testimonials (clinic_id, author_name, rating, body, consent_confirmed) VALUES (:c, :author_name, :rating, :body, true) RETURNING {_TESTIMONIAL_COLUMNS}"), {"c": session["clinic_id"], **payload.model_dump(exclude={"consent_confirmed"})}).mappings().one()
+    row = db.execute(text(f"INSERT INTO website_testimonials (clinic_id, author_name, rating, body, display_name, show_rating, consent_confirmed) VALUES (:c, :author_name, :rating, :body, :display_name, :show_rating, true) RETURNING {_TESTIMONIAL_COLUMNS}"), {"c": session["clinic_id"], **payload.model_dump(exclude={"consent_confirmed"})}).mappings().one()
     _audit(db, session, request, "website.testimonial.create", "website_testimonial", row["id"])
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}

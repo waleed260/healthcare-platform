@@ -396,12 +396,12 @@ export default function ManagePage() {
       <div className="invoice-list">{roles.map((role) => <article className="invoice-row" key={role.id} style={{ cursor: "pointer" }} onClick={() => setRoleDetail(roleDetail?.id === role.id ? null : role)}>
         <div className="invoice-mark">{role.name.slice(0, 2).toUpperCase()}</div>
         <div className="invoice-main">
-          <h3>{label(role.name)}{role.is_system ? <span style={{ fontSize: "0.7rem", color: "var(--text-muted, #6b7280)", marginLeft: 8 }}>System role</span> : <span style={{ fontSize: "0.7rem", color: "var(--accent)", marginLeft: 8 }}>Custom</span>}</h3>
+          <h3>{label(role.name)}{role.is_system ? <span style={{ fontSize: "0.7rem", color: "var(--muted)", marginLeft: 8 }}>System role</span> : <span style={{ fontSize: "0.7rem", color: "var(--leaf)", marginLeft: 8 }}>Custom</span>}</h3>
           <p>{role.permissions.length} permissions</p>
-          {roleDetail?.id === role.id && <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--border-subtle, #e5e5e3)" }}>
+          {roleDetail?.id === role.id && <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--line)" }}>
             <p className="eyebrow" style={{ fontSize: "0.65rem", marginBottom: 8 }}>PERMISSIONS</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {role.permissions.map((p) => <span key={p.code} style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: 4, background: "var(--surface-2, #f0f0ee)", fontFamily: "var(--font-mono, monospace)" }}>{p.code}</span>)}
+              {role.permissions.map((p) => <span key={p.code} className="tag-pill" style={{ fontFamily: "'DM Mono', monospace", fontSize: "0.72rem" }}>{p.code}</span>)}
             </div>
             {can("staff.manage") && <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button className="button button-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setEditRole(role); setRoleDrawer(true); }}>Edit permissions</button>
@@ -494,8 +494,8 @@ export default function ManagePage() {
     </section>}
 
     {/* ═══ SERVICE DRAWER ═══ */}
-    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"}>
-      <form className="manage-form" onSubmit={handleServiceSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG" footer={<><button className="button button-secondary" type="button" onClick={() => { setServiceDrawer(false); setEditService(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="service-form" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button></>}>
+      <form className="drawer-form" id="service-form" onSubmit={handleServiceSubmit}>
         <label>Name<input name="name" required maxLength={160} placeholder="HydraFacial" defaultValue={editService?.name ?? ""} key={editService?.id ?? "new"} /></label>
         <label>Category <span className="field-optional">optional</span>
           <select name="category" defaultValue={editService?.category ?? ""} key={`cat-${editService?.id ?? "new"}`}>
@@ -504,27 +504,26 @@ export default function ManagePage() {
           </select>
         </label>
         <label>Short description <span className="field-optional">optional</span><input name="short_description" maxLength={500} placeholder="Brief description for listings" defaultValue={editService?.short_description ?? ""} key={`desc-${editService?.id ?? "new"}`} /></label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        <div className="drawer-form-row drawer-form-row-3">
           <label>Duration (min)<input name="duration" type="number" min={5} max={1440} defaultValue={editService?.duration_minutes ?? 30} required key={`dur-${editService?.id ?? "new"}`} /></label>
           <label>Buffer before<input name="buffer_before" type="number" min={0} max={240} defaultValue={editService?.buffer_before_minutes ?? 0} key={`bb-${editService?.id ?? "new"}`} /></label>
           <label>Buffer after<input name="buffer_after" type="number" min={0} max={240} defaultValue={editService?.buffer_after_minutes ?? 0} key={`ba-${editService?.id ?? "new"}`} /></label>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="drawer-form-row drawer-form-row-2">
           <label>Pricing<select name="price_mode" defaultValue={editService?.price_mode ?? "exact"} key={`pm-${editService?.id ?? "new"}`}><option value="exact">Exact price</option><option value="starting_at">Starting at</option><option value="range">Range</option><option value="contact">Contact for price</option></select></label>
           <label>Price (PKR)<input name="amount" type="number" min={0} step="0.01" defaultValue={editService?.amount_minor != null ? editService.amount_minor / 100 : 0} key={`amt-${editService?.id ?? "new"}`} /></label>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="drawer-form-row drawer-form-row-2">
           <label>Approval<select name="approval_mode" defaultValue={editService?.approval_mode ?? "staff_approval"} key={`ap-${editService?.id ?? "new"}`}><option value="instant">Instant booking</option><option value="staff_approval">Staff approval</option></select></label>
           <label>Website<select name="visibility" defaultValue={editService?.visibility ?? "public"} key={`vis-${editService?.id ?? "new"}`}><option value="public">Visible</option><option value="hidden">Hidden</option></select></label>
         </div>
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"}<span>↗</span></button></div>
       </form>
     </Drawer>
 
     {/* ═══ IMPORT DRAWER ═══ */}
-    <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog">
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {templates.length === 0 && <p style={{ color: "var(--text-muted, #6b7280)", fontSize: "0.85rem" }}>No templates available in the master catalog, or you've imported them all.</p>}
+    <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES">
+      <div className="drawer-form">
+        {templates.length === 0 && <p className="drawer-note">No templates available in the master catalog, or you&#39;ve imported them all.</p>}
         {templates.map((t) => <article className="invoice-row" key={t.id} style={{ cursor: "pointer" }} onClick={() => importTemplate(t)}>
           <div className="invoice-mark">{t.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
@@ -537,20 +536,18 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ STAFF INVITE DRAWER ═══ */}
-    <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member">
-      <form className="manage-form" onSubmit={handleInvite} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION" footer={<><button className="button button-secondary" type="button" onClick={() => setStaffDrawer(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="invite-form" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button></>}>
+      <form className="drawer-form" id="invite-form" onSubmit={handleInvite}>
         <label>Email<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
-        <p style={{ fontSize: "0.82rem", color: "var(--text-muted, #6b7280)" }}>Roles and branch scopes can be assigned after the staff member accepts the invitation.</p>
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Sending…" : "Send invitation"}<span>↗</span></button></div>
+        <p className="drawer-note">Roles and branch scopes can be assigned after the staff member accepts the invitation.</p>
       </form>
     </Drawer>
 
     {/* ═══ ROLE DRAWER ═══ */}
-    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"}>
+    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"} subtitle="ACCESS CONTROL" footer={<><button className="button button-secondary" type="button" onClick={() => { setRoleDrawer(false); setEditRole(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="role-form" disabled={busy}>{busy ? "Saving…" : editRole ? "Update role" : "Create role"} <span>→</span></button></>}>
       <RoleEditor
         role={editRole}
         allPermissions={allPermissions}
-        busy={busy}
         onSave={(name, perms) => {
           if (editRole) {
             const body: Record<string, unknown> = { permissions: perms };
@@ -570,26 +567,26 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ STAFF DETAIL DRAWER ═══ */}
-    <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"}>
-      {staffDetail && <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"} subtitle="TEAM MEMBER" footer={can("staff.manage") ? <><button className="button button-secondary" type="button" onClick={() => setStaffDetail(null)}>Close</button><button className="button button-secondary" disabled={busy} onClick={() => { if (staffDetail) void resetStaffPassword(staffDetail); }}>Reset password</button></> : undefined}>
+      {staffDetail && <div className="drawer-form staff-info">
         <div>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-muted, #6b7280)" }}>{staffDetail.normalized_email}</p>
+          <p className="drawer-note">{staffDetail.normalized_email}</p>
           <span className={`pipeline-status status-${staffDetail.status === "active" ? "paid" : "void"}`}>{staffDetail.status}</span>
         </div>
 
         <div>
-          <p className="eyebrow" style={{ fontSize: "0.68rem", margin: "0 0 8px" }}>ASSIGNED ROLES</p>
-          {currentUserId && staffDetail.id === currentUserId && <small style={{ color: "var(--text-muted, #6b7280)", display: "block", marginBottom: 8 }}>You cannot modify your own roles.</small>}
+          <p className="section-label">ASSIGNED ROLES</p>
+          {currentUserId && staffDetail.id === currentUserId && <p className="drawer-note">You cannot modify your own roles.</p>}
           {(staffDetail.roles ?? []).length === 0
-            ? <small style={{ color: "var(--text-muted, #6b7280)" }}>No roles assigned</small>
+            ? <p className="drawer-note">No roles assigned</p>
             : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {(staffDetail.roles ?? []).map((r) => <span key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.78rem", padding: "3px 10px", borderRadius: 6, background: "var(--surface-2, #f0f0ee)" }}>
+              {(staffDetail.roles ?? []).map((r) => <span key={r.id} className="tag-pill">
                 {label(r.name)}
-                {can("staff.manage") && staffDetail.id !== currentUserId && <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red, #b91c1c)", fontWeight: 700, fontSize: "0.85rem", padding: 0, lineHeight: 1 }} disabled={busy} onClick={(e) => { e.stopPropagation(); void removeRole(staffDetail.id, r.id); }} title="Remove role">×</button>}
+                {can("staff.manage") && staffDetail.id !== currentUserId && <button className="tag-pill-remove" disabled={busy} onClick={(e) => { e.stopPropagation(); void removeRole(staffDetail.id, r.id); }} title="Remove role">×</button>}
               </span>)}
             </div>}
           {can("staff.manage") && staffDetail.id !== currentUserId && <div style={{ marginTop: 8 }}>
-            <select style={{ fontSize: "0.82rem", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-subtle, #e5e5e3)" }} onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
+            <select className="staff-scope-select" onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add role…</option>
               {roles.filter((r) => !(staffDetail.roles ?? []).some((ur) => ur.id === r.id)).map((r) => <option key={r.id} value={r.id}>{label(r.name)}</option>)}
             </select>
@@ -597,27 +594,23 @@ export default function ManagePage() {
         </div>
 
         <div>
-          <p className="eyebrow" style={{ fontSize: "0.68rem", margin: "0 0 8px" }}>BRANCH SCOPES</p>
-          <small style={{ color: "var(--text-muted, #6b7280)", display: "block", marginBottom: 6 }}>Restrict this user to specific branches. No scopes = access to all branches.</small>
+          <p className="section-label">BRANCH SCOPES</p>
+          <p className="drawer-note">Restrict this user to specific branches. No scopes = access to all branches.</p>
           {(staffDetail.branch_scopes ?? []).length === 0
-            ? <small style={{ color: "var(--text-muted, #6b7280)" }}>All branches (no restrictions)</small>
+            ? <p className="drawer-note">All branches (no restrictions)</p>
             : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {(staffDetail.branch_scopes ?? []).map((b) => <span key={b.id} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.78rem", padding: "3px 10px", borderRadius: 6, background: "var(--surface-2, #f0f0ee)" }}>
+              {(staffDetail.branch_scopes ?? []).map((b) => <span key={b.id} className="tag-pill">
                 {b.name}
-                {can("staff.manage") && <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--red, #b91c1c)", fontWeight: 700, fontSize: "0.85rem", padding: 0, lineHeight: 1 }} disabled={busy} onClick={(e) => { e.stopPropagation(); void removeBranchScope(staffDetail.id, b.id); }} title="Remove scope">×</button>}
+                {can("staff.manage") && <button className="tag-pill-remove" disabled={busy} onClick={(e) => { e.stopPropagation(); void removeBranchScope(staffDetail.id, b.id); }} title="Remove scope">×</button>}
               </span>)}
             </div>}
           {can("staff.manage") && <div style={{ marginTop: 8 }}>
-            <select style={{ fontSize: "0.82rem", padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-subtle, #e5e5e3)" }} onChange={(e) => { if (e.target.value) { void assignBranchScope(staffDetail.id, e.target.value); e.target.value = ""; } }}>
+            <select className="staff-scope-select" onChange={(e) => { if (e.target.value) { void assignBranchScope(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add branch scope…</option>
               {branches.filter((b) => !(staffDetail.branch_scopes ?? []).some((bs) => bs.id === b.id)).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>}
         </div>
-
-        {can("staff.manage") && <div style={{ paddingTop: 12, borderTop: "1px dashed var(--border-subtle, #e5e5e3)" }}>
-          <button className="button button-secondary" disabled={busy} onClick={() => void resetStaffPassword(staffDetail)}>Reset password</button>
-        </div>}
       </div>}
     </Drawer>
   </main>;
@@ -646,7 +639,14 @@ function BranchesTab({ branches, loading, busy, can, run, field }: {
 
   return <section className="surface-card">
     <div className="surface-card-heading"><div><p className="eyebrow">LOCATIONS</p><h2>Where care happens.</h2></div>{can("branch.manage") && <button className="button button-primary" onClick={() => setShowForm((v) => !v)}>Add branch <span>＋</span></button>}</div>
-    {showForm && <form className="manage-form" onSubmit={createBranch}><div className="form-grid"><label>Code<input name="code" required maxLength={40} placeholder="MAIN" /></label><label>Name<input name="name" required maxLength={160} placeholder="Main branch" /></label><label>Timezone<input name="timezone" required defaultValue="Asia/Karachi" /></label><label>Phone <span className="field-optional">optional</span><input name="phone" maxLength={40} /></label></div><div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save branch"}<span>↗</span></button></div></form>}
+    <Drawer open={showForm} onClose={() => setShowForm(false)} title="Add branch" subtitle="NEW LOCATION" footer={<><button className="button button-secondary" type="button" onClick={() => setShowForm(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="branch-form" disabled={busy}>{busy ? "Saving…" : "Save branch"} <span>→</span></button></>}>
+      <form className="drawer-form" id="branch-form" onSubmit={createBranch}>
+        <label>Code<input name="code" required maxLength={40} placeholder="MAIN" /></label>
+        <label>Name<input name="name" required maxLength={160} placeholder="Main branch" /></label>
+        <label>Timezone<input name="timezone" required defaultValue="Asia/Karachi" /></label>
+        <label>Phone <span className="field-optional">optional</span><input name="phone" maxLength={40} /></label>
+      </form>
+    </Drawer>
     <div className="invoice-list">
       {!loading && branches.length === 0 && <div className="dashboard-empty"><strong>No branches yet</strong><span>Add your first location.</span></div>}
       {branches.map((item) => <article className="invoice-row" key={item.id}>
@@ -659,10 +659,9 @@ function BranchesTab({ branches, loading, busy, can, run, field }: {
 }
 
 
-function RoleEditor({ role, allPermissions, busy, onSave }: {
+function RoleEditor({ role, allPermissions, onSave }: {
   role: Role | null;
   allPermissions: { code: string; description: string }[];
-  busy: boolean;
   onSave: (name: string, permissions: string[]) => void;
 }) {
   const [name, setName] = useState(role?.name ?? "");
@@ -700,41 +699,36 @@ function RoleEditor({ role, allPermissions, busy, onSave }: {
     ? groups.map(([g, perms]) => [g, perms.filter((p) => p.code.includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase()))] as [string, typeof perms]).filter(([, p]) => p.length > 0)
     : groups;
 
-  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    {!(role?.is_system) && <label style={{ fontSize: "0.85rem" }}>Role name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lab Technician" style={{ marginTop: 4, width: "100%" }} /></label>}
-    {role?.is_system && <p style={{ fontSize: "0.82rem", color: "var(--text-muted, #6b7280)" }}>System role &mdash; name cannot be changed, but you can edit permissions.</p>}
+  return <form className="drawer-form" id="role-form" onSubmit={(e) => { e.preventDefault(); onSave(name.trim(), Array.from(selected).sort()); }}>
+    {!(role?.is_system) && <label>Role name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lab Technician" /></label>}
+    {role?.is_system && <p className="drawer-note">System role &mdash; name cannot be changed, but you can edit permissions.</p>}
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <p className="eyebrow" style={{ fontSize: "0.68rem" }}>PERMISSIONS ({selected.size}/{allPermissions.length})</p>
+        <p className="section-label" style={{ margin: 0 }}>PERMISSIONS ({selected.size}/{allPermissions.length})</p>
         <div style={{ display: "flex", gap: 6 }}>
           <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set(allPermissions.map((p) => p.code)))}>Select all</button>
           <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set())}>Clear all</button>
         </div>
       </div>
-      <input type="search" placeholder="Filter permissions..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: "100%", marginBottom: 10, padding: "6px 10px", fontSize: "0.82rem", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, background: "var(--surface-1, #fff)" }} />
-      <div style={{ maxHeight: 400, overflowY: "auto", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 8, background: "var(--surface-1, #fff)" }}>
+      <input type="search" placeholder="Filter permissions…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="role-permissions">
         {filtered.map(([group, perms]) => (
-          <div key={group} style={{ borderBottom: "1px solid var(--border-subtle, #e5e5e3)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--surface-2, #f0f0ee)", cursor: "pointer" }} onClick={() => toggleGroup(perms.map((p) => p.code))}>
-              <input type="checkbox" checked={perms.every((p) => selected.has(p.code))} readOnly style={{ accentColor: "var(--accent)" }} />
-              <strong style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>{group}</strong>
-              <span style={{ fontSize: "0.7rem", color: "var(--text-muted, #6b7280)" }}>({perms.filter((p) => selected.has(p.code)).length}/{perms.length})</span>
+          <div key={group} style={{ borderBottom: "1px solid var(--line)" }}>
+            <div className="perm-group-header" onClick={() => toggleGroup(perms.map((p) => p.code))}>
+              <input type="checkbox" checked={perms.every((p) => selected.has(p.code))} readOnly />
+              <strong>{group}</strong>
+              <span>({perms.filter((p) => selected.has(p.code)).length}/{perms.length})</span>
             </div>
             {perms.map((p) => (
-              <label key={p.code} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 6px 28px", cursor: "pointer", fontSize: "0.8rem" }}>
-                <input type="checkbox" checked={selected.has(p.code)} onChange={() => toggle(p.code)} style={{ accentColor: "var(--accent)" }} />
-                <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", minWidth: 160 }}>{p.code}</span>
-                <span style={{ color: "var(--text-muted, #6b7280)", fontSize: "0.72rem" }}>{p.description}</span>
+              <label key={p.code} className="perm-item">
+                <input type="checkbox" checked={selected.has(p.code)} onChange={() => toggle(p.code)} />
+                <span className="perm-code">{p.code}</span>
+                <span className="perm-desc">{p.description}</span>
               </label>
             ))}
           </div>
         ))}
       </div>
     </div>
-    <div className="form-actions">
-      <button className="button button-primary" disabled={busy || (!role?.is_system && !name.trim())} onClick={() => onSave(name.trim(), Array.from(selected).sort())}>
-        {busy ? "Saving..." : role ? "Update role" : "Create role"}<span>↗</span>
-      </button>
-    </div>
-  </div>;
+  </form>;
 }
