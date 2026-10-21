@@ -494,28 +494,33 @@ export default function ManagePage() {
     </section>}
 
     {/* ═══ SERVICE DRAWER ═══ */}
-    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG" footer={<><button className="button button-secondary" type="button" onClick={() => { setServiceDrawer(false); setEditService(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="service-form" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button></>}>
+    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG" width={480} footer={<><button className="button button-secondary" type="button" onClick={() => { setServiceDrawer(false); setEditService(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="service-form" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button></>}>
       <form className="drawer-form" id="service-form" onSubmit={handleServiceSubmit}>
-        <label>Name<input name="name" required maxLength={160} placeholder="HydraFacial" defaultValue={editService?.name ?? ""} key={editService?.id ?? "new"} /></label>
-        <label>Category <span className="field-optional">optional</span>
-          <select name="category" defaultValue={editService?.category ?? ""} key={`cat-${editService?.id ?? "new"}`}>
-            <option value="">None</option>
-            {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
-        <label>Short description <span className="field-optional">optional</span><input name="short_description" maxLength={500} placeholder="Brief description for listings" defaultValue={editService?.short_description ?? ""} key={`desc-${editService?.id ?? "new"}`} /></label>
-        <div className="drawer-form-row drawer-form-row-3">
-          <label>Duration (min)<input name="duration" type="number" min={5} max={1440} defaultValue={editService?.duration_minutes ?? 30} required key={`dur-${editService?.id ?? "new"}`} /></label>
-          <label>Buffer before<input name="buffer_before" type="number" min={0} max={240} defaultValue={editService?.buffer_before_minutes ?? 0} key={`bb-${editService?.id ?? "new"}`} /></label>
-          <label>Buffer after<input name="buffer_after" type="number" min={0} max={240} defaultValue={editService?.buffer_after_minutes ?? 0} key={`ba-${editService?.id ?? "new"}`} /></label>
-        </div>
+        <label>Service name<input name="name" required maxLength={160} placeholder="e.g. HydraFacial, Teeth Cleaning" defaultValue={editService?.name ?? ""} key={editService?.id ?? "new"} /></label>
         <div className="drawer-form-row drawer-form-row-2">
-          <label>Pricing<select name="price_mode" defaultValue={editService?.price_mode ?? "exact"} key={`pm-${editService?.id ?? "new"}`}><option value="exact">Exact price</option><option value="starting_at">Starting at</option><option value="range">Range</option><option value="contact">Contact for price</option></select></label>
-          <label>Price (PKR)<input name="amount" type="number" min={0} step="0.01" defaultValue={editService?.amount_minor != null ? editService.amount_minor / 100 : 0} key={`amt-${editService?.id ?? "new"}`} /></label>
+          <label>Category <span className="field-optional">optional</span>
+            <select name="category" defaultValue={editService?.category ?? ""} key={`cat-${editService?.id ?? "new"}`}>
+              <option value="">None</option>
+              {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <label>Duration (min)<input name="duration" type="number" min={5} max={1440} defaultValue={editService?.duration_minutes ?? 30} required key={`dur-${editService?.id ?? "new"}`} /></label>
         </div>
+        <label>Short description <span className="field-optional">optional</span><input name="short_description" maxLength={500} placeholder="Brief description for listings" defaultValue={editService?.short_description ?? ""} key={`desc-${editService?.id ?? "new"}`} /></label>
+        <p className="drawer-form-section-label">SCHEDULING</p>
+        <div className="drawer-form-row drawer-form-row-2">
+          <label>Buffer before (min)<input name="buffer_before" type="number" min={0} max={240} defaultValue={editService?.buffer_before_minutes ?? 0} key={`bb-${editService?.id ?? "new"}`} /></label>
+          <label>Buffer after (min)<input name="buffer_after" type="number" min={0} max={240} defaultValue={editService?.buffer_after_minutes ?? 0} key={`ba-${editService?.id ?? "new"}`} /></label>
+        </div>
+        <p className="drawer-form-section-label">PRICING</p>
+        <div className="drawer-form-row drawer-form-row-2">
+          <label>Pricing model<select name="price_mode" defaultValue={editService?.price_mode ?? "exact"} key={`pm-${editService?.id ?? "new"}`}><option value="exact">Exact price</option><option value="starting_at">Starting at</option><option value="range">Range</option><option value="contact">Contact for price</option></select></label>
+          <label>Price ({clinicCurrency})<input name="amount" type="number" min={0} step="0.01" defaultValue={editService?.amount_minor != null ? editService.amount_minor / 100 : 0} key={`amt-${editService?.id ?? "new"}`} /></label>
+        </div>
+        <p className="drawer-form-section-label">BOOKING &amp; VISIBILITY</p>
         <div className="drawer-form-row drawer-form-row-2">
           <label>Approval<select name="approval_mode" defaultValue={editService?.approval_mode ?? "staff_approval"} key={`ap-${editService?.id ?? "new"}`}><option value="instant">Instant booking</option><option value="staff_approval">Staff approval</option></select></label>
-          <label>Website<select name="visibility" defaultValue={editService?.visibility ?? "public"} key={`vis-${editService?.id ?? "new"}`}><option value="public">Visible</option><option value="hidden">Hidden</option></select></label>
+          <label>Website visibility<select name="visibility" defaultValue={editService?.visibility ?? "public"} key={`vis-${editService?.id ?? "new"}`}><option value="public">Visible</option><option value="hidden">Hidden</option></select></label>
         </div>
       </form>
     </Drawer>
@@ -538,8 +543,10 @@ export default function ManagePage() {
     {/* ═══ STAFF INVITE DRAWER ═══ */}
     <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION" footer={<><button className="button button-secondary" type="button" onClick={() => setStaffDrawer(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="invite-form" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button></>}>
       <form className="drawer-form" id="invite-form" onSubmit={handleInvite}>
-        <label>Email<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
-        <p className="drawer-note">Roles and branch scopes can be assigned after the staff member accepts the invitation.</p>
+        <label>Email address<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
+        <div style={{ padding: "16px", background: "var(--cream)", borderRadius: 8, marginTop: 4 }}>
+          <p className="drawer-note" style={{ margin: 0 }}>An invitation link will be generated and copied to your clipboard. Roles and branch scopes can be assigned after the staff member accepts.</p>
+        </div>
       </form>
     </Drawer>
 
@@ -637,25 +644,29 @@ function BranchesTab({ branches, loading, busy, can, run, field }: {
     ).then(() => setShowForm(false));
   }
 
-  return <section className="surface-card">
-    <div className="surface-card-heading"><div><p className="eyebrow">LOCATIONS</p><h2>Where care happens.</h2></div>{can("branch.manage") && <button className="button button-primary" onClick={() => setShowForm((v) => !v)}>Add branch <span>＋</span></button>}</div>
+  return <>
+    <section className="surface-card">
+      <div className="surface-card-heading"><div><p className="eyebrow">LOCATIONS</p><h2>Where care happens.</h2></div>{can("branch.manage") && <button className="button button-primary" onClick={() => setShowForm(true)}>Add branch <span>＋</span></button>}</div>
+      <div className="invoice-list">
+        {!loading && branches.length === 0 && <div className="dashboard-empty"><strong>No branches yet</strong><span>Add your first location.</span></div>}
+        {branches.map((item) => <article className="invoice-row" key={item.id}>
+          <div className="invoice-mark">{item.code.slice(0, 3)}</div>
+          <div className="invoice-main"><h3>{item.name}</h3><p>{item.timezone}{item.phone ? ` · ${item.phone}` : ""}</p></div>
+          <div className="invoice-actions"><span className={`pipeline-status status-${item.status === "active" ? "paid" : "void"}`}>{item.status}</span></div>
+        </article>)}
+      </div>
+    </section>
     <Drawer open={showForm} onClose={() => setShowForm(false)} title="Add branch" subtitle="NEW LOCATION" footer={<><button className="button button-secondary" type="button" onClick={() => setShowForm(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="branch-form" disabled={busy}>{busy ? "Saving…" : "Save branch"} <span>→</span></button></>}>
       <form className="drawer-form" id="branch-form" onSubmit={createBranch}>
-        <label>Code<input name="code" required maxLength={40} placeholder="MAIN" /></label>
-        <label>Name<input name="name" required maxLength={160} placeholder="Main branch" /></label>
-        <label>Timezone<input name="timezone" required defaultValue="Asia/Karachi" /></label>
-        <label>Phone <span className="field-optional">optional</span><input name="phone" maxLength={40} /></label>
+        <label>Branch name<input name="name" required maxLength={160} placeholder="e.g. Main clinic, Downtown branch" /></label>
+        <label>Branch code<input name="code" required maxLength={40} placeholder="e.g. MAIN, DT-01" /></label>
+        <div className="drawer-form-row drawer-form-row-2">
+          <label>Timezone<select name="timezone" required defaultValue="Asia/Karachi"><option value="Asia/Karachi">Asia/Karachi (PKT)</option><option value="Asia/Dubai">Asia/Dubai (GST)</option><option value="Asia/Riyadh">Asia/Riyadh (AST)</option><option value="Europe/London">Europe/London (GMT)</option><option value="America/New_York">America/New York (EST)</option></select></label>
+          <label>Phone <span className="field-optional">optional</span><input name="phone" type="tel" maxLength={40} placeholder="+92 300 1234567" /></label>
+        </div>
       </form>
     </Drawer>
-    <div className="invoice-list">
-      {!loading && branches.length === 0 && <div className="dashboard-empty"><strong>No branches yet</strong><span>Add your first location.</span></div>}
-      {branches.map((item) => <article className="invoice-row" key={item.id}>
-        <div className="invoice-mark">{item.code.slice(0, 3)}</div>
-        <div className="invoice-main"><h3>{item.name}</h3><p>{item.timezone}{item.phone ? ` · ${item.phone}` : ""}</p></div>
-        <div className="invoice-actions"><span className={`pipeline-status status-${item.status === "active" ? "paid" : "void"}`}>{item.status}</span></div>
-      </article>)}
-    </div>
-  </section>;
+  </>;
 }
 
 
@@ -700,17 +711,17 @@ function RoleEditor({ role, allPermissions, onSave }: {
     : groups;
 
   return <form className="drawer-form" id="role-form" onSubmit={(e) => { e.preventDefault(); onSave(name.trim(), Array.from(selected).sort()); }}>
-    {!(role?.is_system) && <label>Role name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lab Technician" /></label>}
-    {role?.is_system && <p className="drawer-note">System role &mdash; name cannot be changed, but you can edit permissions.</p>}
+    {!(role?.is_system) && <label>Role name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lab Technician" required /></label>}
+    {role?.is_system && <div style={{ padding: "12px 16px", background: "var(--cream)", borderRadius: 8 }}><p className="drawer-note" style={{ margin: 0 }}>System role — name cannot be changed, but you can edit permissions.</p></div>}
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <p className="section-label" style={{ margin: 0 }}>PERMISSIONS ({selected.size}/{allPermissions.length})</p>
-        <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <p className="drawer-form-section-label" style={{ margin: 0, padding: 0, border: "none" }}>PERMISSIONS ({selected.size}/{allPermissions.length})</p>
+        <div style={{ display: "flex", gap: 8 }}>
           <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set(allPermissions.map((p) => p.code)))}>Select all</button>
           <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set())}>Clear all</button>
         </div>
       </div>
-      <input type="search" placeholder="Filter permissions…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <input type="search" placeholder="Filter permissions…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
       <div className="role-permissions">
         {filtered.map(([group, perms]) => (
           <div key={group} style={{ borderBottom: "1px solid var(--line)" }}>
