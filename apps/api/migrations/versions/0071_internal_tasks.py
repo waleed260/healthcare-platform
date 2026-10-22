@@ -37,7 +37,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX ix_internal_tasks_assignee ON internal_tasks (clinic_id, assignee_user_id, archived_at, status)")
     op.execute("ALTER TABLE internal_tasks ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE internal_tasks FORCE ROW LEVEL SECURITY")
-    op.execute("CREATE POLICY internal_tasks_tenant ON internal_tasks USING (clinic_id = current_setting('app.current_tenant')::uuid)")
+    op.execute("CREATE POLICY internal_tasks_tenant ON internal_tasks USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid)")
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON internal_tasks TO healthcare_runtime")
 
 

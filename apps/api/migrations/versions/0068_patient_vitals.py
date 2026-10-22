@@ -34,7 +34,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX ix_patient_vitals_patient ON patient_vitals (clinic_id, patient_id, archived_at, recorded_at DESC)")
     op.execute("ALTER TABLE patient_vitals ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE patient_vitals FORCE ROW LEVEL SECURITY")
-    op.execute("CREATE POLICY patient_vitals_tenant ON patient_vitals USING (clinic_id = current_setting('app.current_tenant')::uuid)")
+    op.execute("CREATE POLICY patient_vitals_tenant ON patient_vitals USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid)")
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON patient_vitals TO healthcare_runtime")
 
 

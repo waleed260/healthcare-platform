@@ -33,7 +33,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX ix_patient_transfers_patient ON patient_transfers (clinic_id, patient_id, archived_at, created_at DESC)")
     op.execute("ALTER TABLE patient_transfers ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE patient_transfers FORCE ROW LEVEL SECURITY")
-    op.execute("CREATE POLICY patient_transfers_tenant ON patient_transfers USING (clinic_id = current_setting('app.current_tenant')::uuid)")
+    op.execute("CREATE POLICY patient_transfers_tenant ON patient_transfers USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid)")
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON patient_transfers TO healthcare_runtime")
 
     op.execute("""
@@ -62,7 +62,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX ix_patient_discharges_patient ON patient_discharges (clinic_id, patient_id, archived_at, discharged_at DESC)")
     op.execute("ALTER TABLE patient_discharges ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE patient_discharges FORCE ROW LEVEL SECURITY")
-    op.execute("CREATE POLICY patient_discharges_tenant ON patient_discharges USING (clinic_id = current_setting('app.current_tenant')::uuid)")
+    op.execute("CREATE POLICY patient_discharges_tenant ON patient_discharges USING (clinic_id = NULLIF(current_setting('app.clinic_id', true), '')::uuid)")
     op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON patient_discharges TO healthcare_runtime")
 
 

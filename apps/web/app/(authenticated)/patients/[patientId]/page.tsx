@@ -15,8 +15,8 @@ type CareTeamMember = { doctor_id: string; public_name: string; specialty: strin
 type Document = { id: string; original_filename: string; mime_type: string; size_bytes: number; scan_status: string; retention_class: string; created_at: string; version: number };
 type HistoryEvent = { id: string; event_type: string; entity_id: string; from_status: string | null; to_status: string | null; reason: string | null; actor_user_id: string | null; created_at: string };
 type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string; doctor_id: string | null; service_id: string | null };
-type Consent = { id: string; consent_type: string; status: string; version: string; created_at: string };
-type Prescription = { id: string; medication_name: string; dosage: string; frequency: string; duration_days: number | null; status: string; created_at: string };
+type Consent = { id: string; consent_type: string; status: string; version: string; recorded_at: string };
+type Prescription = { id: string; medication_name: string; dosage: string; frequency: string; duration: string | null; status: string; prescribed_at: string };
 type Invoice = { id: string; invoice_number: string; total_minor: number; paid_minor: number; status: string; issued_at: string; currency: string };
 
 type Vital = { id: string; vital_type: string; label: string | null; value_text: string | null; value_systolic: number | null; value_diastolic: number | null; value_numeric: number | null; unit: string | null; notes: string | null; recorded_at: string; version: number };
@@ -1090,7 +1090,7 @@ export default function PatientDetailPage() {
                       <div className="consent-row" key={c.id}>
                         <div>
                           <strong>{c.consent_type}</strong>
-                          <small>Version {c.version} · {formatDate(c.created_at)}</small>
+                          <small>Version {c.version} · {formatDate(c.recorded_at)}</small>
                         </div>
                         <span className={`pipeline-status status-${c.status}`}>{statusLabel(c.status)}</span>
                       </div>
@@ -1116,11 +1116,11 @@ export default function PatientDetailPage() {
                       <div className="prescription-row" key={p.id}>
                         <div>
                           <strong>{p.medication_name}</strong>
-                          <small>{p.dosage} · {p.frequency}{p.duration_days ? ` · ${p.duration_days} days` : ""}</small>
+                          <small>{p.dosage} · {p.frequency}{p.duration ? ` · ${p.duration}` : ""}</small>
                         </div>
                         <div>
                           <span className={`pipeline-status status-${p.status}`}>{statusLabel(p.status)}</span>
-                          <small>{formatDate(p.created_at)}</small>
+                          <small>{formatDate(p.prescribed_at)}</small>
                         </div>
                       </div>
                     ))}
