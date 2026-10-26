@@ -62,7 +62,11 @@ export default function LoginPage() {
     event.preventDefault();
     setBusy(true); setError(null);
     try {
-      const response = await fetch("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ email, password }) });
+      let response = await fetch("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ email, password }) });
+      if (response.status === 503) {
+        await new Promise((r) => setTimeout(r, 1500));
+        response = await fetch("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ email, password }) });
+      }
       if (!response.ok) throw new Error(await apiMessage(response));
       const payload = await response.json() as { data: { mfa_required: boolean; mfa_enrollment_required: boolean } };
       if (payload.data.mfa_enrollment_required) {

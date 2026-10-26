@@ -9,7 +9,7 @@ import Drawer from "../_lib/drawer";
 /* ── types ──────────────────────────────────────────────────────────── */
 
 type Product = { id: string; name: string; sku: string | null; product_type: string | null; unit: string; minimum_stock: string; status: string; version: number; category_id: string | null; cost_minor: number | null; selling_price_minor: number | null; currency: string | null; tax_inclusive: boolean };
-type Stock = { id: string; branch_id: string; branch_name: string; product_id: string; product_name: string; product_type: string | null; unit: string; minimum_stock: string; category_id: string | null; quantity: string; low_stock: boolean; version: number };
+type Stock = { id: string; branch_id: string; branch_name: string; product_id: string; product_name: string; product_type: string | null; unit: string; minimum_stock: string; category_id: string | null; quantity: string; low_stock: boolean; version: number; warehouse_id: string | null; warehouse_name: string | null };
 type Branch = { id: string; name: string };
 type Category = { id: string; name: string; slug: string; display_order: number };
 type Session = { permissions?: string[]; user?: { id: string; display_name: string } };
@@ -172,7 +172,7 @@ export default function InventoryPage() {
 
   const filteredStock = useMemo(() => {
     let result = stock;
-    if (search) { const q = search.toLowerCase(); result = result.filter((s) => s.product_name.toLowerCase().includes(q) || s.branch_name.toLowerCase().includes(q)); }
+    if (search) { const q = search.toLowerCase(); result = result.filter((s) => s.product_name.toLowerCase().includes(q) || s.branch_name.toLowerCase().includes(q) || (s.warehouse_name ?? "").toLowerCase().includes(q)); }
     if (typeFilter !== "all") result = result.filter((s) => s.product_type === typeFilter);
     if (categoryFilter !== "all") result = result.filter((s) => s.category_id === categoryFilter);
     return result;
@@ -480,7 +480,7 @@ export default function InventoryPage() {
             <div className="inventory-mark">{item.low_stock ? "!" : "·"}</div>
             <div>
               <div className="inventory-title"><h3>{item.product_name}</h3>{item.low_stock && <span className="pipeline-status status-lost">LOW STOCK</span>}</div>
-              <p>{item.branch_name} &middot; {item.product_type ?? "uncategorized"}{item.category_id && categoryMap.has(item.category_id) ? ` · ${categoryMap.get(item.category_id)}` : ""}</p>
+              <p>{item.branch_name}{item.warehouse_name ? ` · ${item.warehouse_name}` : ""} &middot; {item.product_type ?? "uncategorized"}{item.category_id && categoryMap.has(item.category_id) ? ` · ${categoryMap.get(item.category_id)}` : ""}</p>
               <small>{item.quantity} {item.unit} on hand &middot; minimum {item.minimum_stock} {item.unit}</small>
             </div>
             <span className="inventory-quantity">{item.quantity}<small>{item.unit}</small></span>

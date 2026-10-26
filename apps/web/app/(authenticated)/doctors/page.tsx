@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../_lib/client";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, errorMessage, post } from "../_lib/client";
+import Drawer from "../_lib/drawer";
+import { useToast } from "../_lib/toast";
 
 type Doctor = {
   id: string;
@@ -30,17 +32,27 @@ const bookingColor: Record<string, string> = { accepting: "var(--leaf)", paused:
 const bookingLabel: Record<string, string> = { accepting: "Accepting", paused: "Paused", not_accepting: "Closed" };
 
 export default function DoctorsPage() {
+  const toast = useToast();
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [appointments, setAppointments] = useState<Record<string, Appointment[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedDoctor, setExpandedDoctor] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [showAddDoctor, setShowAddDoctor] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const canManageDoctor = permissions.includes("doctor.manage");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const docs = await api<Doctor[]>("/api/v1/doctors?limit=100");
+      const [session, docs] = await Promise.all([
+        api<{ permissions?: string[] }>("/api/v1/auth/me"),
+        api<Doctor[]>("/api/v1/doctors?limit=100"),
+      ]);
+      setPermissions(session?.permissions ?? []);
       setDoctors(docs ?? []);
       if (docs && docs.length > 0) {
         const apptMap: Record<string, Appointment[]> = {};
@@ -62,6 +74,27 @@ export default function DoctorsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  function handleAddDoctor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const field = (key: string) => String(form.get(key) ?? "").trim();
+    const duration = parseInt(field("consultation_duration_minutes"), 10);
+    if (!duration || duration <= 0) { toast.error("Consultation duration is required."); return; }
+    setBusy(true);
+    post("/api/v1/doctors", {
+      public_name: field("public_name"),
+      specialty: field("specialty") || null,
+      phone: field("phone") || null,
+      email: field("email") || null,
+      license_number: field("license_number") || null,
+      consultation_duration_minutes: duration,
+      booking_status: field("booking_status") || "accepting",
+    })
+      .then(() => { toast.success("Doctor added."); setShowAddDoctor(false); void load(); })
+      .catch((reason) => toast.error(errorMessage(reason, "The doctor could not be created.")))
+      .finally(() => setBusy(false));
+  }
+
   const activeDoctors = doctors.filter((d) => d.status === "active");
   const inactiveDoctors = doctors.filter((d) => d.status !== "active");
 
@@ -74,9 +107,12 @@ export default function DoctorsPage() {
             Your <em>doctors.</em>
           </h1>
         </div>
-        <Link className="button button-primary" href="/manage">
-          Manage team <span>→</span>
-        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          {canManageDoctor && <button className="button button-primary" type="button" onClick={() => setShowAddDoctor(true)}>Add doctor <span>＋</span></button>}
+          <Link className="button button-secondary" href="/manage">
+            Manage team <span>→</span>
+          </Link>
+        </div>
       </div>
       <p className="queue-intro">
         Each doctor&apos;s upcoming appointments and assigned patients at a glance.
@@ -98,7 +134,7 @@ export default function DoctorsPage() {
       {!loading && doctors.length === 0 && (
         <div className="dashboard-empty">
           <strong>No doctors yet</strong>
-          <span>Add doctors from the Manage section to see them here.</span>
+          <span>{canManageDoctor ? "Click Add doctor to get started." : "Ask a manager to add doctors."}</span>
         </div>
       )}
 
@@ -235,6 +271,44 @@ export default function DoctorsPage() {
           </div>
         </>
       )}
+
+      <Drawer open={showAddDoctor} onClose={() => setShowAddDoctor(false)} title="Add doctor">
+        <form onSubmit={handleAddDoctor} className="drawer-form">
+          <label className="field">
+            <span className="field-label">Full name</span>
+            <input name="public_name" required autoFocus className="field-input" placeholder="Dr. Ahmad Khan" />
+          </label>
+          <label className="field">
+            <span className="field-label">Specialty</span>
+            <input name="specialty" className="field-input" placeholder="e.g. Dermatology" />
+          </label>
+          <label className="field">
+            <span className="field-label">Consultation duration (minutes)</span>
+            <input name="consultation_duration_minutes" type="number" required className="field-input" defaultValue={30} min={1} max={1440} />
+          </label>
+          <label className="field">
+            <span className="field-label">Booking status</span>
+            <select name="booking_status" className="field-input" defaultValue="accepting">
+              <option value="accepting">Accepting</option>
+              <option value="paused">Paused</option>
+              <option value="not_accepting">Not accepting</option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label">License number (optional)</span>
+            <input name="license_number" className="field-input" placeholder="PMC-12345" />
+          </label>
+          <label className="field">
+            <span className="field-label">Phone (optional)</span>
+            <input name="phone" type="tel" className="field-input" placeholder="+92 300 1234567" />
+          </label>
+          <label className="field">
+            <span className="field-label">Email (optional)</span>
+            <input name="email" type="email" className="field-input" placeholder="doctor@clinic.com" />
+          </label>
+          <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add doctor"} <span>→</span></button>
+        </form>
+      </Drawer>
     </main>
   );
 }

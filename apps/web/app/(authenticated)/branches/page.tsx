@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { api, writeHeaders, errorMessage } from "../_lib/client";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, writeHeaders, errorMessage, post } from "../_lib/client";
+import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 
 type Branch = {
@@ -102,8 +103,11 @@ export default function BranchesPage() {
   const [savingDay, setSavingDay] = useState<string | null>(null);
   const [use24h, setUse24h] = useState(true);
   const [copiedSlots, setCopiedSlots] = useState<SlotDraft[] | null>(null);
+  const [showAddBranch, setShowAddBranch] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const canEditHours = permissions.includes("schedule.manage");
+  const canManageBranch = permissions.includes("branch.manage");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -267,6 +271,17 @@ export default function BranchesPage() {
       setSavingDay(null);
     }
   }
+  function handleAddBranch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const field = (key: string) => String(form.get(key) ?? "").trim();
+    setBusy(true);
+    post("/api/v1/branches", { code: field("code"), name: field("name"), timezone: field("timezone"), phone: field("phone") || null, address: {} })
+      .then(() => { toast.success("Branch added."); setShowAddBranch(false); void load(); })
+      .catch((reason) => toast.error(errorMessage(reason, "The branch could not be created.")))
+      .finally(() => setBusy(false));
+  }
+
   return (
     <main className="dash-content" aria-busy={loading}>
       <div className="dash-topline">
@@ -274,14 +289,17 @@ export default function BranchesPage() {
           <p className="eyebrow">CLINIC NETWORK</p>
           <h1>Your <em>branches.</em></h1>
         </div>
-        <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {canManageBranch && <button className="button button-primary" type="button" onClick={() => setShowAddBranch(true)}>Add branch <span>＋</span></button>}
+          <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
+        </div>
       </div>
       <p className="queue-intro">All clinic branches, their assigned doctors, services, and opening hours.</p>
 
       {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
       {loading && branches.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading branches…</strong></div>}
-      {!loading && branches.length === 0 && <div className="dashboard-empty"><strong>No branches</strong><span>Create branches from the Manage section.</span></div>}
+      {!loading && branches.length === 0 && <div className="dashboard-empty"><strong>No branches</strong><span>{canManageBranch ? "Click Add branch to get started." : "Ask a manager to create branches."}</span></div>}
 
       <div className="doctors-grid">
         {branches.map((b) => {
@@ -407,6 +425,36 @@ export default function BranchesPage() {
           );
         })}
       </div>
+
+      <Drawer open={showAddBranch} onClose={() => setShowAddBranch(false)} title="Add branch">
+        <form onSubmit={handleAddBranch} className="drawer-form">
+          <label className="field">
+            <span className="field-label">Branch name</span>
+            <input name="name" required autoFocus className="field-input" placeholder="e.g. Downtown Clinic" />
+          </label>
+          <label className="field">
+            <span className="field-label">Code</span>
+            <input name="code" required className="field-input" placeholder="e.g. DTN" maxLength={10} />
+          </label>
+          <label className="field">
+            <span className="field-label">Timezone</span>
+            <select name="timezone" className="field-input" defaultValue="Asia/Karachi">
+              <option value="Asia/Karachi">Asia/Karachi</option>
+              <option value="Asia/Dubai">Asia/Dubai</option>
+              <option value="Asia/Riyadh">Asia/Riyadh</option>
+              <option value="Europe/London">Europe/London</option>
+              <option value="America/New_York">America/New_York</option>
+              <option value="America/Chicago">America/Chicago</option>
+              <option value="America/Los_Angeles">America/Los_Angeles</option>
+            </select>
+          </label>
+          <label className="field">
+            <span className="field-label">Phone (optional)</span>
+            <input name="phone" type="tel" className="field-input" placeholder="+92 300 1234567" />
+          </label>
+          <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add branch"} <span>→</span></button>
+        </form>
+      </Drawer>
     </main>
   );
 }

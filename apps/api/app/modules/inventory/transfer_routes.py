@@ -111,8 +111,6 @@ def transfer_create(
                      {"clinic_id": session["clinic_id"], "id": payload.destination_warehouse_id}).mappings().one_or_none()
     if dst is None:
         raise _error("NOT_FOUND", "Destination warehouse not found or inactive.", status.HTTP_400_BAD_REQUEST)
-    if src["branch_id"] == dst["branch_id"]:
-        raise _error("INVALID_INPUT", "Source and destination warehouses must belong to different branches for stock to move.", status.HTTP_400_BAD_REQUEST)
     for line in payload.lines:
         product = db.execute(text("SELECT id FROM inventory_products WHERE clinic_id = :clinic_id AND id = :id AND status = 'active' AND archived_at IS NULL"),
                              {"clinic_id": session["clinic_id"], "id": line.product_id}).scalar_one_or_none()
@@ -243,6 +241,7 @@ def transfer_receive(
     session = _write_authorized(db, request, session_token, "transfer.manage", csrf_token)
     tf = db.execute(text("""
         SELECT t.id, t.status, t.version, t.transfer_number, t.initiated_by_user_id,
+               t.source_warehouse_id, t.destination_warehouse_id,
                sw.branch_id AS source_branch_id, dw.branch_id AS dest_branch_id
         FROM inventory_transfers t
         JOIN warehouses sw ON sw.clinic_id = t.clinic_id AND sw.id = t.source_warehouse_id
@@ -257,6 +256,8 @@ def transfer_receive(
         raise _error("VERSION_CONFLICT", "The transfer changed before this update.", status.HTTP_409_CONFLICT)
     source_branch_id = tf["source_branch_id"]
     dest_branch_id = tf["dest_branch_id"]
+    source_warehouse_id = tf["source_warehouse_id"]
+    dest_warehouse_id = tf["destination_warehouse_id"]
     for recv_line in payload.lines:
         tl = db.execute(text(
             "SELECT id, product_id, quantity_sent FROM inventory_transfer_lines "
@@ -271,35 +272,41 @@ def transfer_receive(
         ), {"clinic_id": session["clinic_id"], "id": recv_line.line_id, "qty": recv_line.quantity_received,
             "condition": recv_line.condition, "user_id": session["user_id"], "notes": recv_line.notes})
         src_stock = db.execute(text(
-            "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id FOR UPDATE"
-        ), {"clinic_id": session["clinic_id"], "branch_id": source_branch_id, "product_id": tl["product_id"]}).mappings().one_or_none()
+            "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id"
+            " AND (warehouse_id = :warehouse_id OR (warehouse_id IS NULL AND :warehouse_id IS NULL)) FOR UPDATE"
+        ), {"clinic_id": session["clinic_id"], "branch_id": source_branch_id, "product_id": tl["product_id"], "warehouse_id": source_warehouse_id}).mappings().one_or_none()
+        if src_stock is None:
+            src_stock = db.execute(text(
+                "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id AND warehouse_id IS NULL FOR UPDATE"
+            ), {"clinic_id": session["clinic_id"], "branch_id": source_branch_id, "product_id": tl["product_id"]}).mappings().one_or_none()
         if src_stock is not None:
             new_qty = max(0, src_stock["quantity"] - tl["quantity_sent"])
             db.execute(text("UPDATE inventory_stock SET quantity = :qty, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"),
                        {"clinic_id": session["clinic_id"], "id": src_stock["id"], "qty": new_qty})
         db.execute(text(
-            "INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, delta, reason, adjusted_by_user_id) "
-            "VALUES (:clinic_id, :branch_id, :product_id, :delta, :reason, :user_id)"
+            "INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, delta, reason, adjusted_by_user_id, warehouse_id) "
+            "VALUES (:clinic_id, :branch_id, :product_id, :delta, :reason, :user_id, :warehouse_id)"
         ), {"clinic_id": session["clinic_id"], "branch_id": source_branch_id, "product_id": tl["product_id"],
             "delta": -tl["quantity_sent"], "reason": f"Transfer out {tf['transfer_number']}",
-            "user_id": session["user_id"]})
+            "user_id": session["user_id"], "warehouse_id": source_warehouse_id})
         dst_stock = db.execute(text(
-            "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id FOR UPDATE"
-        ), {"clinic_id": session["clinic_id"], "branch_id": dest_branch_id, "product_id": tl["product_id"]}).mappings().one_or_none()
+            "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id"
+            " AND (warehouse_id = :warehouse_id OR (warehouse_id IS NULL AND :warehouse_id IS NULL)) FOR UPDATE"
+        ), {"clinic_id": session["clinic_id"], "branch_id": dest_branch_id, "product_id": tl["product_id"], "warehouse_id": dest_warehouse_id}).mappings().one_or_none()
         if dst_stock is None:
             db.execute(text(
-                "INSERT INTO inventory_stock (clinic_id, branch_id, product_id, quantity) VALUES (:clinic_id, :branch_id, :product_id, :qty)"
-            ), {"clinic_id": session["clinic_id"], "branch_id": dest_branch_id, "product_id": tl["product_id"], "qty": recv_line.quantity_received})
+                "INSERT INTO inventory_stock (clinic_id, branch_id, product_id, quantity, warehouse_id) VALUES (:clinic_id, :branch_id, :product_id, :qty, :warehouse_id)"
+            ), {"clinic_id": session["clinic_id"], "branch_id": dest_branch_id, "product_id": tl["product_id"], "qty": recv_line.quantity_received, "warehouse_id": dest_warehouse_id})
         else:
             db.execute(text(
                 "UPDATE inventory_stock SET quantity = quantity + :qty, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"
             ), {"clinic_id": session["clinic_id"], "id": dst_stock["id"], "qty": recv_line.quantity_received})
         db.execute(text(
-            "INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, delta, reason, adjusted_by_user_id) "
-            "VALUES (:clinic_id, :branch_id, :product_id, :delta, :reason, :user_id)"
+            "INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, delta, reason, adjusted_by_user_id, warehouse_id) "
+            "VALUES (:clinic_id, :branch_id, :product_id, :delta, :reason, :user_id, :warehouse_id)"
         ), {"clinic_id": session["clinic_id"], "branch_id": dest_branch_id, "product_id": tl["product_id"],
             "delta": recv_line.quantity_received, "reason": f"Transfer in {tf['transfer_number']}",
-            "user_id": session["user_id"]})
+            "user_id": session["user_id"], "warehouse_id": dest_warehouse_id})
     db.execute(text(
         "UPDATE inventory_transfers SET status = 'received', received_by_user_id = :user_id, received_at = now(), "
         "version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"

@@ -115,22 +115,25 @@ def product_status(product_id: UUID, payload: InventoryStatusUpdate, request: Re
 
 
 @router.get("/stock")
-def stock_list(request: Request, branch_id: UUID | None = Query(default=None), low_only: bool = Query(default=False), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def stock_list(request: Request, branch_id: UUID | None = Query(default=None), warehouse_id: UUID | None = Query(default=None), low_only: bool = Query(default=False), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "inventory.read", branch_id=branch_id)
     rows = db.execute(text("""
         SELECT stock.id, stock.branch_id, b.name AS branch_name, stock.product_id, p.name AS product_name,
                p.product_type, p.unit, p.minimum_stock, p.category_id, stock.quantity, stock.version, stock.updated_at,
+               stock.warehouse_id, w.name AS warehouse_name,
                (stock.quantity <= p.minimum_stock) AS low_stock
         FROM inventory_stock stock
         JOIN inventory_products p ON p.clinic_id = stock.clinic_id AND p.id = stock.product_id
         JOIN branches b ON b.clinic_id = stock.clinic_id AND b.id = stock.branch_id
+        LEFT JOIN warehouses w ON w.clinic_id = stock.clinic_id AND w.id = stock.warehouse_id
         WHERE stock.clinic_id = :clinic_id AND p.archived_at IS NULL
           AND (:branch_id IS NULL OR stock.branch_id = :branch_id)
+          AND (:warehouse_id IS NULL OR stock.warehouse_id = :warehouse_id)
           AND (NOT :low_only OR stock.quantity <= p.minimum_stock)
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id)
                OR EXISTS (SELECT 1 FROM user_branch_scopes scope WHERE scope.clinic_id = :clinic_id AND scope.user_id = :user_id AND scope.branch_id = stock.branch_id))
         ORDER BY low_stock DESC, p.name, stock.branch_id
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id, "low_only": low_only}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id, "warehouse_id": warehouse_id, "low_only": low_only}).mappings().all()
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 
