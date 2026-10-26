@@ -623,6 +623,17 @@ def assign_branch_doctor(branch_id: str, doctor_id: str, request: Request, db: S
     except Exception as exc:
         db.rollback()
         raise _error("NOT_FOUND", "Branch or doctor not found, or assignment already exists.", status.HTTP_409_CONFLICT) from exc
+    # Auto-clone availability rules from the doctor's other branches so bookings work immediately
+    db.execute(text("""
+        INSERT INTO availability_rules (clinic_id, branch_id, doctor_id, service_id, weekday, starts_at, ends_at, effective_from, effective_to, slot_cadence_minutes)
+        SELECT DISTINCT ON (weekday, starts_at, ends_at, service_id)
+               clinic_id, :branch_id, doctor_id, service_id, weekday, starts_at, ends_at, effective_from, effective_to, slot_cadence_minutes
+        FROM availability_rules
+        WHERE clinic_id = :clinic_id AND doctor_id = CAST(:doctor_id AS uuid)
+          AND branch_id <> CAST(:branch_id AS uuid)
+          AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+        ORDER BY weekday, starts_at, ends_at, service_id, effective_from DESC
+    """), {"clinic_id": session["clinic_id"], "branch_id": branch_id, "doctor_id": doctor_id})
     db.commit()
     return {"data": {"branch_id": branch_id, "doctor_id": doctor_id, "assigned": True}, "meta": {"request_id": request.state.request_id}}
 

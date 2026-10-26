@@ -680,7 +680,11 @@ def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doct
           AND (service_id IS NULL OR service_id = :service_id)
         FOR SHARE
     """), {**params, "weekday": local_start.weekday()}).mappings().all()
-    if not any(row["starts_at"] <= local_start.time() and row["ends_at"] >= local_end.time() for row in rules):
+    # When rules exist, the slot must fall inside one; when none are configured
+    # yet the doctor is assigned to the branch, allow staff to book freely
+    # (the public path never reaches here without rules — generate_slots
+    # already returns empty).
+    if rules and not any(row["starts_at"] <= local_start.time() and row["ends_at"] >= local_end.time() for row in rules):
         raise _booking_unavailable("The appointment is outside the doctor's availability.")
 
     holidays = db.execute(text("""
