@@ -5,6 +5,9 @@ import { api, writeHeaders, errorMessage, post } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 
+type AllDoctor = { id: string; public_name: string; specialty: string | null; status: string };
+type AllService = { id: string; name: string; category: string | null };
+
 type Branch = {
   id: string;
   code: string;
@@ -105,20 +108,28 @@ export default function BranchesPage() {
   const [copiedSlots, setCopiedSlots] = useState<SlotDraft[] | null>(null);
   const [showAddBranch, setShowAddBranch] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [allDoctors, setAllDoctors] = useState<AllDoctor[]>([]);
+  const [allServices, setAllServices] = useState<AllService[]>([]);
 
   const canEditHours = permissions.includes("schedule.manage");
   const canManageBranch = permissions.includes("branch.manage");
+  const canManageDoctor = permissions.includes("doctor.manage");
+  const canManageService = permissions.includes("service.manage");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [session, data] = await Promise.all([
+      const [session, data, docs, svcs] = await Promise.all([
         api<{ permissions?: string[] }>("/api/v1/auth/me"),
         api<Branch[]>("/api/v1/branches?limit=100"),
+        api<AllDoctor[]>("/api/v1/doctors?limit=100"),
+        api<AllService[]>("/api/v1/services?limit=100"),
       ]);
       setPermissions(session?.permissions ?? []);
       setBranches(data ?? []);
+      setAllDoctors((docs ?? []).filter((d) => d.status === "active"));
+      setAllServices(svcs ?? []);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load branches.");
     } finally {
@@ -271,6 +282,48 @@ export default function BranchesPage() {
       setSavingDay(null);
     }
   }
+  async function assignDoctor(branchId: string, doctorId: string) {
+    setBusy(true);
+    try {
+      await api(`/api/v1/branches/${branchId}/doctors/${doctorId}`, { method: "POST", headers: writeHeaders() });
+      toast.success("Doctor assigned to branch.");
+      const docs = await api<Doctor[]>(`/api/v1/branches/${branchId}/doctors?limit=50`);
+      setBranchDoctors((prev) => ({ ...prev, [branchId]: docs ?? [] }));
+    } catch (reason) { toast.error(errorMessage(reason, "Could not assign doctor.")); }
+    finally { setBusy(false); }
+  }
+
+  async function unassignDoctor(branchId: string, doctorId: string) {
+    setBusy(true);
+    try {
+      await api(`/api/v1/branches/${branchId}/doctors/${doctorId}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Doctor removed from branch.");
+      setBranchDoctors((prev) => ({ ...prev, [branchId]: (prev[branchId] ?? []).filter((d) => d.id !== doctorId) }));
+    } catch (reason) { toast.error(errorMessage(reason, "Could not remove doctor.")); }
+    finally { setBusy(false); }
+  }
+
+  async function assignService(branchId: string, serviceId: string) {
+    setBusy(true);
+    try {
+      await api(`/api/v1/branches/${branchId}/services/${serviceId}`, { method: "POST", headers: writeHeaders() });
+      toast.success("Service assigned to branch.");
+      const svcs = await api<Service[]>(`/api/v1/branches/${branchId}/services?limit=50`);
+      setBranchServices((prev) => ({ ...prev, [branchId]: svcs ?? [] }));
+    } catch (reason) { toast.error(errorMessage(reason, "Could not assign service.")); }
+    finally { setBusy(false); }
+  }
+
+  async function unassignService(branchId: string, serviceId: string) {
+    setBusy(true);
+    try {
+      await api(`/api/v1/branches/${branchId}/services/${serviceId}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Service removed from branch.");
+      setBranchServices((prev) => ({ ...prev, [branchId]: (prev[branchId] ?? []).filter((s) => s.id !== serviceId) }));
+    } catch (reason) { toast.error(errorMessage(reason, "Could not remove service.")); }
+    finally { setBusy(false); }
+  }
+
   function handleAddBranch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -332,34 +385,62 @@ export default function BranchesPage() {
 
               {isOpen && (
                 <div style={{ borderTop: "1px solid var(--line)", marginTop: 12, paddingTop: 12 }}>
-                  <p className="eyebrow" style={{ marginBottom: 8 }}>DOCTORS ({docs.length})</p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <p className="eyebrow" style={{ margin: 0 }}>DOCTORS ({docs.length})</p>
+                    {canManageDoctor && (() => {
+                      const unassigned = allDoctors.filter((d) => !docs.some((bd) => bd.id === d.id));
+                      return unassigned.length > 0 ? (
+                        <select disabled={busy} style={{ fontSize: 11, padding: "3px 8px", border: "1px solid var(--line)", borderRadius: 4, background: "white" }}
+                          value="" onChange={(e) => { if (e.target.value) void assignDoctor(b.id, e.target.value); }}>
+                          <option value="">+ Assign doctor</option>
+                          {unassigned.map((d) => <option key={d.id} value={d.id}>{d.public_name}{d.specialty ? ` (${d.specialty})` : ""}</option>)}
+                        </select>
+                      ) : null;
+                    })()}
+                  </div>
                   {docs.length === 0 ? <p style={{ color: "var(--muted)", fontSize: 12 }}>No doctors assigned.</p> : (
                     <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
                       {docs.map((d) => (
                         <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
                           <span className="doctor-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>{(d.public_name ?? "D").charAt(0)}</span>
-                          <div>
+                          <div style={{ flex: 1 }}>
                             <strong style={{ fontSize: 13 }}>{d.public_name}</strong>
                             {d.specialty && <small style={{ display: "block", color: "var(--muted)", fontSize: 10 }}>{d.specialty}</small>}
                           </div>
+                          {canManageDoctor && <button type="button" disabled={busy} onClick={() => void unassignDoctor(b.id, d.id)}
+                            style={{ border: "none", background: "none", color: "var(--coral, #a14937)", fontSize: 14, cursor: "pointer", padding: "2px 6px" }} title="Remove from branch">&times;</button>}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  <p className="eyebrow" style={{ marginBottom: 8 }}>SERVICES ({svcs.length})</p>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <p className="eyebrow" style={{ margin: 0 }}>SERVICES ({svcs.length})</p>
+                    {canManageService && (() => {
+                      const unassigned = allServices.filter((s) => !svcs.some((bs) => bs.id === s.id));
+                      return unassigned.length > 0 ? (
+                        <select disabled={busy} style={{ fontSize: 11, padding: "3px 8px", border: "1px solid var(--line)", borderRadius: 4, background: "white" }}
+                          value="" onChange={(e) => { if (e.target.value) void assignService(b.id, e.target.value); }}>
+                          <option value="">+ Assign service</option>
+                          {unassigned.map((s) => <option key={s.id} value={s.id}>{s.name}{s.category ? ` (${s.category})` : ""}</option>)}
+                        </select>
+                      ) : null;
+                    })()}
+                  </div>
                   {svcs.length === 0 ? <p style={{ color: "var(--muted)", fontSize: 12 }}>No services configured.</p> : (
                     <div style={{ display: "grid", gap: 4, marginBottom: 16 }}>
                       {svcs.map((s) => (
-                        <div key={s.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12 }}>
-                          <div>
+                        <div key={s.id} style={{ display: "flex", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12 }}>
+                          <div style={{ flex: 1 }}>
                             <strong>{s.name}</strong>
                             {s.category && <small style={{ color: "var(--muted)", marginLeft: 6 }}>{s.category}</small>}
                           </div>
-                          <div style={{ textAlign: "right", color: "var(--muted)", fontSize: 11 }}>
+                          <div style={{ textAlign: "right", color: "var(--muted)", fontSize: 11, marginRight: 8 }}>
                             {s.duration_minutes && <span>{s.duration_minutes} min</span>}
                             {s.amount_minor != null && <span style={{ marginLeft: 8 }}>{(s.amount_minor / 100).toLocaleString()} {s.currency}</span>}
                           </div>
+                          {canManageService && <button type="button" disabled={busy} onClick={() => void unassignService(b.id, s.id)}
+                            style={{ border: "none", background: "none", color: "var(--coral, #a14937)", fontSize: 14, cursor: "pointer", padding: "2px 6px" }} title="Remove from branch">&times;</button>}
                         </div>
                       ))}
                     </div>

@@ -101,6 +101,7 @@ export default function InventoryPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [warehouseFilter, setWarehouseFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
   const [name, setName] = useState("");
   const [type, setType] = useState("consumable");
   const [sku, setSku] = useState("");
@@ -174,11 +175,12 @@ export default function InventoryPage() {
   const filteredStock = useMemo(() => {
     let result = stock;
     if (search) { const q = search.toLowerCase(); result = result.filter((s) => s.product_name.toLowerCase().includes(q) || s.branch_name.toLowerCase().includes(q) || (s.warehouse_name ?? "").toLowerCase().includes(q)); }
+    if (branchFilter !== "all") result = result.filter((s) => s.branch_id === branchFilter);
     if (typeFilter !== "all") result = result.filter((s) => s.product_type === typeFilter);
     if (categoryFilter !== "all") result = result.filter((s) => s.category_id === categoryFilter);
     if (warehouseFilter !== "all") result = result.filter((s) => s.warehouse_id === warehouseFilter);
     return result;
-  }, [stock, search, typeFilter, categoryFilter, warehouseFilter]);
+  }, [stock, search, branchFilter, typeFilter, categoryFilter, warehouseFilter]);
 
   const productTypes = useMemo(() => {
     const types = new Set(stock.map((s) => s.product_type).filter(Boolean));
@@ -465,9 +467,13 @@ export default function InventoryPage() {
         {stock.length > 0 && <div className="pipeline-toolbar" style={{ marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <input type="search" placeholder="Search products, branches, warehouses…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 260, padding: "6px 12px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.85rem", background: "var(--surface-1, #fff)" }} />
+            {branches.length > 1 && <select value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setWarehouseFilter("all"); }} style={{ padding: "6px 10px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.82rem", background: "var(--surface-1, #fff)" }}>
+              <option value="all">All branches</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>}
             {activeWarehouses.length > 0 && <select value={warehouseFilter} onChange={(e) => setWarehouseFilter(e.target.value)} style={{ padding: "6px 10px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.82rem", background: "var(--surface-1, #fff)" }}>
               <option value="all">All warehouses</option>
-              {activeWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name} ({w.branch_name})</option>)}
+              {(branchFilter !== "all" ? activeWarehouses.filter((w) => w.branch_id === branchFilter) : activeWarehouses).map((w) => <option key={w.id} value={w.id}>{w.name} ({w.branch_name})</option>)}
             </select>}
             <div className="pipeline-tabs" role="tablist" style={{ fontSize: "0.78rem" }}>
               <button role="tab" aria-selected={typeFilter === "all"} className={typeFilter === "all" ? "active" : ""} onClick={() => setTypeFilter("all")}>All</button>
@@ -480,7 +486,7 @@ export default function InventoryPage() {
           </div>
         </div>}
         {loading && <div className="dashboard-empty" role="status"><strong>Loading stock</strong><span>Checking authorized branches…</span></div>}
-        {!loading && filteredStock.length === 0 && <div className="dashboard-empty"><strong>{search || typeFilter !== "all" || categoryFilter !== "all" || warehouseFilter !== "all" ? "No matching stock records" : "No stock records yet"}</strong><span>Add a product, then record its first branch adjustment.</span></div>}
+        {!loading && filteredStock.length === 0 && <div className="dashboard-empty"><strong>{search || branchFilter !== "all" || typeFilter !== "all" || categoryFilter !== "all" || warehouseFilter !== "all" ? "No matching stock records" : "No stock records yet"}</strong><span>Add a product, then record its first branch adjustment.</span></div>}
         {!loading && filteredStock.length > 0 && <div className="inventory-list">
           {filteredStock.map((item) => <article className={`inventory-row ${item.low_stock ? "is-low" : ""}`} key={item.id}>
             <div className="inventory-mark">{item.low_stock ? "!" : "·"}</div>
