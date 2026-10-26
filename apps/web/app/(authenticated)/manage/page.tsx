@@ -490,7 +490,7 @@ export default function ManagePage() {
     </section>}
 
     {/* ═══ SERVICE DRAWER ═══ */}
-    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG" width={480} footer={<><button className="button button-secondary" type="button" onClick={() => { setServiceDrawer(false); setEditService(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="service-form" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button></>}>
+    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG" width={480} opaque footer={<><button className="button button-secondary" type="button" onClick={() => { setServiceDrawer(false); setEditService(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="service-form" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button></>}>
       <form className="drawer-form" id="service-form" onSubmit={handleServiceSubmit}>
         <label>Service name<input name="name" required maxLength={160} placeholder="e.g. HydraFacial, Teeth Cleaning" defaultValue={editService?.name ?? ""} key={editService?.id ?? "new"} /></label>
         <div className="drawer-form-row drawer-form-row-2">
@@ -522,7 +522,7 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ IMPORT DRAWER ═══ */}
-    <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES">
+    <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES" opaque>
       <div className="drawer-form">
         {templates.length === 0 && <p className="drawer-note">No templates available in the master catalog, or you&#39;ve imported them all.</p>}
         {templates.map((t) => <article className="invoice-row" key={t.id} style={{ cursor: "pointer" }} onClick={() => importTemplate(t)}>
@@ -537,7 +537,7 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ STAFF INVITE DRAWER ═══ */}
-    <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION" footer={<><button className="button button-secondary" type="button" onClick={() => setStaffDrawer(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="invite-form" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button></>}>
+    <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION" opaque footer={<><button className="button button-secondary" type="button" onClick={() => setStaffDrawer(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="invite-form" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button></>}>
       <form className="drawer-form" id="invite-form" onSubmit={handleInvite}>
         <label>Email address<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
         <div style={{ padding: "16px", background: "var(--cream)", borderRadius: 8, marginTop: 4 }}>
@@ -547,7 +547,7 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ ROLE DRAWER ═══ */}
-    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"} subtitle="ACCESS CONTROL" footer={<><button className="button button-secondary" type="button" onClick={() => { setRoleDrawer(false); setEditRole(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="role-form" disabled={busy}>{busy ? "Saving…" : editRole ? "Update role" : "Create role"} <span>→</span></button></>}>
+    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"} subtitle="ACCESS CONTROL" opaque footer={<><button className="button button-secondary" type="button" onClick={() => { setRoleDrawer(false); setEditRole(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="role-form" disabled={busy}>{busy ? "Saving…" : editRole ? "Update role" : "Create role"} <span>→</span></button></>}>
       <RoleEditor
         role={editRole}
         allPermissions={allPermissions}
@@ -570,7 +570,7 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ STAFF DETAIL DRAWER ═══ */}
-    <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"} subtitle="TEAM MEMBER" footer={can("staff.manage") ? <><button className="button button-secondary" type="button" onClick={() => setStaffDetail(null)}>Close</button><button className="button button-secondary" disabled={busy} onClick={() => { if (staffDetail) void resetStaffPassword(staffDetail); }}>Reset password</button></> : undefined}>
+    <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"} subtitle="TEAM MEMBER" opaque footer={can("staff.manage") ? <><button className="button button-secondary" type="button" onClick={() => setStaffDetail(null)}>Close</button><button className="button button-secondary" disabled={busy} onClick={() => { if (staffDetail) void resetStaffPassword(staffDetail); }}>Reset password</button></> : undefined}>
       {staffDetail && <div className="drawer-form staff-info">
         <div>
           <p className="drawer-note">{staffDetail.normalized_email}</p>
