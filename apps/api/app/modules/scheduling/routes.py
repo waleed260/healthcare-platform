@@ -160,6 +160,34 @@ def availability_rule_create(payload: AvailabilityRuleCreate, request: Request, 
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
+@router.put("/availability-rules/{rule_id}")
+def availability_rule_update(rule_id: UUID, payload: AvailabilityRuleCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _session_with_tenant(db, session_token)
+    existing = db.execute(text("SELECT branch_id FROM availability_rules WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": rule_id}).scalar_one_or_none()
+    if existing is None:
+        raise _error("NOT_FOUND", "Availability rule not found.", status.HTTP_404_NOT_FOUND)
+    session = _write(db, request, session_token, csrf_token, branch_id=payload.branch_id)
+    _ensure_branch_assignment(db, session["clinic_id"], payload.branch_id, doctor_id=payload.doctor_id, service_id=payload.service_id)
+    try:
+        row = db.execute(text("""
+            UPDATE availability_rules
+            SET branch_id = :branch_id, doctor_id = :doctor_id, service_id = :service_id,
+                weekday = :weekday, starts_at = :starts_at, ends_at = :ends_at,
+                effective_from = :effective_from, effective_to = :effective_to,
+                slot_cadence_minutes = :cadence, updated_at = now()
+            WHERE clinic_id = :clinic_id AND id = :id
+            RETURNING id, branch_id, doctor_id, service_id, weekday, starts_at, ends_at, effective_from, effective_to, slot_cadence_minutes, created_at, updated_at
+        """), {"clinic_id": session["clinic_id"], "id": rule_id, "branch_id": payload.branch_id, "doctor_id": payload.doctor_id, "service_id": payload.service_id, "weekday": payload.weekday, "starts_at": payload.starts_at, "ends_at": payload.ends_at, "effective_from": payload.effective_from, "effective_to": payload.effective_to, "cadence": payload.slot_cadence_minutes}).mappings().one_or_none()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _error("NOT_FOUND", "The branch, doctor, or service is not in this clinic.", status.HTTP_404_NOT_FOUND) from exc
+    if row is None:
+        raise _error("NOT_FOUND", "Availability rule not found.", status.HTTP_404_NOT_FOUND)
+    _event(db, request, session, "schedule.availability_rule_update", "availability_rule", rule_id)
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
 @router.delete("/availability-rules/{rule_id}")
 def availability_rule_delete(rule_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _session_with_tenant(db, session_token)

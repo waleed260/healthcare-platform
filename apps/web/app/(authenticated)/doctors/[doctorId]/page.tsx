@@ -22,7 +22,7 @@ type Doctor = {
   services: Service[]; branches: Branch[]; availability: AvailabilityRule[];
 };
 
-const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const fmtTime = (v: string) => v.slice(0, 5);
 const fmtDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v));
 const bookingLabel: Record<string, string> = { accepting: "Accepting bookings", paused: "Paused", not_accepting: "Not accepting" };
@@ -43,7 +43,7 @@ export default function DoctorDetailPage() {
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [ruleBranch, setRuleBranch] = useState("");
-  const [ruleWeekday, setRuleWeekday] = useState(1);
+  const [ruleWeekday, setRuleWeekday] = useState(0);
   const [ruleStart, setRuleStart] = useState("09:00");
   const [ruleEnd, setRuleEnd] = useState("17:00");
   const [ruleFrom, setRuleFrom] = useState(() => new Date().toISOString().slice(0, 10));
@@ -104,7 +104,7 @@ export default function DoctorDetailPage() {
     setEditingRuleId(null);
     setShowRuleForm(false);
     setRuleBranch("");
-    setRuleWeekday(1);
+    setRuleWeekday(0);
     setRuleStart("09:00");
     setRuleEnd("17:00");
     setRuleFrom(new Date().toISOString().slice(0, 10));
@@ -117,15 +117,17 @@ export default function DoctorDetailPage() {
     if (!doctor || !ruleBranch) return;
     setBusy(true);
     try {
-      if (editingRuleId) {
-        await api(`/api/v1/scheduling/availability-rules/${editingRuleId}`, { method: "DELETE", headers: writeHeaders() });
-      }
-      await post("/api/v1/scheduling/availability-rules", {
+      const body = {
         branch_id: ruleBranch, doctor_id: doctorId, weekday: ruleWeekday,
         starts_at: ruleStart + ":00", ends_at: ruleEnd + ":00",
         effective_from: ruleFrom, effective_to: ruleTo || null,
         slot_cadence_minutes: ruleCadence,
-      });
+      };
+      if (editingRuleId) {
+        await api(`/api/v1/scheduling/availability-rules/${editingRuleId}`, { method: "PUT", headers: writeHeaders(), body: JSON.stringify(body) });
+      } else {
+        await post("/api/v1/scheduling/availability-rules", body);
+      }
       toast.success(editingRuleId ? "Availability rule updated." : "Availability rule added.");
       resetRuleForm();
       await load();
