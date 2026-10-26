@@ -21,7 +21,6 @@ type Subscription = { id: string; code: string; name: string; status: string; st
 
 const TABS = [
   { id: "services", label: "Services", permission: "service.read" },
-  { id: "branches", label: "Branches", permission: "branch.read" },
   { id: "staff", label: "Staff", permission: "staff.read" },
   { id: "roles", label: "Roles", permission: "staff.read" },
   { id: "modules", label: "Specialties & Plan", permission: "clinic.read" },
@@ -297,7 +296,7 @@ export default function ManagePage() {
 
   // ── Render ──
   return <main className="workspace-page manage-page">
-    <div className="workspace-page-header"><div><p className="eyebrow">MANAGEMENT</p><h1>Run the clinic, <em>your way.</em></h1><p className="workspace-page-intro">Services, branches, staff and access in one place.</p></div><div className="header-actions"><button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div></div>
+    <div className="workspace-page-header"><div><p className="eyebrow">MANAGEMENT</p><h1>Run the clinic, <em>your way.</em></h1><p className="workspace-page-intro">Services, staff and access in one place.</p></div><div className="header-actions"><button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
     <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist">{visibleTabs.map((item) => <button key={item.id} role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div></div>
@@ -343,9 +342,6 @@ export default function ManagePage() {
         </article>)}
       </div>
     </section>}
-
-    {/* ═══ BRANCHES TAB ═══ */}
-    {tab === "branches" && <BranchesTab branches={branches} loading={loading} busy={busy} can={can} run={run} field={field} />}
 
     {/* ═══ STAFF TAB ═══ */}
     {tab === "staff" && <section className="surface-card">
@@ -622,53 +618,6 @@ export default function ManagePage() {
     </Drawer>
   </main>;
 }
-
-// ── Branches sub-component (keeps main component smaller) ──
-
-function BranchesTab({ branches, loading, busy, can, run, field }: {
-  branches: Branch[];
-  loading: boolean;
-  busy: boolean;
-  can: (p: string) => boolean;
-  run: (action: () => Promise<unknown>, success: string, fallback: string) => Promise<void>;
-  field: (form: FormData, key: string) => string;
-}) {
-  const [showForm, setShowForm] = useState(false);
-
-  function createBranch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    void run(
-      () => post("/api/v1/branches", { code: field(form, "code"), name: field(form, "name"), timezone: field(form, "timezone"), phone: field(form, "phone") || null, address: {} }),
-      "Branch added.", "The branch could not be created."
-    ).then(() => setShowForm(false));
-  }
-
-  return <>
-    <section className="surface-card">
-      <div className="surface-card-heading"><div><p className="eyebrow">LOCATIONS</p><h2>Where care happens.</h2></div>{can("branch.manage") && <button className="button button-primary" onClick={() => setShowForm(true)}>Add branch <span>＋</span></button>}</div>
-      <div className="invoice-list">
-        {!loading && branches.length === 0 && <div className="dashboard-empty"><strong>No branches yet</strong><span>Add your first location.</span></div>}
-        {branches.map((item) => <article className="invoice-row" key={item.id}>
-          <div className="invoice-mark">{item.code.slice(0, 3)}</div>
-          <div className="invoice-main"><h3>{item.name}</h3><p>{item.timezone}{item.phone ? ` · ${item.phone}` : ""}</p></div>
-          <div className="invoice-actions"><span className={`pipeline-status status-${item.status === "active" ? "paid" : "void"}`}>{item.status}</span></div>
-        </article>)}
-      </div>
-    </section>
-    <Drawer open={showForm} onClose={() => setShowForm(false)} title="Add branch" subtitle="NEW LOCATION" footer={<><button className="button button-secondary" type="button" onClick={() => setShowForm(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="branch-form" disabled={busy}>{busy ? "Saving…" : "Save branch"} <span>→</span></button></>}>
-      <form className="drawer-form" id="branch-form" onSubmit={createBranch}>
-        <label>Branch name<input name="name" required maxLength={160} placeholder="e.g. Main clinic, Downtown branch" /></label>
-        <label>Branch code<input name="code" required maxLength={40} placeholder="e.g. MAIN, DT-01" /></label>
-        <div className="drawer-form-row drawer-form-row-2">
-          <label>Timezone<select name="timezone" required defaultValue="Asia/Karachi"><option value="Asia/Karachi">Asia/Karachi (PKT)</option><option value="Asia/Dubai">Asia/Dubai (GST)</option><option value="Asia/Riyadh">Asia/Riyadh (AST)</option><option value="Europe/London">Europe/London (GMT)</option><option value="America/New_York">America/New York (EST)</option></select></label>
-          <label>Phone <span className="field-optional">optional</span><input name="phone" type="tel" maxLength={40} placeholder="+92 300 1234567" /></label>
-        </div>
-      </form>
-    </Drawer>
-  </>;
-}
-
 
 function RoleEditor({ role, allPermissions, onSave }: {
   role: Role | null;

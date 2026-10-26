@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Drawer, { useDirty } from "./drawer";
 import { useToast } from "./toast";
@@ -47,6 +48,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   const [patientSearch, setPatientSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(1);
+  const [branchLoadError, setBranchLoadError] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -62,14 +64,15 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   }, [open]);
 
   useEffect(() => {
-    if (!form.branch_id) { setBranchServices([]); setBranchDoctors([]); return; }
+    if (!form.branch_id) { setBranchServices([]); setBranchDoctors([]); setBranchLoadError(false); return; }
+    setBranchLoadError(false);
     void Promise.all([
       api<Option[]>(`/api/v1/branches/${form.branch_id}/services?limit=100`),
       api<Option[]>(`/api/v1/branches/${form.branch_id}/doctors?limit=100`),
     ]).then(([s, d]) => {
       setBranchServices(s ?? []);
       setBranchDoctors(d ?? []);
-    }).catch(() => undefined);
+    }).catch(() => { setBranchLoadError(true); });
   }, [form.branch_id]);
 
   useEffect(() => {
@@ -95,6 +98,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
     setBranchServices([]);
     setBranchDoctors([]);
     setDoctorServiceIds(new Set());
+    setBranchLoadError(false);
   }, [setForm, resetDirty]);
 
   useEffect(() => { if (!open) reset(); }, [open, reset]);
@@ -201,7 +205,9 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
                   {d.public_name ?? d.name}
                 </button>
               ))}
-              {branchDoctors.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>No doctors assigned to this branch. Assign doctors from the Manage section.</p>}
+              {branchDoctors.length === 0 && <p style={{ color: branchLoadError ? "var(--coral, #a14937)" : "var(--muted)", fontSize: 13 }}>
+                {branchLoadError ? "Could not load doctors for this branch. Please try again." : <>No doctors assigned to this branch. Assign doctors from the <Link href="/branches" style={{ color: "var(--leaf, #274c42)" }}>Branches</Link> page.</>}
+              </p>}
             </div>
           </>}
         </>}
@@ -256,7 +262,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
                 </button>
               ))}
               {availableServices.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>
-                {doctorServiceIds.size > 0 ? "This doctor has no services at this branch. Assign services from the Branches page." : "No services assigned to this branch. Assign services from the Manage section."}
+                {doctorServiceIds.size > 0 ? "This doctor has no services at this branch. Assign services from the Branches page." : "No services assigned to this branch. Assign services from the Branches page."}
               </p>}
             </div>
           </>;
