@@ -42,6 +42,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   const [doctors, setDoctors] = useState<Option[]>([]);
   const [branchServices, setBranchServices] = useState<Option[]>([]);
   const [branchDoctors, setBranchDoctors] = useState<Option[]>([]);
+  const [doctorServiceIds, setDoctorServiceIds] = useState<Set<string>>(new Set());
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientSearch, setPatientSearch] = useState("");
   const [busy, setBusy] = useState(false);
@@ -71,6 +72,14 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
     }).catch(() => undefined);
   }, [form.branch_id]);
 
+  useEffect(() => {
+    if (!form.doctor_id) { setDoctorServiceIds(new Set()); return; }
+    type DoctorDetail = { services?: { id: string }[] };
+    void api<DoctorDetail>(`/api/v1/doctors/${form.doctor_id}`).then((d) => {
+      setDoctorServiceIds(new Set((d?.services ?? []).map((s) => s.id)));
+    }).catch(() => setDoctorServiceIds(new Set()));
+  }, [form.doctor_id]);
+
   const reset = useCallback(() => {
     setForm(() => ({
       doctor_id: "", service_id: "", branch_id: "",
@@ -85,6 +94,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
     setPatientSearch("");
     setBranchServices([]);
     setBranchDoctors([]);
+    setDoctorServiceIds(new Set());
   }, [setForm, resetDirty]);
 
   useEffect(() => { if (!open) reset(); }, [open, reset]);
@@ -222,23 +232,35 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
         </>}
 
         {/* Step 3: Date, Time, Service */}
-        {step === 3 && <>
-          <p className="eyebrow" style={{ marginBottom: 12 }}>STEP 3 — DATE, TIME & SERVICE</p>
-          <div className="form-grid">
-            <label>
-              Date & time
+        {step === 3 && (() => {
+          const availableServices = doctorServiceIds.size > 0
+            ? branchServices.filter((s) => doctorServiceIds.has(s.id))
+            : branchServices;
+          return <>
+            <p className="eyebrow" style={{ marginBottom: 12 }}>STEP 3 — DATE, TIME & SERVICE</p>
+            <label style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>Date & time</span>
               <input type="datetime-local" required value={form.starts_at} onChange={(e) => setForm((f) => ({ ...f, starts_at: e.target.value }))} />
             </label>
-            <label>
-              Service
-              <select required value={form.service_id} onChange={(e) => setForm((f) => ({ ...f, service_id: e.target.value }))}>
-                <option value="">Select service</option>
-                {branchServices.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </label>
-            {branchServices.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>No services assigned to this branch. Assign services from the Manage section.</p>}
-          </div>
-        </>}
+            <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500, display: "block", marginBottom: 8 }}>Service</span>
+            <div style={{ display: "grid", gap: 8 }}>
+              {availableServices.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`button ${form.service_id === s.id ? "button-primary" : "button-secondary"}`}
+                  style={{ justifyContent: "flex-start", padding: "12px 16px", width: "100%" }}
+                  onClick={() => setForm((f) => ({ ...f, service_id: s.id }))}
+                >
+                  {s.name}
+                </button>
+              ))}
+              {availableServices.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>
+                {doctorServiceIds.size > 0 ? "This doctor has no services at this branch. Assign services from the Branches page." : "No services assigned to this branch. Assign services from the Manage section."}
+              </p>}
+            </div>
+          </>;
+        })()}
 
         {/* Step 4: Select or Create Patient */}
         {step === 4 && <>
@@ -302,10 +324,11 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
           <div style={{ background: "var(--paper, #f9f9f6)", padding: 16, borderRadius: 10 }}>
             <p className="eyebrow" style={{ marginBottom: 10 }}>BOOKING SUMMARY</p>
             <dl style={{ margin: 0, display: "grid", gap: 8, fontSize: 13 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Branch</dt><dd style={{ margin: 0 }}>{branches.find((b) => b.id === form.branch_id)?.name ?? "—"}</dd></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Doctor</dt><dd style={{ margin: 0 }}>{(branchDoctors.find((d) => d.id === form.doctor_id) ?? doctors.find((d) => d.id === form.doctor_id))?.public_name ?? "—"}</dd></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Service</dt><dd style={{ margin: 0 }}>{branchServices.find((s) => s.id === form.service_id)?.name ?? "—"}</dd></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Type</dt><dd style={{ margin: 0 }}>{form.appointment_type === "day" ? "☀ Day" : "☽ Evening"}</dd></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>When</dt><dd style={{ margin: 0 }}>{form.starts_at ? new Date(form.starts_at).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—"}</dd></div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Branch</dt><dd style={{ margin: 0 }}>{branches.find((b) => b.id === form.branch_id)?.name ?? "—"}</dd></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Patient</dt><dd style={{ margin: 0 }}>{form.patient_mode === "existing" ? (patients.find((p) => p.id === form.patient_id)?.full_name ?? "—") : form.full_name || "—"}</dd></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Payment</dt><dd style={{ margin: 0, textTransform: "capitalize" }}>{form.payment_method}</dd></div>
             </dl>

@@ -7,6 +7,7 @@ import { useToast } from "../_lib/toast";
 
 type AllDoctor = { id: string; public_name: string; specialty: string | null; status: string };
 type AllService = { id: string; name: string; category: string | null };
+type DoctorService = { id: string; name: string; category: string | null };
 
 type Branch = {
   id: string;
@@ -110,6 +111,7 @@ export default function BranchesPage() {
   const [busy, setBusy] = useState(false);
   const [allDoctors, setAllDoctors] = useState<AllDoctor[]>([]);
   const [allServices, setAllServices] = useState<AllService[]>([]);
+  const [doctorServices, setDoctorServices] = useState<Record<string, DoctorService[]>>({});
 
   const canEditHours = permissions.includes("schedule.manage");
   const canManageBranch = permissions.includes("branch.manage");
@@ -154,6 +156,15 @@ export default function BranchesPage() {
         const hoursData = hrs ?? [];
         setBranchHours((prev) => ({ ...prev, [branchId]: hoursData }));
         setSlotDrafts((prev) => ({ ...prev, [branchId]: defaultSlotDrafts(hoursData) }));
+        if (docs && docs.length > 0) {
+          type DocDetail = { services?: DoctorService[] };
+          const details = await Promise.all(docs.map((d) => api<DocDetail>(`/api/v1/doctors/${d.id}`).catch(() => null)));
+          setDoctorServices((prev) => {
+            const next = { ...prev };
+            docs.forEach((d, i) => { next[d.id] = details[i]?.services ?? []; });
+            return next;
+          });
+        }
       } catch { /* silent */ }
     }
   }
@@ -314,6 +325,28 @@ export default function BranchesPage() {
     finally { setBusy(false); }
   }
 
+  async function assignDoctorService(doctorId: string, serviceId: string) {
+    setBusy(true);
+    try {
+      await api(`/api/v1/doctors/${doctorId}/services/${serviceId}`, { method: "POST", headers: writeHeaders() });
+      toast.success("Service assigned to doctor.");
+      type DocDetail = { services?: DoctorService[] };
+      const detail = await api<DocDetail>(`/api/v1/doctors/${doctorId}`);
+      setDoctorServices((prev) => ({ ...prev, [doctorId]: detail?.services ?? [] }));
+    } catch (reason) { toast.error(errorMessage(reason, "Could not assign service to doctor.")); }
+    finally { setBusy(false); }
+  }
+
+  async function unassignDoctorService(doctorId: string, serviceId: string) {
+    setBusy(true);
+    try {
+      await api(`/api/v1/doctors/${doctorId}/services/${serviceId}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Service removed from doctor.");
+      setDoctorServices((prev) => ({ ...prev, [doctorId]: (prev[doctorId] ?? []).filter((s) => s.id !== serviceId) }));
+    } catch (reason) { toast.error(errorMessage(reason, "Could not remove service from doctor.")); }
+    finally { setBusy(false); }
+  }
+
   async function unassignService(branchId: string, serviceId: string) {
     setBusy(true);
     try {
@@ -399,18 +432,47 @@ export default function BranchesPage() {
                     })()}
                   </div>
                   {docs.length === 0 ? <p style={{ color: "var(--muted)", fontSize: 12 }}>No doctors assigned.</p> : (
-                    <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
-                      {docs.map((d) => (
-                        <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
-                          <span className="doctor-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>{(d.public_name ?? "D").charAt(0)}</span>
-                          <div style={{ flex: 1 }}>
-                            <strong style={{ fontSize: 13 }}>{d.public_name}</strong>
-                            {d.specialty && <small style={{ display: "block", color: "var(--muted)", fontSize: 10 }}>{d.specialty}</small>}
+                    <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+                      {docs.map((d) => {
+                        const dSvcs = doctorServices[d.id] ?? [];
+                        const unassignedSvcs = svcs.filter((s) => !dSvcs.some((ds) => ds.id === s.id));
+                        return (
+                          <div key={d.id} style={{ padding: "10px 12px", background: "var(--cream, #f9f9f6)", borderRadius: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span className="doctor-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>{(d.public_name ?? "D").charAt(0)}</span>
+                              <div style={{ flex: 1 }}>
+                                <strong style={{ fontSize: 13 }}>{d.public_name}</strong>
+                                {d.specialty && <small style={{ display: "block", color: "var(--muted)", fontSize: 10 }}>{d.specialty}</small>}
+                              </div>
+                              {canManageDoctor && <button type="button" disabled={busy} onClick={() => void unassignDoctor(b.id, d.id)}
+                                style={{ border: "none", background: "none", color: "var(--coral, #a14937)", fontSize: 14, cursor: "pointer", padding: "2px 6px" }} title="Remove from branch">&times;</button>}
+                            </div>
+                            {/* Doctor's services */}
+                            <div style={{ marginTop: 8, paddingTop: 6, borderTop: "1px solid var(--line)" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                                <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'DM Mono', monospace", letterSpacing: ".06em" }}>SERVICES ({dSvcs.length})</span>
+                                {canManageService && unassignedSvcs.length > 0 && (
+                                  <select disabled={busy} style={{ fontSize: 10, padding: "2px 6px", border: "1px solid var(--line)", borderRadius: 4, background: "white" }}
+                                    value="" onChange={(e) => { if (e.target.value) void assignDoctorService(d.id, e.target.value); }}>
+                                    <option value="">+ Add service</option>
+                                    {unassignedSvcs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                  </select>
+                                )}
+                              </div>
+                              {dSvcs.length === 0 ? <p style={{ color: "var(--muted)", fontSize: 11 }}>No services — assign to enable booking.</p> : (
+                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                  {dSvcs.map((s) => (
+                                    <span key={s.id} className="tag-pill">
+                                      {s.name}
+                                      {canManageService && <button type="button" className="tag-pill-remove" disabled={busy} onClick={() => void unassignDoctorService(d.id, s.id)}>&times;</button>}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          {canManageDoctor && <button type="button" disabled={busy} onClick={() => void unassignDoctor(b.id, d.id)}
-                            style={{ border: "none", background: "none", color: "var(--coral, #a14937)", fontSize: 14, cursor: "pointer", padding: "2px 6px" }} title="Remove from branch">&times;</button>}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -507,31 +569,35 @@ export default function BranchesPage() {
         })}
       </div>
 
-      <Drawer open={showAddBranch} onClose={() => setShowAddBranch(false)} title="Add branch">
+      <Drawer open={showAddBranch} onClose={() => setShowAddBranch(false)} title="Add branch" subtitle="CLINIC NETWORK">
         <form onSubmit={handleAddBranch} className="drawer-form">
-          <label className="field">
-            <span className="field-label">Branch name</span>
-            <input name="name" required autoFocus className="field-input" placeholder="e.g. Downtown Clinic" />
+          <label>
+            Branch name
+            <input name="name" required autoFocus placeholder="e.g. Downtown Clinic" />
           </label>
-          <label className="field">
-            <span className="field-label">Code</span>
-            <input name="code" required className="field-input" placeholder="e.g. DTN" maxLength={10} />
-          </label>
-          <label className="field">
-            <span className="field-label">Timezone</span>
-            <select name="timezone" className="field-input" defaultValue="Asia/Karachi">
-              <option value="Asia/Karachi">Asia/Karachi</option>
-              <option value="Asia/Dubai">Asia/Dubai</option>
-              <option value="Asia/Riyadh">Asia/Riyadh</option>
-              <option value="Europe/London">Europe/London</option>
-              <option value="America/New_York">America/New_York</option>
-              <option value="America/Chicago">America/Chicago</option>
-              <option value="America/Los_Angeles">America/Los_Angeles</option>
-            </select>
-          </label>
-          <label className="field">
-            <span className="field-label">Phone (optional)</span>
-            <input name="phone" type="tel" className="field-input" placeholder="+92 300 1234567" />
+          <div className="drawer-form-row drawer-form-row-2">
+            <label>
+              Code
+              <input name="code" required placeholder="e.g. DTN" maxLength={10} />
+            </label>
+            <label>
+              Timezone
+              <select name="timezone" defaultValue="Asia/Karachi">
+                <option value="Asia/Karachi">Asia/Karachi</option>
+                <option value="Asia/Dubai">Asia/Dubai</option>
+                <option value="Asia/Riyadh">Asia/Riyadh</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Chicago">America/Chicago</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+              </select>
+            </label>
+          </div>
+          <p className="drawer-form-section-label">CONTACT</p>
+          <label>
+            Phone
+            <span className="drawer-note">optional</span>
+            <input name="phone" type="tel" placeholder="+92 300 1234567" />
           </label>
           <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add branch"} <span>→</span></button>
         </form>

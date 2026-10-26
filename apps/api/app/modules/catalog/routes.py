@@ -605,6 +605,16 @@ def assign_doctor_service(doctor_id: str, service_id: str, request: Request, db:
     return {"data": {"doctor_id": doctor_id, "service_id": service_id, "assigned": True}, "meta": {"request_id": request.state.request_id}}
 
 
+@catalog_router.delete("/doctors/{doctor_id}/services/{service_id}")
+def unassign_doctor_service(doctor_id: str, service_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "doctor.manage", csrf_token)
+    deleted = db.execute(text("DELETE FROM doctor_services WHERE clinic_id = :clinic_id AND doctor_id = :doctor_id AND service_id = :service_id RETURNING service_id"), {"clinic_id": session["clinic_id"], "doctor_id": doctor_id, "service_id": service_id}).scalar_one_or_none()
+    if deleted is None:
+        raise _error("NOT_FOUND", "Doctor-service assignment not found.", status.HTTP_404_NOT_FOUND)
+    db.commit()
+    return {"data": {"doctor_id": doctor_id, "service_id": str(deleted), "assigned": False}, "meta": {"request_id": request.state.request_id}}
+
+
 @catalog_router.post("/branches/{branch_id}/doctors/{doctor_id}", status_code=status.HTTP_201_CREATED)
 def assign_branch_doctor(branch_id: str, doctor_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "branch.manage", csrf_token, branch_id=branch_id)

@@ -272,40 +272,48 @@ export default function DoctorsPage() {
         </>
       )}
 
-      <Drawer open={showAddDoctor} onClose={() => setShowAddDoctor(false)} title="Add doctor">
+      <Drawer open={showAddDoctor} onClose={() => setShowAddDoctor(false)} title="Add doctor" subtitle="CLINICAL TEAM">
         <form onSubmit={handleAddDoctor} className="drawer-form">
-          <label className="field">
-            <span className="field-label">Full name</span>
-            <input name="public_name" required autoFocus className="field-input" placeholder="Dr. Ahmad Khan" />
+          <label>
+            Full name
+            <input name="public_name" required autoFocus placeholder="Dr. Ahmad Khan" />
           </label>
-          <label className="field">
-            <span className="field-label">Specialty</span>
-            <input name="specialty" className="field-input" placeholder="e.g. Dermatology" />
+          <label>
+            Specialty
+            <span className="drawer-note">optional</span>
+            <input name="specialty" placeholder="e.g. Dermatology" />
           </label>
-          <label className="field">
-            <span className="field-label">Consultation duration (minutes)</span>
-            <input name="consultation_duration_minutes" type="number" required className="field-input" defaultValue={30} min={1} max={1440} />
+          <p className="drawer-form-section-label">SCHEDULING</p>
+          <div className="drawer-form-row drawer-form-row-2">
+            <label>
+              Duration (min)
+              <input name="consultation_duration_minutes" type="number" required defaultValue={30} min={1} max={1440} />
+            </label>
+            <label>
+              Booking status
+              <select name="booking_status" defaultValue="accepting">
+                <option value="accepting">Accepting</option>
+                <option value="paused">Paused</option>
+                <option value="not_accepting">Not accepting</option>
+              </select>
+            </label>
+          </div>
+          <p className="drawer-form-section-label">CONTACT & CREDENTIALS</p>
+          <label>
+            License number
+            <span className="drawer-note">optional</span>
+            <input name="license_number" placeholder="PMC-12345" />
           </label>
-          <label className="field">
-            <span className="field-label">Booking status</span>
-            <select name="booking_status" className="field-input" defaultValue="accepting">
-              <option value="accepting">Accepting</option>
-              <option value="paused">Paused</option>
-              <option value="not_accepting">Not accepting</option>
-            </select>
-          </label>
-          <label className="field">
-            <span className="field-label">License number (optional)</span>
-            <input name="license_number" className="field-input" placeholder="PMC-12345" />
-          </label>
-          <label className="field">
-            <span className="field-label">Phone (optional)</span>
-            <input name="phone" type="tel" className="field-input" placeholder="+92 300 1234567" />
-          </label>
-          <label className="field">
-            <span className="field-label">Email (optional)</span>
-            <input name="email" type="email" className="field-input" placeholder="doctor@clinic.com" />
-          </label>
+          <div className="drawer-form-row drawer-form-row-2">
+            <label>
+              Phone
+              <input name="phone" type="tel" placeholder="+92 300 1234567" />
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" placeholder="doctor@clinic.com" />
+            </label>
+          </div>
           <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add doctor"} <span>→</span></button>
         </form>
       </Drawer>
