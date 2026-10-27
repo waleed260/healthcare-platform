@@ -24,6 +24,7 @@ const nextConfig: NextConfig = {
     }
     return [
       { source: "/api/:path*", destination: `${apiOrigin.replace(/\/$/, "")}/api/:path*` },
+      { source: "/health/:path*", destination: `${apiOrigin.replace(/\/$/, "")}/health/:path*` },
       { source: "/:clinicSlug/sitemap.xml", destination: "/:clinicSlug/sitemap-feed" },
     ];
   },

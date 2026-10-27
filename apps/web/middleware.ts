@@ -16,7 +16,7 @@ export function middleware(request: NextRequest) {
   // interstitial (ERR_NGROK_6024) to any browser User-Agent and breaks JSON fetches.
   // The `ngrok-skip-browser-warning` request header (any value) bypasses it; inject it
   // on proxied API requests so the forwarded request reaches the API directly.
-  if (request.nextUrl.pathname.startsWith("/api/")) {
+  if (request.nextUrl.pathname.startsWith("/api/") || request.nextUrl.pathname.startsWith("/health/")) {
     requestHeaders.set("ngrok-skip-browser-warning", "true");
   }
   const response = NextResponse.next({ request: { headers: requestHeaders } });
