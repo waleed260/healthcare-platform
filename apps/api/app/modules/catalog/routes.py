@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.authorization.service import ForbiddenError, require_permission
-from app.modules.catalog.schemas import BranchCreate, BranchHoursUpsert, BranchUpdate, CatalogStatusUpdate, DoctorCreate, DoctorUpdate, HolidayCreate, ResourceCreate, ResourceUpdate, RoomCreate, RoomUpdate, ServiceCreate, ServiceMaterialAssign, ServiceTemplateImport, ServiceUpdate
+from app.modules.catalog.schemas import BranchCreate, BranchHoursUpsert, BranchUpdate, CatalogStatusUpdate, DoctorCreate, DoctorUpdate, HolidayCreate, ResourceCreate, ResourceUpdate, RoomCreate, RoomUpdate, ServiceCreate, ServiceMaterialAssign, ServiceMaterialUpdate, ServiceTemplateImport, ServiceUpdate
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -879,6 +879,21 @@ def add_service_material(service_id: str, payload: ServiceMaterialAssign, reques
         RETURNING id, service_id, inventory_product_id, default_quantity, notes, created_at
     """), {"cid": session["clinic_id"], "sid": service_id, "pid": payload.inventory_product_id, "qty": payload.default_quantity, "notes": payload.notes}).mappings().one()
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="service.material_add", entity_type="service", entity_id=service_id, outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"product_id": payload.inventory_product_id})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.patch("/{service_id}/materials/{product_id}", status_code=status.HTTP_200_OK)
+def update_service_material(service_id: str, product_id: str, payload: ServiceMaterialUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "service.manage", csrf_token)
+    row = db.execute(text("""
+        UPDATE service_materials SET default_quantity = :qty, notes = :notes
+        WHERE clinic_id = :cid AND service_id = :sid AND inventory_product_id = :pid
+        RETURNING id, service_id, inventory_product_id, default_quantity, notes, created_at
+    """), {"cid": session["clinic_id"], "sid": service_id, "pid": product_id, "qty": payload.default_quantity, "notes": payload.notes}).mappings().one_or_none()
+    if row is None:
+        raise _error("NOT_FOUND", "Material link not found.", status.HTTP_404_NOT_FOUND)
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="service.material_update", entity_type="service", entity_id=service_id, outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={"product_id": product_id, "quantity": payload.default_quantity})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 

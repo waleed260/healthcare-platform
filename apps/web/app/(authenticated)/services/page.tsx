@@ -91,6 +91,17 @@ export default function ServicesPage() {
     finally { setMatBusy(false); }
   }
 
+  async function updateMaterialQty(serviceId: string, productId: string, qty: number) {
+    if (qty <= 0 || !isFinite(qty)) return;
+    setMatBusy(true);
+    try {
+      await patch(`/api/v1/services/${serviceId}/materials/${productId}`, { default_quantity: qty });
+      setMaterials((prev) => prev.map((m) => m.inventory_product_id === productId ? { ...m, default_quantity: qty } : m));
+      toast.success("Quantity updated.");
+    } catch (reason) { toast.error(errorMessage(reason, "Could not update quantity.")); }
+    finally { setMatBusy(false); }
+  }
+
   async function run(action: () => Promise<unknown>, success: string, fallback: string) {
     setBusy(true);
     setError(null);
@@ -211,9 +222,13 @@ export default function ServicesPage() {
             <p className="eyebrow" style={{ marginBottom: 8 }}>REQUIRED MATERIALS ({materials.length})</p>
             {materials.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>No materials linked. Link inventory products that this service uses.</p>}
             {materials.map((m) => (
-              <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12 }}>
-                <span><strong>{m.product_name}</strong> <span style={{ color: "var(--muted)" }}>· {m.product_type} · {m.unit} × {m.default_quantity}</span></span>
-                <button className="ghost-button" type="button" disabled={matBusy} onClick={() => void removeMaterial(editService.id, m.inventory_product_id)} style={{ color: "var(--coral)", fontSize: 11 }}>Remove</button>
+              <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12, gap: 6 }}>
+                <span style={{ flex: 1, minWidth: 0 }}><strong>{m.product_name}</strong> <span style={{ color: "var(--muted)" }}>· {m.product_type} · {m.unit}</span></span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                  <span style={{ color: "var(--muted)" }}>×</span>
+                  <input type="number" step="any" min="0.001" defaultValue={m.default_quantity} disabled={matBusy} style={{ width: 64, fontSize: 12, padding: "2px 4px", textAlign: "right" }} onBlur={(e) => { const v = parseFloat(e.target.value); if (v > 0 && v !== m.default_quantity) void updateMaterialQty(editService.id, m.inventory_product_id, v); else e.target.value = String(m.default_quantity); }} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+                  <button className="ghost-button" type="button" disabled={matBusy} onClick={() => void removeMaterial(editService.id, m.inventory_product_id)} style={{ color: "var(--coral)", fontSize: 11 }}>Remove</button>
+                </span>
               </div>
             ))}
             {invProducts.length > 0 && (

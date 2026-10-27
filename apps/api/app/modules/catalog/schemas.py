@@ -217,6 +217,13 @@ class ServiceMaterialAssign(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 
 
+class ServiceMaterialUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_quantity: float = Field(gt=0, le=99999)
+    notes: str | None = Field(default=None, max_length=500)
+
+
 class CatalogStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
