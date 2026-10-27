@@ -225,6 +225,20 @@ def _warm_pool():
     logging.getLogger("healthcare.startup").error("pool_warmup_exhausted_retries")
 
 
+@app.on_event("startup")
+def _start_embedded_worker():
+    """Run the scan worker in-process when there's no separate worker service."""
+    import os
+    if os.environ.get("RUN_WORKER_IN_PROCESS", "").lower() not in ("true", "1"):
+        return
+    import logging
+    import threading
+    from scripts.scan_worker import main as worker_main
+    t = threading.Thread(target=worker_main, daemon=True, name="embedded-scan-worker")
+    t.start()
+    logging.getLogger("healthcare.startup").info("embedded_scan_worker_started")
+
+
 @app.get("/health/live", tags=["system"])
 def health_live() -> dict[str, str]:
     """Liveness probe: prove only that the API process is serving requests."""

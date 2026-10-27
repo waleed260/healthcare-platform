@@ -1,0 +1,60 @@
+# Render Blueprint — deploys the FastAPI backend (free plan, single service).
+# The scan worker runs in-process via RUN_WORKER_IN_PROCESS=true.
+# The existing Neon PostgreSQL database is used; no Render-managed DB needed.
+# See CRM_AVAILABILITY_IMPLEMENTATION_PLAN.md for env-var setup instructions.
+services:
+  - type: web
+    name: healthcare-api
+    runtime: docker
+    repo: https://github.com/waleed260/healthcare-platform
+    branch: main
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health/ready
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: PORT
+        value: "10000"
+      - key: WEB_CONCURRENCY
+        value: "2"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "10"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_MIGRATION_URL
+        sync: false
+      - key: SESSION_HMAC_KEY
+        sync: false
+      - key: FIELD_ENCRYPTION_KEYS
+        sync: false
+      - key: COOKIE_DOMAIN
+        sync: false
+      - key: CSRF_ALLOWED_ORIGINS
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+      - key: ALLOW_WILDCARD_FORWARDED_IPS
+        value: "true"
+      - key: RUN_MIGRATIONS_ON_START
+        value: "true"
+      - key: RUN_WORKER_IN_PROCESS
+        value: "true"
+      - key: STORAGE_BACKEND
+        value: local
+      - key: SENTRY_DSN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
