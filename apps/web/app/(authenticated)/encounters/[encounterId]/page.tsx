@@ -502,7 +502,7 @@ export default function EncounterDetailPage() {
 
   const readonly = enc.status === "discharged" || enc.status === "finalized";
   const isDraft = enc.status === "draft";
-  const lockedTabs: Set<Tab> = isDraft ? new Set(["assessment", "treatment", "medications", "vitals", "discharge", "summary"]) : new Set();
+  const lockedTabs: Set<Tab> = new Set();
   const arrivalLocked = !isDraft && !readonly;
 
   /* ── Render ───────────────────────────────────────────────────── */
@@ -517,7 +517,7 @@ export default function EncounterDetailPage() {
         </div>
         <div className="header-actions">
           <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 10, background: statusColor[enc.status] ?? "var(--line)", color: "#fff" }}>{statusLabel[enc.status] ?? typeLabel(enc.status)}</span>
-          {enc.status === "draft" && currentUserId && currentUserId === enc.doctor_user_id && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
+          {enc.status === "draft" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
           {enc.status === "in_progress" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("ready_for_discharge")}>Ready for Discharge</button>}
           {enc.status === "discharged" && <button className="button button-primary" type="button" disabled={busy} onClick={() => void changeStatus("finalized")}>Finalize</button>}
           {(enc.status === "discharged" || enc.status === "finalized") && !invoiceLoading && !invoiceData && (
