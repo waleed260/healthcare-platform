@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 LOGGER = logging.getLogger("healthcare.scan-worker")
 
 SCAN_TYPES = ("patient_media_scan", "website_media_scan", "document_scan")
+QUEUE_TYPES = ("document_metadata_encrypt", "export", "retention_cleanup")
 INTERVAL = float(os.environ.get("WORKER_POLL_SECONDS", "5"))
 MAX_DRAIN = 50
 
@@ -46,10 +47,22 @@ def main() -> None:
                     except Exception:
                         LOGGER.exception("job failed clinic=%s type=%s", clinic_id, job_type)
                         break
+            for job_type in QUEUE_TYPES:
+                for _ in range(MAX_DRAIN):
+                    try:
+                        if process_once(clinic_id, job_type) is None:
+                            break
+                    except Exception:
+                        LOGGER.exception("job failed clinic=%s type=%s", clinic_id, job_type)
+                        break
             try:
                 process_once(clinic_id, "follow_up_overdue_notification")
             except Exception:
                 LOGGER.exception("follow-up sweep failed clinic=%s", clinic_id)
+            try:
+                process_once(clinic_id, "session_cleanup")
+            except Exception:
+                LOGGER.exception("session cleanup failed clinic=%s", clinic_id)
         time.sleep(INTERVAL)
 
 

@@ -1,7 +1,7 @@
 # Render Blueprint — deploys the FastAPI backend (free plan, single service).
+# WEB_CONCURRENCY=1 to avoid duplicate background-worker threads.
 # The scan worker runs in-process via RUN_WORKER_IN_PROCESS=true.
 # The existing Neon PostgreSQL database is used; no Render-managed DB needed.
-# See CRM_AVAILABILITY_IMPLEMENTATION_PLAN.md for env-var setup instructions.
 services:
   - type: web
     name: healthcare-api
@@ -19,10 +19,12 @@ services:
       - key: PORT
         value: "10000"
       - key: WEB_CONCURRENCY
-        value: "2"
+        value: "1"
       - key: DB_POOL_SIZE
-        value: "5"
+        value: "3"
       - key: DB_MAX_OVERFLOW
+        value: "5"
+      - key: DATABASE_CONNECT_TIMEOUT
         value: "10"
       - key: DATABASE_URL
         sync: false
