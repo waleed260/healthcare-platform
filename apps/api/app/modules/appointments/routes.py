@@ -220,7 +220,7 @@ def _audit(db: Session, request: Request, session: dict, action: str, appointmen
 
 
 @appointment_router.get("")
-def appointment_list(request: Request, branch_id: UUID | None = Query(default=None), doctor_id: UUID | None = Query(default=None), service_id: UUID | None = Query(default=None), patient_id: UUID | None = Query(default=None), appointment_status: str | None = Query(default=None, alias="status", max_length=40), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def appointment_list(request: Request, branch_id: UUID | None = Query(default=None), doctor_id: UUID | None = Query(default=None), service_id: UUID | None = Query(default=None), patient_id: UUID | None = Query(default=None), appointment_status: str | None = Query(default=None, alias="status", max_length=40), date_from: date | None = Query(default=None, alias="from"), date_to: date | None = Query(default=None, alias="to"), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _staff_authorized(db, session_token, "appointment.read", branch_id=branch_id)
     cursor_values = decode_cursor(cursor, "appointments") if cursor else None
     if cursor and (cursor_values is None or cursor_values.get("branch_id") != str(branch_id) or cursor_values.get("doctor_id") != str(doctor_id) or cursor_values.get("service_id") != str(service_id) or cursor_values.get("status") != (appointment_status or "")):
@@ -230,24 +230,29 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
         after_id = UUID(cursor_values["id"]) if cursor_values else None
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
+    range_start = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
+    range_end = datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None
     rows = db.execute(text("""
-        SELECT appointments.id, reference, branch_id, doctor_id, service_id, patient_id,
-               (SELECT full_name FROM patients p WHERE p.clinic_id = appointments.clinic_id AND p.id = appointments.patient_id) AS patient_name,
-               starts_at, ends_at, status, source, appointments.version, appointments.created_at, appointments.updated_at
-        FROM appointments
-        WHERE clinic_id = :clinic_id AND archived_at IS NULL
-          AND (:branch_id IS NULL OR branch_id = :branch_id)
-          AND (:doctor_id IS NULL OR doctor_id = :doctor_id)
-          AND (:service_id IS NULL OR service_id = :service_id)
+        SELECT a.id, a.reference, a.branch_id, a.doctor_id, a.service_id, a.patient_id,
+               p.full_name AS patient_name,
+               a.starts_at, a.ends_at, a.status, a.source, a.version, a.created_at, a.updated_at
+        FROM appointments a
+        LEFT JOIN patients p ON p.clinic_id = a.clinic_id AND p.id = a.patient_id
+        WHERE a.clinic_id = :clinic_id AND a.archived_at IS NULL
+          AND (:branch_id IS NULL OR a.branch_id = :branch_id)
+          AND (:doctor_id IS NULL OR a.doctor_id = :doctor_id)
+          AND (:service_id IS NULL OR a.service_id = :service_id)
           AND (
             NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-            OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = appointments.branch_id)
+            OR EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id AND s.branch_id = a.branch_id)
           )
-          AND (:appointment_status IS NULL OR status = :appointment_status)
-          AND (:patient_id IS NULL OR patient_id = :patient_id)
-          AND (:after_starts_at IS NULL OR starts_at > :after_starts_at OR (starts_at = :after_starts_at AND id > :after_id))
-        ORDER BY starts_at, id LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id, "doctor_id": doctor_id, "service_id": service_id, "appointment_status": appointment_status, "patient_id": patient_id, "after_starts_at": after_starts_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
+          AND (:appointment_status IS NULL OR a.status = :appointment_status)
+          AND (:patient_id IS NULL OR a.patient_id = :patient_id)
+          AND (:range_start::timestamptz IS NULL OR a.starts_at >= :range_start)
+          AND (:range_end::timestamptz IS NULL OR a.starts_at <= :range_end)
+          AND (:after_starts_at IS NULL OR a.starts_at > :after_starts_at OR (a.starts_at = :after_starts_at AND a.id > :after_id))
+        ORDER BY a.starts_at, a.id LIMIT :page_size
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id, "doctor_id": doctor_id, "service_id": service_id, "appointment_status": appointment_status, "patient_id": patient_id, "range_start": range_start, "range_end": range_end, "after_starts_at": after_starts_at, "after_id": after_id, "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = None

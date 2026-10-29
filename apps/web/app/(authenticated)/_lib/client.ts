@@ -1,8 +1,9 @@
-import { cachedFetch } from "./session-cache";
+import { cachedFetch, cachedRefData } from "./session-cache";
 
 export type ApiEnvelope<T> = { data?: T; error?: { code?: string; message?: string; fields?: Record<string, string> } };
 
-const CACHED_GETS = new Set(["/api/v1/auth/me", "/api/v1/clinic/context", "/api/v1/operations/dashboard-summary", "/api/v1/operations/reporting-summary"]);
+const SESSION_CACHED = new Set(["/api/v1/auth/me", "/api/v1/clinic/context"]);
+const REF_CACHED = new Set(["/api/v1/branches?limit=100", "/api/v1/doctors?limit=100", "/api/v1/services?limit=100"]);
 
 // Single place where auth-expiry sends the user back to login. Preserves the deep
 // link as ?next= so the login page can return the user exactly where they were.
@@ -30,7 +31,8 @@ async function refreshCsrf(): Promise<string | undefined> {
 
 export async function api<T>(url: string, init?: globalThis.RequestInit, fallback = "The request could not be completed."): Promise<T> {
   const isGet = !init?.method || init.method === "GET";
-  if (isGet && CACHED_GETS.has(url)) return cachedFetch<T>(url, url === "/api/v1/auth/me" ? 30_000 : 15_000);
+  if (isGet && SESSION_CACHED.has(url)) return cachedFetch<T>(url, 60_000);
+  if (isGet && REF_CACHED.has(url)) return cachedRefData<T>(url);
   const response = await fetch(url, { credentials: "include", ...(isGet ? {} : { cache: "no-store" as const }), ...init });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (!response.ok) {

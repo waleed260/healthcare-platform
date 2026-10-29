@@ -57,9 +57,13 @@ export default function SchedulePage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
+      const rangeStart = view === "month" ? new Date(cursorDate.getFullYear(), cursorDate.getMonth(), 1) : view === "week" ? startOfWeek(cursorDate) : cursorDate;
+      const rangeEnd = view === "month" ? new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0) : view === "week" ? addDays(startOfWeek(cursorDate), 6) : cursorDate;
+      const from = dateKey(rangeStart);
+      const to = dateKey(rangeEnd);
       const [session, appointmentRows, branchRows, doctorRows, serviceRows] = await Promise.all([
         api<Session>("/api/v1/auth/me"),
-        api<Appointment[]>(`/api/v1/appointments?limit=100${selectedBranch ? `&branch_id=${encodeURIComponent(selectedBranch)}` : ""}${selectedDoctor ? `&doctor_id=${encodeURIComponent(selectedDoctor)}` : ""}${selectedService ? `&service_id=${encodeURIComponent(selectedService)}` : ""}${selectedStatus ? `&status=${encodeURIComponent(selectedStatus)}` : ""}`),
+        api<Appointment[]>(`/api/v1/appointments?limit=100&from=${from}&to=${to}${selectedBranch ? `&branch_id=${encodeURIComponent(selectedBranch)}` : ""}${selectedDoctor ? `&doctor_id=${encodeURIComponent(selectedDoctor)}` : ""}${selectedService ? `&service_id=${encodeURIComponent(selectedService)}` : ""}${selectedStatus ? `&status=${encodeURIComponent(selectedStatus)}` : ""}`),
         api<Option[]>("/api/v1/branches?limit=100"),
         api<Option[]>("/api/v1/doctors?limit=100"),
         api<Option[]>("/api/v1/services?limit=100"),
@@ -73,7 +77,7 @@ export default function SchedulePage() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The schedule could not be loaded.");
     } finally { setLoading(false); }
-  }, [selectedBranch, selectedDoctor, selectedService, selectedStatus]);
+  }, [selectedBranch, selectedDoctor, selectedService, selectedStatus, cursorDate, view]);
 
   useEffect(() => { void load(); }, [load]);
 

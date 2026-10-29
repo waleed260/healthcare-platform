@@ -114,6 +114,12 @@ app.add_middleware(
 )
 
 
+_CACHEABLE_REF_PATHS = frozenset({
+    "/api/v1/branches", "/api/v1/doctors", "/api/v1/services",
+    "/api/v1/holidays", "/api/v1/catalog/service-templates",
+})
+
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     started = monotonic()
@@ -164,9 +170,15 @@ async def security_middleware(request: Request, call_next):
     path = request.url.path
     if request.method == "GET" and response.status_code == 200 and "Cache-Control" not in response.headers:
         if path.startswith("/api/v1/public/"):
-            response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+            response.headers["Cache-Control"] = "public, max-age=120, s-maxage=300, stale-while-revalidate=600"
+            response.headers["Vary"] = "Accept-Encoding"
+            response.headers["CDN-Cache-Control"] = "public, max-age=300"
         elif path == "/health/live" or path == "/health" or path == "/health/ready":
             response.headers["Cache-Control"] = "no-cache"
+        elif path in _CACHEABLE_REF_PATHS:
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=120"
+        elif path == "/api/v1/auth/me" or path == "/api/v1/clinic/context":
+            response.headers["Cache-Control"] = "private, max-age=15, stale-while-revalidate=60"
         elif path.startswith("/api/"):
             response.headers["Cache-Control"] = "private, no-cache, max-age=0"
     return response

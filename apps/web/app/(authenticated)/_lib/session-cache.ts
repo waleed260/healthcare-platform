@@ -5,7 +5,7 @@ type CacheEntry<T> = { data: T; ts: number };
 const cache = new Map<string, CacheEntry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
-const DEFAULT_TTL = 5000;
+const DEFAULT_TTL = 30_000;
 
 export function cachedFetch<T>(url: string, ttlMs = DEFAULT_TTL): Promise<T> {
   const entry = cache.get(url) as CacheEntry<T> | undefined;
@@ -37,4 +37,10 @@ export function cachedFetch<T>(url: string, ttlMs = DEFAULT_TTL): Promise<T> {
 export function invalidateCache(url?: string): void {
   if (url) cache.delete(url);
   else cache.clear();
+}
+
+const REF_TTL = 120_000;
+
+export function cachedRefData<T>(url: string): Promise<T> {
+  return cachedFetch<T>(url, REF_TTL);
 }

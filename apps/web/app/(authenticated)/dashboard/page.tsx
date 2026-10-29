@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PremiumMotion from "../../premium-motion";
-import { redirectToLogin } from "../_lib/client";
+import { api } from "../_lib/client";
 
 const AddAppointmentDrawer = dynamic(() => import("../_lib/add-appointment-drawer"), { ssr: false });
 const AddPatientDrawer = dynamic(() => import("../_lib/add-patient-drawer"), { ssr: false });
@@ -17,24 +17,10 @@ type QueueEntry = { id: string; appointment_id: string; status: string; checked_
 type FollowUp = { id: string; patient_id: string; reason: string; due_at: string; priority: number; status: string };
 type Session = { permissions?: string[]; clinic_slug?: string | null };
 
-function msg(response: Response, payload: unknown): string {
-  if (payload && typeof payload === "object" && "error" in payload) {
-    const m = (payload as { error?: { message?: string } }).error?.message;
-    if (m) return m;
-  }
-  if (response.status === 401) return "Your clinic session has expired. Sign in again to continue.";
-  return "The workspace could not be loaded. Try again shortly.";
-}
 const time = (v: string) => new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(v));
 const dayShort = (v: string) => new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(new Date(v));
 async function getData<T>(url: string): Promise<T | null> {
-  try {
-    const r = await fetch(url, { credentials: "include", cache: "no-store" });
-    if (r.status === 401) { redirectToLogin(); return null; }
-    if (!r.ok) return null;
-    const p = (await r.json().catch(() => null)) as { data?: T } | null;
-    return (p?.data ?? null) as T | null;
-  } catch { return null; }
+  try { return await api<T>(url); } catch { return null; }
 }
 const statusClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
 
@@ -57,9 +43,9 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [sessionData, summaryResponse, appts, requested, q, f] = await Promise.all([
+      const [sessionData, summaryData, appts, requested, q, f] = await Promise.all([
         getData<Session>("/api/v1/auth/me"),
-        fetch("/api/v1/operations/dashboard-summary", { credentials: "include", cache: "no-store" }),
+        getData<Summary>("/api/v1/operations/dashboard-summary"),
         getData<Appointment[]>("/api/v1/appointments?limit=100"),
         getData<Appointment[]>("/api/v1/appointments?status=requested&limit=10"),
         getData<QueueEntry[]>("/api/v1/operations/queue"),
@@ -69,10 +55,7 @@ export default function DashboardPage() {
         setPermissions(sessionData.permissions ?? []);
         if (sessionData.clinic_slug) setClinicSlug(sessionData.clinic_slug);
       }
-      if (summaryResponse.status === 401) { redirectToLogin(); return; }
-      const summaryPayload = (await summaryResponse.json().catch(() => null)) as { data?: Summary } | null;
-      if (!summaryResponse.ok) throw new Error(msg(summaryResponse, summaryPayload));
-      setSummary(summaryPayload?.data ?? null);
+      setSummary(summaryData);
       setAppointments(appts ?? []);
       setRequests(requested ?? []);
       setQueue(q ?? []); setFollowups(f ?? []);
@@ -83,7 +66,7 @@ export default function DashboardPage() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    const id = setInterval(() => { if (!document.hidden) void load(); }, 60_000);
+    const id = setInterval(() => { if (!document.hidden) void load(); }, 300_000);
     const onVisible = () => { if (!document.hidden) void load(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
