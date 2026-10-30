@@ -147,13 +147,12 @@ export default function QueuePage() {
 
   return <main className="dash-content queue-content" aria-busy={loading}>
     <div className="dash-topline">
-      <div><p className="eyebrow">RECEPTION · LIVE CLINIC FLOW</p><h1>Keep the day <em>moving.</em></h1></div>
+      <div><h1>Queue</h1></div>
       <div style={{ display: "flex", gap: 8 }}>
         {canManage && <button className="button button-secondary" type="button" onClick={openCheckInPanel} disabled={loadingAppointments}>Check in patient <span>+</span></button>}
         <button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
       </div>
     </div>
-    <p className="queue-intro">A focused view of today&apos;s active queue. Names and actions appear only inside the authenticated, permission-scoped workspace.</p>
 
     {showCheckIn && <div className="queue-card" style={{ marginBottom: 16 }}>
       <div className="card-heading">

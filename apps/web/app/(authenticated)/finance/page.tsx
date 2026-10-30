@@ -102,9 +102,7 @@ export default function FinancePage() {
     <main className="dash-content finance-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
-          <p className="eyebrow">BUSINESS · END OF DAY</p>
-          <h1>Close the day <em>with confidence.</em></h1>
-          <p className="workspace-page-intro">Cashier summary by payment method, with optional clinic expenses for a basic profitability view.</p>
+          <h1>Finance</h1>
         </div>
         <div className="header-actions">
           <Link className="button button-secondary" href="/billing" style={{ fontSize: 11 }}>View Invoices</Link>
@@ -125,7 +123,7 @@ export default function FinancePage() {
 
       {summary && (
         <section className="surface-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">PAYMENT METHODS</p><h2>How money arrived.</h2></div><span className="muted-mono">{summary.date}</span></div>
+          <div className="surface-card-heading"><div><p className="eyebrow">PAYMENT METHODS</p><h2>Payment methods</h2></div><span className="muted-mono">{summary.date}</span></div>
           <div className="report-list">
             {summary.payment_methods.length === 0 && <div className="dashboard-empty"><strong>No payments on this day</strong></div>}
             {summary.payment_methods.map((row) => <div className="report-list-row" key={row.method}><span>{label(row.method)} · {row.payments}</span><strong>{money(row.collected_minor, clinicCurrency)}</strong></div>)}
@@ -135,7 +133,7 @@ export default function FinancePage() {
 
       {revenue && (
         <section className="surface-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">PROVIDER REVENUE</p><h2>Who earned what.</h2></div><label className="report-period">From <input type="date" value={rangeStart} max={day} onChange={(e) => setRangeStart(e.target.value || rangeStart)} /></label></div>
+          <div className="surface-card-heading"><div><p className="eyebrow">PROVIDER REVENUE</p><h2>Provider revenue</h2></div><label className="report-period">From <input type="date" value={rangeStart} max={day} onChange={(e) => setRangeStart(e.target.value || rangeStart)} /></label></div>
           <div className="report-list">
             {revenue.providers.length === 0 && <div className="dashboard-empty"><strong>No payments in this range</strong></div>}
             {revenue.providers.map((row) => <div className="report-list-row" key={row.provider_id ?? "none"}><span>{row.provider_name}{row.percent_bp ? ` · ${(row.percent_bp / 100).toFixed(2)}%` : ""}</span><strong>{money(row.revenue_minor, clinicCurrency)}{row.commission_minor > 0 ? ` · commission ${money(row.commission_minor, clinicCurrency)}` : ""}</strong></div>)}
@@ -156,7 +154,7 @@ export default function FinancePage() {
 
       {permissions.includes("expense.read") && (
         <section className="surface-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">EXPENSES</p><h2>What the clinic spent.</h2></div>{canManage && <button className="button button-primary" type="button" onClick={() => setShowForm((v) => !v)}>Add expense <span>＋</span></button>}</div>
+          <div className="surface-card-heading"><div><p className="eyebrow">EXPENSES</p><h2>Expenses</h2></div>{canManage && <button className="button button-primary" type="button" onClick={() => setShowForm((v) => !v)}>Add expense <span>＋</span></button>}</div>
           {showForm && (
             <form className="manage-form" onSubmit={(e) => void addExpense(e)}>
               <div className="form-grid">

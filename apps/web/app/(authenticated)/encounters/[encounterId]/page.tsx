@@ -516,7 +516,7 @@ export default function EncounterDetailPage() {
           <p style={{ color: "var(--muted)", marginTop: 4, fontSize: 13 }}>Dr. {enc.doctor_name}{enc.doctor_specialty && ` · ${enc.doctor_specialty}`}{enc.branch_name && ` · ${enc.branch_name}`}</p>
         </div>
         <div className="header-actions">
-          <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 10, background: statusColor[enc.status] ?? "var(--line)", color: "#fff" }}>{statusLabel[enc.status] ?? typeLabel(enc.status)}</span>
+          <span className="enc-detail-status-badge" style={{ background: statusColor[enc.status] ?? "var(--line)" }}>{statusLabel[enc.status] ?? typeLabel(enc.status)}</span>
           {enc.status === "draft" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("in_progress")}>Begin Assessment</button>}
           {enc.status === "in_progress" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("ready_for_discharge")}>Ready for Discharge</button>}
           {enc.status === "discharged" && <button className="button button-primary" type="button" disabled={busy} onClick={() => void changeStatus("finalized")}>Finalize</button>}
@@ -570,8 +570,8 @@ export default function EncounterDetailPage() {
         const total = lines.reduce((s, l) => s + l.price * l.qty, 0);
         const cur = lines[0]?.currency ?? "PKR";
         return (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={() => setShowInvoicePreview(false)}>
-            <div className="surface-card" style={{ maxWidth: 520, width: "100%", maxHeight: "80vh", overflow: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+          <div className="enc-detail-modal-overlay" onClick={() => setShowInvoicePreview(false)}>
+            <div className="surface-card enc-detail-modal-card" onClick={(e) => e.stopPropagation()}>
               <h2 style={{ margin: "0 0 4px" }}>Generate Invoice</h2>
               <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Review line items from this encounter before generating the invoice.</p>
               {lines.length === 0 ? (
@@ -606,7 +606,7 @@ export default function EncounterDetailPage() {
         {tab === "arrival" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">ARRIVAL</p><h2>Arrival Information</h2></div>{arrivalLocked && <span style={{ fontSize: 11, color: "var(--muted)" }}>Locked after assessment started</span>}</div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="form-grid enc-detail-grid-2col">
               <label>Arrival mode
                 <select value={arrivalMode} onChange={(e) => setArrivalMode(e.target.value)} disabled={readonly || arrivalLocked}>
                   <option value="">Select...</option>
@@ -621,8 +621,8 @@ export default function EncounterDetailPage() {
               <label>Attendant name<input value={attendantName} onChange={(e) => setAttendantName(e.target.value)} disabled={readonly || arrivalLocked} placeholder="Name of accompanying person" /></label>
               <label>Attendant phone<input value={attendantPhone} onChange={(e) => setAttendantPhone(e.target.value)} disabled={readonly || arrivalLocked} placeholder="Phone number" /></label>
             </div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-              <label>Condition on arrival<textarea value={conditionOnArrival} onChange={(e) => setConditionOnArrival(e.target.value)} rows={2} disabled={readonly || arrivalLocked} style={{ width: "100%", resize: "vertical" }} placeholder="Patient's condition when they arrived" /></label>
+            <div className="form-grid enc-detail-grid-1col-mt">
+              <label>Condition on arrival<textarea value={conditionOnArrival} onChange={(e) => setConditionOnArrival(e.target.value)} rows={2} disabled={readonly || arrivalLocked} className="enc-detail-textarea" placeholder="Patient's condition when they arrived" /></label>
             </div>
             <div style={{ marginTop: 16 }}>
               <p className="eyebrow" style={{ marginBottom: 12 }}>ARRIVAL VITALS</p>
@@ -635,7 +635,7 @@ export default function EncounterDetailPage() {
         {tab === "patient" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">PATIENT</p><h2>Patient Summary</h2></div></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20, padding: "12px 16px", background: "var(--bg-alt, var(--surface-alt, rgba(0,0,0,0.03)))", borderRadius: 8 }}>
+            <div className="enc-detail-info-box">
               <div><span className="eyebrow">NAME</span><p style={{ fontWeight: 600 }}>{enc.patient_name}</p></div>
               <div><span className="eyebrow">MRN</span><p>{enc.mrn ?? "N/A"}</p></div>
               <div><span className="eyebrow">DATE OF BIRTH</span><p>{enc.patient_dob ? `${fmtDate(enc.patient_dob)} (${computeAge(enc.patient_dob)})` : "N/A"}</p></div>
@@ -643,7 +643,7 @@ export default function EncounterDetailPage() {
               <div><span className="eyebrow">CONTRAINDICATIONS</span><p>{enc.patient_contraindications || "None on file"}</p></div>
               <div><span className="eyebrow">EMERGENCY CONTACT</span><p>{enc.emergency_contact_name ? `${enc.emergency_contact_name}${enc.emergency_contact_relation ? ` (${enc.emergency_contact_relation})` : ""} ${enc.emergency_contact_phone ?? ""}` : "None on file"}</p></div>
             </div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="form-grid enc-detail-grid-2col">
               <label>Allergy status
                 <select value={allergyStatus} onChange={(e) => setAllergyStatus(e.target.value)} disabled={readonly}>
                   <option value="unknown">Unknown</option>
@@ -653,9 +653,9 @@ export default function EncounterDetailPage() {
               </label>
               <label>Known allergies (this encounter)<input value={knownAllergies} onChange={(e) => setKnownAllergies(e.target.value)} disabled={readonly} placeholder="List known allergies" /></label>
             </div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-              <label>Medical history<textarea value={medicalHistory} onChange={(e) => setMedicalHistory(e.target.value)} rows={3} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Relevant past medical history" /></label>
-              <label>Current medications<textarea value={currentMedsText} onChange={(e) => setCurrentMedsText(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Medications patient is currently taking" /></label>
+            <div className="form-grid enc-detail-grid-1col-mt">
+              <label>Medical history<textarea value={medicalHistory} onChange={(e) => setMedicalHistory(e.target.value)} rows={3} disabled={readonly} className="enc-detail-textarea" placeholder="Relevant past medical history" /></label>
+              <label>Current medications<textarea value={currentMedsText} onChange={(e) => setCurrentMedsText(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" placeholder="Medications patient is currently taking" /></label>
             </div>
           </div>
         )}
@@ -664,10 +664,10 @@ export default function EncounterDetailPage() {
         {tab === "assessment" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">CLINICAL</p><h2>Assessment</h2></div></div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-              <label>Chief complaint<textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>History of present illness<textarea value={hpi} onChange={(e) => setHpi(e.target.value)} rows={3} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="form-grid enc-detail-grid-1col">
+              <label>Chief complaint<textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>History of present illness<textarea value={hpi} onChange={(e) => setHpi(e.target.value)} rows={3} disabled={readonly} className="enc-detail-textarea" /></label>
+              <div className="form-grid enc-detail-grid-2col">
                 <label>Symptom duration<input value={symptomDuration} onChange={(e) => setSymptomDuration(e.target.value)} disabled={readonly} placeholder="e.g. 3 days" /></label>
                 <label>Pain score (0-10)
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -676,18 +676,18 @@ export default function EncounterDetailPage() {
                   </div>
                 </label>
               </div>
-              <label>Examination findings<textarea value={exam} onChange={(e) => setExam(e.target.value)} rows={3} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
+              <label>Examination findings<textarea value={exam} onChange={(e) => setExam(e.target.value)} rows={3} disabled={readonly} className="enc-detail-textarea" /></label>
             </div>
             <GCSCalculator eye={gcsEye} verbal={gcsVerbal} motor={gcsMotor} onChange={(f, v) => { if (f === "eye") setGcsEye(v); else if (f === "verbal") setGcsVerbal(v); else setGcsMotor(v); }} readonly={readonly} />
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-              <label>Investigations<textarea value={investigations} onChange={(e) => setInvestigations(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Investigation results<textarea value={investigationResults} onChange={(e) => setInvestigationResults(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Diagnosis<textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Clinical assessment<textarea value={clinicalAssessment} onChange={(e) => setClinicalAssessment(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Treatment plan<textarea value={treatmentPlan} onChange={(e) => setTreatmentPlan(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Procedures performed<textarea value={procedures} onChange={(e) => setProcedures(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Internal notes<textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical", fontStyle: "italic" }} placeholder="Only visible to staff" /></label>
+            <div className="form-grid enc-detail-grid-1col-mt">
+              <label>Investigations<textarea value={investigations} onChange={(e) => setInvestigations(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Investigation results<textarea value={investigationResults} onChange={(e) => setInvestigationResults(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Diagnosis<textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Clinical assessment<textarea value={clinicalAssessment} onChange={(e) => setClinicalAssessment(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Treatment plan<textarea value={treatmentPlan} onChange={(e) => setTreatmentPlan(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Procedures performed<textarea value={procedures} onChange={(e) => setProcedures(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Internal notes<textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" style={{ fontStyle: "italic" }} placeholder="Only visible to staff" /></label>
             </div>
           </div>
         )}
@@ -697,108 +697,108 @@ export default function EncounterDetailPage() {
           <>
             {catalogLoadFailed && <div className="workspace-alert" role="alert" style={{ marginBottom: 12, fontSize: 12 }}><strong>Could not load services or inventory.</strong> Check your permissions or refresh.</div>}
             {!catalogLoadFailed && catalogServices.length === 0 && inventoryProducts.length === 0 && !readonly && (
-              <div style={{ padding: "10px 14px", marginBottom: 12, background: "var(--surface-1, #f8f8f7)", borderRadius: 8, fontSize: 12, color: "var(--muted)" }}>No services or inventory items found. <Link href="/services" style={{ color: "var(--accent)" }}>Add services</Link> to select them here.</div>
+              <div className="enc-detail-hint-box">No services or inventory items found. <Link href="/services" style={{ color: "var(--accent)" }}>Add services</Link> to select them here.</div>
             )}
             <div className="enc-section surface-card">
               <div className="surface-card-heading"><div><p className="eyebrow">ADMINISTERED</p><h2>Treatments ({treatments.length})</h2></div>
-                {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {!readonly && <div className="enc-detail-btn-group">
                   <button className="button button-secondary" type="button" onClick={addTreatment}>Add treatment</button>
                   {catalogServices.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("treat-svc")} style={{ background: pickerOpen === "treat-svc" ? "var(--accent)" : undefined, color: pickerOpen === "treat-svc" ? "#fff" : undefined }}>Add from Service</button>}
                   {inventoryProducts.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("treat-inv")} style={{ background: pickerOpen === "treat-inv" ? "var(--accent)" : undefined, color: pickerOpen === "treat-inv" ? "#fff" : undefined }}>Add from Inventory</button>}
                 </div>}
               </div>
               {pickerOpen === "treat-svc" && (
-                <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                <div className="enc-detail-picker-wrap">
                   <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
-                  <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                  <div className="enc-detail-picker-list">
                     {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((svc) => (
-                      <button key={svc.id} type="button" onClick={() => addTreatmentFromService(svc)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                      <button key={svc.id} type="button" onClick={() => addTreatmentFromService(svc)} className="enc-detail-picker-item">
                         <span><strong>{svc.name}</strong>{svc.category && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{svc.category}</span>}</span>
-                        {svc.amount_minor != null && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
+                        {svc.amount_minor != null && <span className="enc-detail-price-tag">{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
                       </button>
                     ))}
-                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No services match &ldquo;{pickerSearch}&rdquo;</div>}
+                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div className="enc-detail-picker-empty">No services match &ldquo;{pickerSearch}&rdquo;</div>}
                   </div>
                 </div>
               )}
               {pickerOpen === "treat-inv" && (
-                <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                <div className="enc-detail-picker-wrap">
                   <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search inventory items by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
-                  <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                  <div className="enc-detail-picker-list">
                     {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((prod) => (
-                      <button key={prod.id} type="button" onClick={() => addTreatmentFromInventory(prod)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                      <button key={prod.id} type="button" onClick={() => addTreatmentFromInventory(prod)} className="enc-detail-picker-item">
                         <span><strong>{prod.name}</strong></span>
                         <span style={{ fontSize: 10, color: "var(--muted)", textTransform: "capitalize" }}>{prod.product_type} · {prod.unit}</span>
                       </button>
                     ))}
-                    {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No items match &ldquo;{pickerSearch}&rdquo;</div>}
+                    {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div className="enc-detail-picker-empty">No items match &ldquo;{pickerSearch}&rdquo;</div>}
                   </div>
                 </div>
               )}
               {treatments.length === 0 && <div className="dashboard-empty"><strong>No administered treatments</strong></div>}
               {treatments.map((t, idx) => (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div key={idx} className="enc-detail-item-row">
+                  <label className="enc-detail-field-label-wide">Name <span style={{ color: "var(--coral)" }}>*</span>
+                    <div className="enc-detail-name-flex">
                       <input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" style={{ flex: 1 }} />
-                      {t.service_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "var(--accent)", color: "#fff", whiteSpace: "nowrap" }}>Service</span>}
-                      {t.inventory_product_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "#6b7280", color: "#fff", whiteSpace: "nowrap" }}>Inventory</span>}
-                      {t.unit_price_minor != null && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(t.unit_price_minor, t.currency)}</span>}
+                      {t.service_id && <span className="enc-detail-badge-svc">Service</span>}
+                      {t.inventory_product_id && <span className="enc-detail-badge-inv">Inventory</span>}
+                      {t.unit_price_minor != null && <span className="enc-detail-price-sm">{formatPrice(t.unit_price_minor, t.currency)}</span>}
                     </div>
                   </label>
-                  <label style={{ fontSize: 11 }}>Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
-                  <label style={{ fontSize: 11 }}>Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
-                  <label style={{ fontSize: 11 }}>Qty<input type="number" min={1} value={t.quantity ?? 1} onChange={(e) => updateTreatment(idx, "quantity", e.target.value)} disabled={readonly} style={{ width: 60 }} /></label>
-                  <label style={{ fontSize: 11 }}>Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
-                  <label style={{ fontSize: 11 }}>Given by<input value={t.administered_by ?? ""} onChange={(e) => updateTreatment(idx, "administered_by", e.target.value)} disabled={readonly} /></label>
-                  <label style={{ fontSize: 11 }}>Response<input value={t.response ?? ""} onChange={(e) => updateTreatment(idx, "response", e.target.value)} disabled={readonly} /></label>
-                  {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, alignSelf: "end", marginBottom: 4 }} onClick={() => removeTreatment(idx)}>Remove</button>}
+                  <label className="enc-detail-field-label">Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
+                  <label className="enc-detail-field-label">Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
+                  <label className="enc-detail-field-label">Qty<input type="number" min={1} value={t.quantity ?? 1} onChange={(e) => updateTreatment(idx, "quantity", e.target.value)} disabled={readonly} style={{ width: 60 }} /></label>
+                  <label className="enc-detail-field-label">Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
+                  <label className="enc-detail-field-label">Given by<input value={t.administered_by ?? ""} onChange={(e) => updateTreatment(idx, "administered_by", e.target.value)} disabled={readonly} /></label>
+                  <label className="enc-detail-field-label">Response<input value={t.response ?? ""} onChange={(e) => updateTreatment(idx, "response", e.target.value)} disabled={readonly} /></label>
+                  {!readonly && <button className="ghost-button enc-detail-remove-btn" type="button" onClick={() => removeTreatment(idx)}>Remove</button>}
                 </div>
               ))}
             </div>
             <div className="enc-section surface-card" style={{ marginTop: 16 }}>
               <div className="surface-card-heading"><div><p className="eyebrow">PROCEDURES</p><h2>Administered Procedures ({adminProcedures.length})</h2></div>
-                {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {!readonly && <div className="enc-detail-btn-group">
                   <button className="button button-secondary" type="button" onClick={addProcedure}>Add procedure</button>
                   {catalogServices.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("proc-svc")} style={{ background: pickerOpen === "proc-svc" ? "var(--accent)" : undefined, color: pickerOpen === "proc-svc" ? "#fff" : undefined }}>Add from Service</button>}
                 </div>}
               </div>
               {pickerOpen === "proc-svc" && (
-                <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+                <div className="enc-detail-picker-wrap">
                   <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
-                  <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                  <div className="enc-detail-picker-list">
                     {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((svc) => (
-                      <button key={svc.id} type="button" onClick={() => addProcedureFromService(svc)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                      <button key={svc.id} type="button" onClick={() => addProcedureFromService(svc)} className="enc-detail-picker-item">
                         <span><strong>{svc.name}</strong>{svc.category && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{svc.category}</span>}</span>
-                        {svc.amount_minor != null && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
+                        {svc.amount_minor != null && <span className="enc-detail-price-tag">{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
                       </button>
                     ))}
-                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No services match &ldquo;{pickerSearch}&rdquo;</div>}
+                    {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div className="enc-detail-picker-empty">No services match &ldquo;{pickerSearch}&rdquo;</div>}
                   </div>
                 </div>
               )}
               {adminProcedures.length === 0 && <div className="dashboard-empty"><strong>No administered procedures</strong></div>}
               {adminProcedures.map((p, idx) => (
-                <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div key={idx} className="enc-detail-item-row">
+                  <label className="enc-detail-field-label-wide">Name <span style={{ color: "var(--coral)" }}>*</span>
+                    <div className="enc-detail-name-flex">
                       <input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" style={{ flex: 1 }} />
-                      {p.service_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "var(--accent)", color: "#fff", whiteSpace: "nowrap" }}>Service</span>}
-                      {p.unit_price_minor != null && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--leaf)", whiteSpace: "nowrap" }}>{formatPrice(p.unit_price_minor, p.currency)}</span>}
+                      {p.service_id && <span className="enc-detail-badge-svc">Service</span>}
+                      {p.unit_price_minor != null && <span className="enc-detail-price-sm">{formatPrice(p.unit_price_minor, p.currency)}</span>}
                     </div>
                   </label>
-                  <label style={{ fontSize: 11 }}>Performed at<input type="datetime-local" value={p.performed_at ?? ""} onChange={(e) => updateProcedure(idx, "performed_at", e.target.value)} disabled={readonly} /></label>
-                  <label style={{ fontSize: 11 }}>Performer<input value={p.performer ?? ""} onChange={(e) => updateProcedure(idx, "performer", e.target.value)} disabled={readonly} /></label>
-                  <label style={{ fontSize: 11, gridColumn: "span 2" }}>Findings<input value={p.findings ?? ""} onChange={(e) => updateProcedure(idx, "findings", e.target.value)} disabled={readonly} /></label>
-                  {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, alignSelf: "end", marginBottom: 4 }} onClick={() => removeProcedure(idx)}>Remove</button>}
+                  <label className="enc-detail-field-label">Performed at<input type="datetime-local" value={p.performed_at ?? ""} onChange={(e) => updateProcedure(idx, "performed_at", e.target.value)} disabled={readonly} /></label>
+                  <label className="enc-detail-field-label">Performer<input value={p.performer ?? ""} onChange={(e) => updateProcedure(idx, "performer", e.target.value)} disabled={readonly} /></label>
+                  <label className="enc-detail-field-label-wide">Findings<input value={p.findings ?? ""} onChange={(e) => updateProcedure(idx, "findings", e.target.value)} disabled={readonly} /></label>
+                  {!readonly && <button className="ghost-button enc-detail-remove-btn" type="button" onClick={() => removeProcedure(idx)}>Remove</button>}
                 </div>
               ))}
             </div>
             <div className="enc-section surface-card" style={{ marginTop: 16 }}>
               <div className="surface-card-heading"><div><p className="eyebrow">RESPONSE</p><h2>Treatment Response</h2></div></div>
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-                <label>Treatment response<textarea value={treatmentResponse} onChange={(e) => setTreatmentResponse(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="How the patient responded to treatment" /></label>
-                <label>Adverse reactions<textarea value={adverseReactions} onChange={(e) => setAdverseReactions(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Any adverse reactions observed" /></label>
+              <div className="form-grid enc-detail-grid-1col">
+                <label>Treatment response<textarea value={treatmentResponse} onChange={(e) => setTreatmentResponse(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" placeholder="How the patient responded to treatment" /></label>
+                <label>Adverse reactions<textarea value={adverseReactions} onChange={(e) => setAdverseReactions(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" placeholder="Any adverse reactions observed" /></label>
               </div>
             </div>
             {/* Charges summary */}
@@ -810,13 +810,13 @@ export default function EncounterDetailPage() {
               return (
                 <div className="enc-section surface-card" style={{ marginTop: 16, background: "var(--bg-alt, rgba(0,0,0,0.03))" }}>
                   <div className="surface-card-heading"><div><p className="eyebrow">BILLING</p><h2>Charges Summary</h2></div></div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, padding: "8px 0", fontSize: 13 }}>
+                  <div className="enc-detail-charges-grid">
                     <div><span style={{ color: "var(--muted)" }}>Treatments ({treatments.filter((t) => t.unit_price_minor).length})</span><br /><strong>{formatPrice(tTotal, cur)}</strong></div>
                     <div><span style={{ color: "var(--muted)" }}>Procedures ({adminProcedures.filter((p) => p.unit_price_minor).length})</span><br /><strong>{formatPrice(pTotal, cur)}</strong></div>
                     <div><span style={{ color: "var(--muted)" }}>Grand Total</span><br /><strong style={{ fontSize: 15, color: "var(--leaf)" }}>{formatPrice(tTotal + pTotal, cur)}</strong></div>
                   </div>
                   {invoiceData ? (
-                    <div style={{ marginTop: 8, padding: "8px 12px", background: "var(--surface, var(--bg))", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12 }}>
+                    <div className="enc-detail-invoice-bar">
                       <span>Invoice <strong>{invoiceData.invoice_number}</strong> — <span style={{ color: invoiceData.status === "paid" ? "var(--leaf)" : "var(--accent)" }}>{invoiceData.status.toUpperCase()}</span></span>
                       <Link href={`/billing?invoice=${invoiceData.id}`} style={{ color: "var(--accent)", fontWeight: 600 }}>View Invoice</Link>
                     </div>
@@ -835,39 +835,39 @@ export default function EncounterDetailPage() {
         {tab === "medications" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">PRESCRIPTION</p><h2>Medications ({meds.length})</h2></div>
-              {!readonly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {!readonly && <div className="enc-detail-btn-group">
                 <button className="button button-secondary" type="button" onClick={addMed}>Add medication</button>
                 {inventoryProducts.filter((p) => p.product_type === "medicine").length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("med-inv")} style={{ background: pickerOpen === "med-inv" ? "var(--accent)" : undefined, color: pickerOpen === "med-inv" ? "#fff" : undefined }}>Add from Inventory</button>}
               </div>}
             </div>
             {pickerOpen === "med-inv" && (
-              <div style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+              <div className="enc-detail-picker-wrap">
                 <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search medicines by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
-                <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 6, background: "var(--surface, var(--bg))" }}>
+                <div className="enc-detail-picker-list">
                   {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).map((prod) => (
-                    <button key={prod.id} type="button" onClick={() => addMedFromInventory(prod)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)", gap: 8 }}>
+                    <button key={prod.id} type="button" onClick={() => addMedFromInventory(prod)} className="enc-detail-picker-item">
                       <span><strong>{prod.name}</strong></span>
                       <span style={{ fontSize: 10, color: "var(--muted)" }}>{prod.unit}</span>
                     </button>
                   ))}
-                  {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).length === 0 && <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>No medicines match &ldquo;{pickerSearch}&rdquo;</div>}
+                  {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).length === 0 && <div className="enc-detail-picker-empty">No medicines match &ldquo;{pickerSearch}&rdquo;</div>}
                 </div>
               </div>
             )}
             {meds.length === 0 && <div className="dashboard-empty"><strong>No medications</strong></div>}
             {meds.map((med, idx) => (
-              <div key={idx} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: "10px 0", borderBottom: "1px solid var(--line)", alignItems: "end" }}>
-                <label style={{ fontSize: 11, gridColumn: "span 2" }}>Name <span style={{ color: "var(--coral)" }}>*</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div key={idx} className="enc-detail-item-row">
+                <label className="enc-detail-field-label-wide">Name <span style={{ color: "var(--coral)" }}>*</span>
+                  <div className="enc-detail-name-flex">
                     <input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" style={{ flex: 1 }} />
-                    {med.inventory_product_id && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, background: "#6b7280", color: "#fff", whiteSpace: "nowrap" }}>Inventory</span>}
+                    {med.inventory_product_id && <span className="enc-detail-badge-inv">Inventory</span>}
                   </div>
                 </label>
-                <label style={{ fontSize: 11 }}>Dosage<input value={med.dosage ?? ""} onChange={(e) => updateMed(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
-                <label style={{ fontSize: 11 }}>Route<input value={med.route ?? ""} onChange={(e) => updateMed(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
-                <label style={{ fontSize: 11 }}>Frequency<input value={med.frequency ?? ""} onChange={(e) => updateMed(idx, "frequency", e.target.value)} disabled={readonly} placeholder="e.g. TDS" /></label>
-                <label style={{ fontSize: 11 }}>Duration<input value={med.duration ?? ""} onChange={(e) => updateMed(idx, "duration", e.target.value)} disabled={readonly} placeholder="e.g. 5 days" /></label>
-                {!readonly && <button className="ghost-button" type="button" style={{ color: "var(--coral)", fontSize: 11, alignSelf: "end", marginBottom: 4 }} onClick={() => removeMed(idx)}>Remove</button>}
+                <label className="enc-detail-field-label">Dosage<input value={med.dosage ?? ""} onChange={(e) => updateMed(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
+                <label className="enc-detail-field-label">Route<input value={med.route ?? ""} onChange={(e) => updateMed(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
+                <label className="enc-detail-field-label">Frequency<input value={med.frequency ?? ""} onChange={(e) => updateMed(idx, "frequency", e.target.value)} disabled={readonly} placeholder="e.g. TDS" /></label>
+                <label className="enc-detail-field-label">Duration<input value={med.duration ?? ""} onChange={(e) => updateMed(idx, "duration", e.target.value)} disabled={readonly} placeholder="e.g. 5 days" /></label>
+                {!readonly && <button className="ghost-button enc-detail-remove-btn" type="button" onClick={() => removeMed(idx)}>Remove</button>}
               </div>
             ))}
           </div>
@@ -877,7 +877,7 @@ export default function EncounterDetailPage() {
         {tab === "vitals" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">OBSERVATIONS</p><h2>Vitals</h2></div></div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+            <div className="enc-detail-vitals-2col">
               <div>
                 <p className="eyebrow" style={{ marginBottom: 12 }}>ARRIVAL VITALS</p>
                 <VitalsForm vitals={arrivalVitals} onChange={setArrivalVitals} readonly={readonly} />
@@ -896,7 +896,7 @@ export default function EncounterDetailPage() {
         {tab === "discharge" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">DISCHARGE</p><h2>Discharge Summary</h2></div></div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="form-grid enc-detail-grid-2col">
               <label>Discharge outcome
                 <select value={dischOutcome} onChange={(e) => setDischOutcome(e.target.value)} disabled={readonly}>
                   <option value="">Select...</option>
@@ -910,25 +910,25 @@ export default function EncounterDetailPage() {
               <label>Discharge condition<input value={dischCondition} onChange={(e) => setDischCondition(e.target.value)} disabled={readonly} placeholder="Patient condition at discharge" /></label>
             </div>
             {(dischOutcome === "referral" || dischOutcome === "transfer") && (
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
+              <div className="form-grid enc-detail-grid-1col-mt">
                 <label>Destination<input value={dischDestination} onChange={(e) => setDischDestination(e.target.value)} disabled={readonly} placeholder="Facility / department being referred to" /></label>
               </div>
             )}
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-              <label>Discharge reason<textarea value={dischReason} onChange={(e) => setDischReason(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Discharge notes<textarea value={dischargeNotes} onChange={(e) => setDischargeNotes(e.target.value)} rows={3} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
-              <label>Discharge instructions<textarea value={dischInstructions} onChange={(e) => setDischInstructions(e.target.value)} rows={3} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Instructions for the patient" /></label>
-              <label>Warning signs<textarea value={warningSigns} onChange={(e) => setWarningSigns(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Signs that require immediate medical attention" /></label>
-              <label>Medicine guidance<textarea value={medicineGuidance} onChange={(e) => setMedicineGuidance(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} placeholder="Instructions for medications" /></label>
+            <div className="form-grid enc-detail-grid-1col-mt">
+              <label>Discharge reason<textarea value={dischReason} onChange={(e) => setDischReason(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Discharge notes<textarea value={dischargeNotes} onChange={(e) => setDischargeNotes(e.target.value)} rows={3} disabled={readonly} className="enc-detail-textarea" /></label>
+              <label>Discharge instructions<textarea value={dischInstructions} onChange={(e) => setDischInstructions(e.target.value)} rows={3} disabled={readonly} className="enc-detail-textarea" placeholder="Instructions for the patient" /></label>
+              <label>Warning signs<textarea value={warningSigns} onChange={(e) => setWarningSigns(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" placeholder="Signs that require immediate medical attention" /></label>
+              <label>Medicine guidance<textarea value={medicineGuidance} onChange={(e) => setMedicineGuidance(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" placeholder="Instructions for medications" /></label>
             </div>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", marginTop: 12 }}>
+            <div className="form-grid enc-detail-grid-3col-mt">
               <label>Follow-up clinician<input value={followUpClinician} onChange={(e) => setFollowUpClinician(e.target.value)} disabled={readonly} /></label>
               <label>Follow-up department<input value={followUpDept} onChange={(e) => setFollowUpDept(e.target.value)} disabled={readonly} /></label>
               <label>Follow-up date<input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} disabled={readonly} /></label>
             </div>
             {dischOutcome === "referral" && (
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-                <label>Referral instructions<textarea value={referralInstructions} onChange={(e) => setReferralInstructions(e.target.value)} rows={2} disabled={readonly} style={{ width: "100%", resize: "vertical" }} /></label>
+              <div className="form-grid enc-detail-grid-1col-mt">
+                <label>Referral instructions<textarea value={referralInstructions} onChange={(e) => setReferralInstructions(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               </div>
             )}
             <div style={{ marginTop: 16 }}>
@@ -936,7 +936,7 @@ export default function EncounterDetailPage() {
               <VitalsForm vitals={dischargeVitals} onChange={setDischargeVitals} readonly={readonly} />
             </div>
             {enc.status === "ready_for_discharge" && (
-              <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+              <div className="enc-detail-discharge-divider">
                 <button className="button button-primary" type="button" disabled={busy} onClick={() => void completeDischarge()} style={{ background: "var(--leaf)" }}>{busy ? "Discharging..." : "Complete Discharge"}</button>
               </div>
             )}
@@ -959,7 +959,7 @@ export default function EncounterDetailPage() {
               </div>
 
               {/* Token / Reference */}
-              <div style={{ background: "var(--bg-alt, rgba(0,0,0,0.03))", padding: "10px 14px", borderRadius: 6, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <div className="enc-detail-ref-bar">
                 <div><span className="eyebrow">TOKEN NUMBER</span><p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0" }}>{enc.token_number != null ? enc.token_number : enc.id.slice(0, 8).toUpperCase()}</p></div>
                 <div style={{ textAlign: "right" }}><span className="eyebrow">STATUS</span><p style={{ fontSize: 14, fontWeight: 600, margin: "2px 0 0", color: statusColor[enc.status] }}>{statusLabel[enc.status] ?? enc.status}</p></div>
               </div>
@@ -967,7 +967,7 @@ export default function EncounterDetailPage() {
               {/* Arrival Vitals */}
               <div style={{ marginBottom: 16 }}>
                 <p className="eyebrow" style={{ marginBottom: 6 }}>ARRIVAL VITALS</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "8px 16px", fontSize: 13 }}>
+                <div className="enc-detail-vitals-grid">
                   {enc.arrival_vitals?.weight_kg != null && <div><span style={{ color: "var(--muted)" }}>Weight</span><br /><strong>{enc.arrival_vitals.weight_kg} kg</strong></div>}
                   {enc.arrival_vitals?.height_cm != null && <div><span style={{ color: "var(--muted)" }}>Height</span><br /><strong>{enc.arrival_vitals.height_cm} cm</strong></div>}
                   {enc.arrival_vitals?.weight_kg != null && enc.arrival_vitals?.height_cm != null && <div><span style={{ color: "var(--muted)" }}>BMI</span><br /><strong>{(enc.arrival_vitals.weight_kg / ((enc.arrival_vitals.height_cm / 100) ** 2)).toFixed(1)}</strong></div>}
@@ -1021,7 +1021,7 @@ export default function EncounterDetailPage() {
               {enc.discharge_vitals && Object.values(enc.discharge_vitals).some((v) => v != null && v !== "") && (
                 <div style={{ marginTop: 12 }}>
                   <p className="eyebrow" style={{ marginBottom: 6 }}>DISCHARGE VITAL SIGNS</p>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: "8px 16px", fontSize: 13 }}>
+                  <div className="enc-detail-vitals-grid">
                     {enc.discharge_vitals.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.discharge_vitals.pulse}</strong></div>}
                     {enc.discharge_vitals.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.discharge_vitals.blood_pressure}</strong></div>}
                     {enc.discharge_vitals.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.discharge_vitals.oxygen_saturation}%</strong></div>}
@@ -1042,7 +1042,7 @@ export default function EncounterDetailPage() {
               <SummarySection label="Follow-up" value={[enc.follow_up_date && `Date: ${fmtDate(enc.follow_up_date)}`, enc.follow_up_instructions, enc.follow_up_clinician && `Clinician: ${enc.follow_up_clinician}`, enc.follow_up_department && `Dept: ${enc.follow_up_department}`].filter(Boolean).join(" | ") || null} />
 
               {/* Examined By + Printed By */}
-              <div style={{ marginTop: 20, paddingTop: 12, borderTop: "1px solid var(--line)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, fontSize: 13 }}>
+              <div className="enc-detail-sign-footer">
                 <div>
                   <span className="eyebrow">EXAMINED BY</span>
                   <p style={{ fontWeight: 600, margin: "4px 0 0" }}>Dr. {enc.doctor_name}{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
@@ -1055,7 +1055,7 @@ export default function EncounterDetailPage() {
                 </div>
               </div>
 
-              {enc.internal_notes && <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--bg-alt, rgba(0,0,0,0.03))", borderRadius: 6, fontStyle: "italic", fontSize: 13 }}><span className="eyebrow">INTERNAL NOTES (NOT PRINTED)</span><p>{enc.internal_notes}</p></div>}
+              {enc.internal_notes && <div className="enc-detail-internal-note"><span className="eyebrow">INTERNAL NOTES (NOT PRINTED)</span><p>{enc.internal_notes}</p></div>}
             </div>
 
             {/* Amendment history */}
@@ -1076,7 +1076,7 @@ export default function EncounterDetailPage() {
             {(enc.status === "discharged" || enc.status === "finalized") && (
               <div className="enc-section surface-card" style={{ marginTop: 16 }}>
                 <div className="surface-card-heading"><div><p className="eyebrow">CORRECTION</p><h2>Amend Record</h2></div></div>
-                <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <div className="form-grid enc-detail-grid-2col">
                   <label>Field to amend
                     <select value={amendField} onChange={(e) => { setAmendField(e.target.value); setAmendNewValue(""); }}>
                       <option value="">Select field...</option>
@@ -1088,9 +1088,9 @@ export default function EncounterDetailPage() {
                   )}
                 </div>
                 {amendField && (
-                  <div className="form-grid" style={{ gridTemplateColumns: "1fr", marginTop: 12 }}>
-                    <label>New value<textarea value={amendNewValue} onChange={(e) => setAmendNewValue(e.target.value)} rows={3} style={{ width: "100%", resize: "vertical" }} /></label>
-                    <label>Reason for amendment<textarea value={amendReason} onChange={(e) => setAmendReason(e.target.value)} rows={2} style={{ width: "100%", resize: "vertical" }} placeholder="Required: explain why this amendment is needed" /></label>
+                  <div className="form-grid enc-detail-grid-1col-mt">
+                    <label>New value<textarea value={amendNewValue} onChange={(e) => setAmendNewValue(e.target.value)} rows={3} className="enc-detail-textarea" /></label>
+                    <label>Reason for amendment<textarea value={amendReason} onChange={(e) => setAmendReason(e.target.value)} rows={2} className="enc-detail-textarea" placeholder="Required: explain why this amendment is needed" /></label>
                     <div><button className="button button-secondary" type="button" disabled={busy || !amendNewValue || !amendReason} onClick={() => void submitAmendment()}>{busy ? "Submitting..." : "Submit Amendment"}</button></div>
                   </div>
                 )}
@@ -1128,22 +1128,22 @@ function GCSCalculator({ eye, verbal, motor, onChange, readonly }: { eye: number
   const classColor = classification === "Mild" ? "var(--leaf)" : classification === "Moderate" ? "#e0a458" : classification === "Severe" ? "var(--coral)" : "var(--muted)";
 
   return (
-    <div style={{ marginTop: 16, padding: "12px 16px", background: "var(--bg-alt, rgba(0,0,0,0.03))", borderRadius: 8 }}>
+    <div className="enc-detail-alt-panel" style={{ marginTop: 16 }}>
       <p className="eyebrow" style={{ marginBottom: 8 }}>GLASGOW COMA SCALE (GCS)</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
-        <label style={{ fontSize: 12 }}>Eye Response (E)
+      <div className="enc-detail-gcs-grid">
+        <label className="enc-detail-gcs-label">Eye Response (E)
           <select value={eye ?? ""} onChange={(e) => onChange("eye", e.target.value === "" ? null : parseInt(e.target.value, 10))} disabled={readonly}>
             <option value="">-</option>
             {GCS_EYE.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 12 }}>Verbal Response (V)
+        <label className="enc-detail-gcs-label">Verbal Response (V)
           <select value={verbal ?? ""} onChange={(e) => onChange("verbal", e.target.value === "" ? null : parseInt(e.target.value, 10))} disabled={readonly}>
             <option value="">-</option>
             {GCS_VERBAL.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 12 }}>Motor Response (M)
+        <label className="enc-detail-gcs-label">Motor Response (M)
           <select value={motor ?? ""} onChange={(e) => onChange("motor", e.target.value === "" ? null : parseInt(e.target.value, 10))} disabled={readonly}>
             <option value="">-</option>
             {GCS_MOTOR.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
@@ -1167,7 +1167,7 @@ function BMIDisplay({ vitals, label }: { vitals: Vitals; label: string }) {
   const category = bmi < 18.5 ? "Underweight" : bmi < 25 ? "Normal" : bmi < 30 ? "Overweight" : "Obese";
   const color = category === "Normal" ? "var(--leaf)" : category === "Underweight" ? "#5886b4" : category === "Overweight" ? "#e0a458" : "var(--coral)";
   return (
-    <div style={{ marginTop: 10, padding: "6px 12px", background: "var(--bg-alt, rgba(0,0,0,0.03))", borderRadius: 6, display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+    <div className="enc-detail-bmi">
       <span style={{ fontWeight: 600 }}>{label} BMI:</span>
       <span style={{ fontWeight: 700, color }}>{bmiStr}</span>
       <span style={{ color, fontSize: 11 }}>({category})</span>
@@ -1179,7 +1179,7 @@ function BMIDisplay({ vitals, label }: { vitals: Vitals; label: string }) {
 function SummarySection({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null;
   return (
-    <div style={{ padding: "6px 0", borderBottom: "1px solid var(--line)" }}>
+    <div className="enc-detail-summary-row">
       <span className="eyebrow">{label.toUpperCase()}</span>
       <p style={{ fontSize: 13, marginTop: 2, whiteSpace: "pre-wrap" }}>{value}</p>
     </div>

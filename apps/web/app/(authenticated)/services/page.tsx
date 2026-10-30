@@ -6,6 +6,7 @@ import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
+import DataTable, { type Column } from "../_lib/data-table";
 
 type Service = { id: string; name: string; category: string | null; short_description: string | null; full_description: string | null; duration_minutes: number; buffer_before_minutes: number; buffer_after_minutes: number; price_mode: string; amount_minor: number | null; currency: string | null; approval_mode: string; visibility: string; status: string; version: number };
 type ServiceTemplate = { id: string; name: string; category: string | null; specialty_code: string | null; duration_minutes: number; amount_minor: number | null; currency: string | null };
@@ -31,7 +32,6 @@ export default function ServicesPage() {
   const [filter, setFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
 
-  // Materials
   const [materials, setMaterials] = useState<MaterialLink[]>([]);
   const [invProducts, setInvProducts] = useState<InvProduct[]>([]);
   const [matBusy, setMatBusy] = useState(false);
@@ -156,12 +156,31 @@ export default function ServicesPage() {
     void run(() => post("/api/v1/services/from-template", { template_id: tpl.id }), `"${tpl.name}" imported.`, "The template could not be imported.").then(() => setImportDrawer(false));
   }
 
-  if (loading) return <main className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading services...</strong></div></main>;
+  const serviceCols: Column<Service>[] = [
+    { key: "mark", header: "", width: "42px", srOnly: true, render: (svc) => <div className="invoice-mark">{svc.name.slice(0, 2).toUpperCase()}</div> },
+    { key: "service", header: "Service", width: "1fr", sortable: true, sortFn: (a, b) => a.name.localeCompare(b.name), render: (svc) => (
+      <div className="invoice-main">
+        <h3>{svc.name}</h3>
+        <p>{svc.category ?? "General"} · {svc.duration_minutes} min{svc.buffer_before_minutes || svc.buffer_after_minutes ? ` (${svc.buffer_before_minutes}+${svc.buffer_after_minutes} buffer)` : ""} · {svc.price_mode === "contact" || svc.amount_minor == null ? "Contact for price" : money(svc.amount_minor, svc.currency ?? clinicCurrency)}</p>
+        {svc.short_description && <small className="svc-description">{svc.short_description}</small>}
+      </div>
+    )},
+    { key: "status", header: "Status", width: "auto", render: (svc) => (
+      <div className="invoice-actions">
+        <span className={`pipeline-status status-${svc.status === "active" ? "paid" : "void"}`}>{svc.status}</span>
+        <span className={`pipeline-status svc-visibility status-${svc.visibility === "public" ? "contacted" : "void"}`}>{svc.visibility}</span>
+        {can("service.manage") && <>
+          <button className="text-control" disabled={busy} onClick={(e) => { e.stopPropagation(); setEditService(svc); setDrawer(true); }}>Edit</button>
+          <button className="text-control" disabled={busy} onClick={(e) => { e.stopPropagation(); void toggleStatus(svc); }}>{svc.status === "active" ? "Deactivate" : "Reactivate"}</button>
+        </>}
+      </div>
+    )},
+  ];
 
-  return <main className="workspace-page">
-    <div className="workspace-page-header">
-      <div><p className="eyebrow">CLINICAL</p><h1>Services</h1><p className="workspace-page-intro">Services your clinic offers to patients.</p></div>
-      <div className="header-actions" style={{ display: "flex", gap: 8 }}>
+  return <main className="dash-content">
+    <div className="dash-topline">
+      <div><h1>Services</h1></div>
+      <div className="header-actions">
         {can("service.manage") && <button className="button button-secondary" onClick={() => setImportDrawer(true)}>Import from catalog</button>}
         {can("service.manage") && <button className="button button-primary" onClick={() => { setEditService(null); setDrawer(true); }}>Add service <span>+</span></button>}
       </div>
@@ -170,45 +189,34 @@ export default function ServicesPage() {
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
 
     <section className="surface-card">
-      <div className="pipeline-toolbar" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", flex: 1 }}>
-          <input type="search" placeholder="Search services..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 240, padding: "6px 12px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.85rem", background: "var(--surface-1, #fff)" }} />
-          <div className="pipeline-tabs" role="tablist" style={{ fontSize: "0.78rem" }}>
+      <div className="pipeline-toolbar svc-toolbar">
+        <div className="svc-toolbar-inner">
+          <input type="search" className="svc-search" placeholder="Search services..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="pipeline-tabs" role="tablist">
             <button role="tab" aria-selected={filter === "all"} className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>All ({services.length})</button>
             {categories.map((cat) => <button key={cat} role="tab" aria-selected={filter === cat} className={filter === cat ? "active" : ""} onClick={() => setFilter(cat)}>{cat} ({services.filter((s) => (s.category ?? "General") === cat).length})</button>)}
           </div>
         </div>
       </div>
 
-      <div className="invoice-list">
-        {filtered.length === 0 && <div className="dashboard-empty"><strong>{search || filter !== "all" ? "No matching services" : "No services yet"}</strong><span>{can("service.manage") ? "Add one or import from the master catalog." : "Ask your clinic admin to add services."}</span></div>}
-        {filtered.map((svc) => <article className="invoice-row" key={svc.id}>
-          <div className="invoice-mark">{svc.name.slice(0, 2).toUpperCase()}</div>
-          <div className="invoice-main">
-            <h3>{svc.name}</h3>
-            <p>{svc.category ?? "General"} · {svc.duration_minutes} min{svc.buffer_before_minutes || svc.buffer_after_minutes ? ` (${svc.buffer_before_minutes}+${svc.buffer_after_minutes} buffer)` : ""} · {svc.price_mode === "contact" || svc.amount_minor == null ? "Contact for price" : money(svc.amount_minor, svc.currency ?? clinicCurrency)}</p>
-            {svc.short_description && <small style={{ color: "var(--text-muted, #6b7280)" }}>{svc.short_description}</small>}
-          </div>
-          <div className="invoice-actions">
-            <span className={`pipeline-status status-${svc.status === "active" ? "paid" : "void"}`}>{svc.status}</span>
-            <span className={`pipeline-status status-${svc.visibility === "public" ? "contacted" : "void"}`} style={{ fontSize: "0.7rem" }}>{svc.visibility}</span>
-            {can("service.manage") && <>
-              <button className="text-control" disabled={busy} onClick={() => { setEditService(svc); setDrawer(true); }}>Edit</button>
-              <button className="text-control" disabled={busy} onClick={() => void toggleStatus(svc)}>{svc.status === "active" ? "Deactivate" : "Reactivate"}</button>
-            </>}
-          </div>
-        </article>)}
-      </div>
+      <DataTable
+        columns={serviceCols}
+        rows={filtered}
+        rowKey={(s) => s.id}
+        loading={loading}
+        skeletonRows={5}
+        emptyTitle={search || filter !== "all" ? "No matching services" : "No services yet"}
+        emptyBody={can("service.manage") ? "Add one or import from the master catalog." : "Ask your clinic admin to add services."}
+      />
     </section>
 
-    {/* ── Service Drawer ── */}
     <Drawer open={drawer} onClose={() => { setDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"}>
       <form className="drawer-form" onSubmit={handleSubmit}>
-        <label>Name <span style={{ color: "var(--coral)" }}>*</span><input name="name" required defaultValue={editService?.name ?? ""} /></label>
+        <label>Name <span className="svc-required">*</span><input name="name" required defaultValue={editService?.name ?? ""} /></label>
         <label>Category<select name="category" defaultValue={editService?.category ?? "General"}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></label>
         <label>Short description<input name="short_description" defaultValue={editService?.short_description ?? ""} /></label>
-        <label>Duration (min) <span style={{ color: "var(--coral)" }}>*</span><input name="duration" type="number" min={5} required defaultValue={editService?.duration_minutes ?? 30} /></label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <label>Duration (min) <span className="svc-required">*</span><input name="duration" type="number" min={5} required defaultValue={editService?.duration_minutes ?? 30} /></label>
+        <div className="svc-buffer-grid">
           <label>Buffer before (min)<input name="buffer_before" type="number" min={0} defaultValue={editService?.buffer_before_minutes ?? 0} /></label>
           <label>Buffer after (min)<input name="buffer_after" type="number" min={0} defaultValue={editService?.buffer_after_minutes ?? 0} /></label>
         </div>
@@ -218,21 +226,21 @@ export default function ServicesPage() {
         <label>Visibility<select name="visibility" defaultValue={editService?.visibility ?? "public"}><option value="public">Public</option><option value="hidden">Hidden</option></select></label>
 
         {editService && (
-          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 8 }}>
-            <p className="eyebrow" style={{ marginBottom: 8 }}>REQUIRED MATERIALS ({materials.length})</p>
-            {materials.length === 0 && <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>No materials linked. Link inventory products that this service uses.</p>}
+          <div className="svc-materials">
+            <p className="eyebrow">REQUIRED MATERIALS ({materials.length})</p>
+            {materials.length === 0 && <p className="svc-materials-empty">No materials linked. Link inventory products that this service uses.</p>}
             {materials.map((m) => (
-              <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--line)", fontSize: 12, gap: 6 }}>
-                <span style={{ flex: 1, minWidth: 0 }}><strong>{m.product_name}</strong> <span style={{ color: "var(--muted)" }}>· {m.product_type} · {m.unit}</span></span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                  <span style={{ color: "var(--muted)" }}>×</span>
-                  <input type="number" step="any" min="0.001" defaultValue={m.default_quantity} disabled={matBusy} style={{ width: 64, fontSize: 12, padding: "2px 4px", textAlign: "right" }} onBlur={(e) => { const v = parseFloat(e.target.value); if (v > 0 && v !== m.default_quantity) void updateMaterialQty(editService.id, m.inventory_product_id, v); else e.target.value = String(m.default_quantity); }} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
-                  <button className="ghost-button" type="button" disabled={matBusy} onClick={() => void removeMaterial(editService.id, m.inventory_product_id)} style={{ color: "var(--coral)", fontSize: 11 }}>Remove</button>
+              <div key={m.id} className="svc-mat-row">
+                <span className="svc-mat-name"><strong>{m.product_name}</strong> <span className="svc-mat-meta">· {m.product_type} · {m.unit}</span></span>
+                <span className="svc-mat-controls">
+                  <span className="svc-mat-meta">×</span>
+                  <input type="number" step="any" min="0.001" defaultValue={m.default_quantity} disabled={matBusy} className="svc-mat-qty" onBlur={(e) => { const v = parseFloat(e.target.value); if (v > 0 && v !== m.default_quantity) void updateMaterialQty(editService.id, m.inventory_product_id, v); else e.target.value = String(m.default_quantity); }} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+                  <button className="ghost-button svc-mat-remove" type="button" disabled={matBusy} onClick={() => void removeMaterial(editService.id, m.inventory_product_id)}>Remove</button>
                 </span>
               </div>
             ))}
             {invProducts.length > 0 && (
-              <select disabled={matBusy} style={{ marginTop: 8, width: "100%", fontSize: 12 }} value="" onChange={(e) => { if (e.target.value) void addMaterial(editService.id, e.target.value); }}>
+              <select className="svc-mat-add" disabled={matBusy} value="" onChange={(e) => { if (e.target.value) void addMaterial(editService.id, e.target.value); }}>
                 <option value="">+ Add material from inventory...</option>
                 {invProducts.filter((p) => !materials.some((m) => m.inventory_product_id === p.id)).map((p) => <option key={p.id} value={p.id}>{p.name} ({p.product_type} · {p.unit})</option>)}
               </select>
@@ -244,10 +252,9 @@ export default function ServicesPage() {
       </form>
     </Drawer>
 
-    {/* ── Import Drawer ── */}
     <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from catalog">
       {templates.length === 0 ? <div className="dashboard-empty"><strong>No templates available</strong><span>Templates appear here based on your clinic specialties.</span></div> : <div className="invoice-list">
-        {templates.map((tpl) => <article className="invoice-row" key={tpl.id} style={{ cursor: "pointer" }} onClick={() => importTemplate(tpl)}>
+        {templates.map((tpl) => <article className="invoice-row dt-clickable" key={tpl.id} onClick={() => importTemplate(tpl)}>
           <div className="invoice-mark">{tpl.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
             <h3>{tpl.name}</h3>

@@ -1,0 +1,798 @@
+<title>Landing Page Flow</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  /* Layout: vertical flowchart with connection lines */
+  :root {
+    --bg: #f8f7f3;
+    --fg: #1c2928;
+    --muted: #6b7a76;
+    --leaf: #274c42;
+    --coral: #b84f38;
+    --mint: #cfe5d7;
+    --cream: #fbfaf5;
+    --line: #d8ded7;
+    --card: #ffffff;
+    --link-line: var(--coral);
+    --nav-bg: rgba(248,247,243,0.95);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #141e1c;
+    --fg: #e4e8e6;
+    --muted: #8a9792;
+    --leaf: #5aad8a;
+    --coral: #d4735e;
+    --mint: #1e3a30;
+    --cream: #1a2624;
+    --line: #2e3e3a;
+    --card: #1a2624;
+    --nav-bg: rgba(20,30,28,0.95);
+    color-scheme: dark;
+  }}
+  :root[data-theme="dark"] {
+    --bg: #141e1c;
+    --fg: #e4e8e6;
+    --muted: #8a9792;
+    --leaf: #5aad8a;
+    --coral: #d4735e;
+    --mint: #1e3a30;
+    --cream: #1a2624;
+    --line: #2e3e3a;
+    --card: #1a2624;
+    --nav-bg: rgba(20,30,28,0.95);
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'DM Sans', sans-serif;
+    padding-block: 32px;
+    padding-inline: 16px;
+    line-height: 1.5;
+  }
+
+  .page-title {
+    text-align: center;
+    margin-bottom: 8px;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--leaf);
+  }
+  .page-subtitle {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 40px;
+    max-width: 500px;
+    margin-inline: auto;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 36px;
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .legend-dot.section { background: var(--leaf); }
+  .legend-dot.cta { background: var(--coral); }
+  .legend-dot.link { background: var(--mint); border: 1px solid var(--line); }
+  .legend-dot.page { background: var(--line); }
+  .legend-dot.anchor { background: transparent; border: 2px dashed var(--muted); }
+
+  .flow {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  /* Vertical connector */
+  .connector {
+    width: 2px;
+    height: 28px;
+    background: var(--line);
+    margin: 0 auto;
+    position: relative;
+  }
+  .connector::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--line);
+  }
+
+  /* Section card */
+  .section-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 24px;
+    position: relative;
+  }
+  .section-card.nav-card {
+    border-left: 3px solid var(--leaf);
+  }
+  .section-card.content-card {
+    border-left: 3px solid var(--leaf);
+  }
+  .section-card.cta-card {
+    border-left: 3px solid var(--coral);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .section-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .badge-nav { background: var(--mint); color: var(--leaf); }
+  .badge-section { background: var(--mint); color: var(--leaf); }
+  .badge-cta { background: #f5ddd7; color: var(--coral); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .badge-cta { background: #3a2520; } }
+  :root[data-theme="dark"] .badge-cta { background: #3a2520; }
+  .badge-footer { background: var(--line); color: var(--muted); }
+
+  .section-name {
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .section-id {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-left: auto;
+  }
+
+  .section-desc {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  /* Links/CTAs inside a section */
+  .links-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .link-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    cursor: default;
+    position: relative;
+  }
+  .link-chip .arrow {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .link-chip .target {
+    color: var(--coral);
+    font-weight: 500;
+  }
+  .link-chip.internal .target { color: var(--leaf); }
+  .link-chip.dead .target { color: var(--muted); text-decoration: line-through; }
+
+  /* Sub-components list */
+  .components {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .component-tag {
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--cream);
+    color: var(--muted);
+    border: 1px solid var(--line);
+  }
+
+  /* Content items */
+  .content-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .content-item {
+    font-size: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .content-item .bullet {
+    color: var(--coral);
+    flex-shrink: 0;
+  }
+  .content-item .label {
+    font-weight: 500;
+  }
+  .content-item .detail {
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+  }
+
+  /* Group wrapper */
+  .group {
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .group-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+
+  /* Side annotation */
+  .annotation {
+    position: absolute;
+    right: -8px;
+    top: 50%;
+    transform: translate(100%, -50%);
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+    padding-left: 12px;
+    border-left: 2px dashed var(--line);
+  }
+
+  @media (max-width: 700px) {
+    .annotation { display: none; }
+    .section-id { display: none; }
+    .section-card { padding: 16px; }
+  }
+
+  /* Tabs for views */
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin-bottom: 32px;
+  }
+  .tab-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: var(--leaf);
+    color: white;
+    border-color: var(--leaf);
+  }
+
+  .view { display: none; }
+  .view.active { display: flex; flex-direction: column; gap: 0; }
+
+  /* User journey diagram */
+  .journey {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .journey-step {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 20px;
+    padding: 24px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .journey-step:last-child { border-bottom: none; }
+  .journey-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--leaf);
+    text-align: center;
+    padding-top: 4px;
+  }
+  .journey-content h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .journey-content p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .journey-path {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .path-node {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 3px 10px;
+    border-radius: 4px;
+    background: var(--mint);
+    color: var(--leaf);
+  }
+  .path-arrow {
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .path-node.action {
+    background: #f5ddd7;
+    color: var(--coral);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .path-node.action { background: #3a2520; } }
+  :root[data-theme="dark"] .path-node.action { background: #3a2520; }
+
+  @media (max-width: 500px) {
+    .journey-step { grid-template-columns: 1fr; gap: 8px; }
+    .journey-num { text-align: left; font-size: 18px; }
+  }
+</style>
+
+<h1 class="page-title">care/fully Landing Page</h1>
+<p class="page-subtitle">How sections, navigation links, CTAs, and components connect together</p>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchView('structure')">Page Structure</button>
+  <button class="tab-btn" onclick="switchView('journey')">User Journeys</button>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot section"></div> Section</div>
+  <div class="legend-item"><div class="legend-dot cta"></div> CTA / Action</div>
+  <div class="legend-item"><div class="legend-dot link"></div> Internal link</div>
+  <div class="legend-item"><div class="legend-dot anchor"></div> Anchor target</div>
+  <div class="legend-item"><div class="legend-dot page"></div> Dead link (#)</div>
+</div>
+
+<!-- VIEW 1: STRUCTURE -->
+<div id="view-structure" class="view active flow">
+
+  <!-- NAV -->
+  <div class="section-card nav-card">
+    <div class="section-header">
+      <span class="section-badge badge-nav">Nav</span>
+      <span class="section-name">Sticky Navigation</span>
+      <span class="section-id">&lt;nav .lp-nav&gt;</span>
+    </div>
+    <div class="section-desc">Fixed at top, becomes opaque on scroll. Hamburger menu on mobile (&lt;640px).</div>
+    <div class="links-row">
+      <span class="link-chip internal"><span>Product</span> <span class="arrow">→</span> <span class="target">#product</span></span>
+      <span class="link-chip internal"><span>How it works</span> <span class="arrow">→</span> <span class="target">#how-it-works</span></span>
+      <span class="link-chip internal"><span>Security</span> <span class="arrow">→</span> <span class="target">#security</span></span>
+      <span class="link-chip internal"><span>Pricing</span> <span class="arrow">→</span> <span class="target">#pricing</span></span>
+      <span class="link-chip"><span>Sign in</span> <span class="arrow">→</span> <span class="target">/login</span></span>
+      <span class="link-chip"><span>Request a demo</span> <span class="arrow">→</span> <span class="target">#pricing</span></span>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- HERO -->
+  <div class="section-card content-card">
+    <div class="section-header">
+      <span class="section-badge badge-section">Hero</span>
+      <span class="section-name">Make care feel well run.</span>
+      <span class="section-id">&lt;section .lp-hero&gt;</span>
+    </div>
+    <div class="section-desc">Two-column: copy left, dashboard preview right. Scroll-reveal animation.</div>
+    <div class="components">
+      <span class="component-tag">DashboardPreview</span>
+    </div>
+    <div class="links-row">
+      <span class="link-chip"><span>Start your workspace</span> <span class="arrow">→</span> <span class="target">/login</span></span>
+      <span class="link-chip internal"><span>See how it works</span> <span class="arrow">→</span> <span class="target">#product</span></span>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- TRUST BAR -->
+  <div class="section-card content-card">
+    <div class="section-header">
+      <span class="section-badge badge-section">Stats</span>
+      <span class="section-name">Trust Bar</span>
+      <span class="section-id">&lt;section .lp-trust-bar&gt;</span>
+    </div>
+    <div class="section-desc">4 metrics in a row. No links.</div>
+    <div class="content-items">
+      <div class="content-item"><span class="bullet">-</span> <span class="label">6,200+</span> <span class="detail">Appointments managed</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">48</span> <span class="detail">Clinics onboarded</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">99.9%</span> <span class="detail">Platform uptime</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">&lt;2min</span> <span class="detail">Average setup time</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- PRODUCT SHOWCASE GROUP -->
+  <div class="group">
+    <div class="group-label">Product Showcase &nbsp;·&nbsp; id="product"</div>
+
+    <div class="section-card content-card">
+      <div class="section-header">
+        <span class="section-badge badge-section">Intro</span>
+        <span class="section-name">The front door, the day itself.</span>
+      </div>
+      <div class="section-desc">Section intro text. Anchor target for nav "Product" link.</div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="section-card content-card">
+      <div class="section-header">
+        <span class="section-badge badge-section">Showcase 1</span>
+        <span class="section-name">Website & Booking</span>
+        <span class="section-id">id="website"</span>
+      </div>
+      <div class="section-desc">Text left, previews right. Alternating cream background.</div>
+      <div class="components">
+        <span class="component-tag">WebsitePreview</span>
+        <span class="component-tag">PhonePreview</span>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="section-card content-card">
+      <div class="section-header">
+        <span class="section-badge badge-section">Showcase 2</span>
+        <span class="section-name">Schedule & Queue</span>
+        <span class="section-id">id="operations"</span>
+      </div>
+      <div class="section-desc">Text right, previews left (reversed). White background.</div>
+      <div class="components">
+        <span class="component-tag">DashboardPreview</span>
+        <span class="component-tag">QueuePreview</span>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="section-card content-card">
+      <div class="section-header">
+        <span class="section-badge badge-section">Showcase 3</span>
+        <span class="section-name">CRM & Follow-ups</span>
+        <span class="section-id">id="followups"</span>
+      </div>
+      <div class="section-desc">Text left, preview right. Alternating cream background.</div>
+      <div class="components">
+        <span class="component-tag">FollowUpPreview</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- HOW IT WORKS -->
+  <div class="section-card content-card">
+    <div class="section-header">
+      <span class="section-badge badge-section">Steps</span>
+      <span class="section-name">How It Works</span>
+      <span class="section-id">id="how-it-works"</span>
+    </div>
+    <div class="section-desc">3-step horizontal timeline. Anchor target for nav "How it works" link.</div>
+    <div class="content-items">
+      <div class="content-item"><span class="bullet">01</span> <span class="label">Onboard</span> <span class="detail">Setup clinic, services, team</span></div>
+      <div class="content-item"><span class="bullet">02</span> <span class="label">Publish</span> <span class="detail">Launch website + booking</span></div>
+      <div class="content-item"><span class="bullet">03</span> <span class="label">Run the day</span> <span class="detail">Operate with less friction</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- SECURITY -->
+  <div class="section-card content-card">
+    <div class="section-header">
+      <span class="section-badge badge-section">Trust</span>
+      <span class="section-name">Security</span>
+      <span class="section-id">id="security"</span>
+    </div>
+    <div class="section-desc">2x2 grid of security features with SVG icons. Anchor target for nav "Security" link.</div>
+    <div class="content-items">
+      <div class="content-item"><span class="bullet">-</span> <span class="label">Tenant isolation</span> <span class="detail">RLS at DB layer</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">MFA-aware access</span> <span class="detail">Verified sessions</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">Audit trail</span> <span class="detail">Timestamped actions</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">Private files</span> <span class="detail">Scoped + scanned</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- TESTIMONIALS -->
+  <div class="section-card content-card">
+    <div class="section-header">
+      <span class="section-badge badge-section">Social</span>
+      <span class="section-name">Testimonials</span>
+      <span class="section-id">&lt;section .lp-testimonials&gt;</span>
+    </div>
+    <div class="section-desc">3 quote cards in a row. No links. Avatar shows initials.</div>
+    <div class="content-items">
+      <div class="content-item"><span class="bullet">-</span> <span class="label">Dr. Amira Hassan</span> <span class="detail">Noor Clinic</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">Dr. Ravi Menon</span> <span class="detail">Greenleaf Medical</span></div>
+      <div class="content-item"><span class="bullet">-</span> <span class="label">Dr. Sara Vidal</span> <span class="detail">Vidal Skin Centre</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- PRICING -->
+  <div class="section-card cta-card">
+    <div class="section-header">
+      <span class="section-badge badge-cta">CTA</span>
+      <span class="section-name">Pricing / Demo</span>
+      <span class="section-id">id="pricing"</span>
+    </div>
+    <div class="section-desc">Centered card. Anchor target for nav "Pricing" and "Request a demo" links.</div>
+    <div class="links-row">
+      <span class="link-chip"><span>Request a demo</span> <span class="arrow">→</span> <span class="target">/login</span></span>
+      <span class="link-chip"><span>Sign in to workspace</span> <span class="arrow">→</span> <span class="target">/login</span></span>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- FAQ -->
+  <div class="section-card content-card">
+    <div class="section-header">
+      <span class="section-badge badge-section">FAQ</span>
+      <span class="section-name">A little more clarity.</span>
+      <span class="section-id">&lt;section .lp-faq&gt;</span>
+    </div>
+    <div class="section-desc">8 expandable &lt;details&gt; items. Two-column: heading left, questions right.</div>
+    <div class="content-items">
+      <div class="content-item"><span class="bullet">+</span> <span class="label">Who is care/fully for?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">How much does it cost?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">Does it replace our clinical record?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">Can our team work with different permissions?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">How long does setup take?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">Can I migrate from another system?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">Is my patient data safe?</span></div>
+      <div class="content-item"><span class="bullet">+</span> <span class="label">Is there a template gallery?</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- FINAL CTA -->
+  <div class="section-card cta-card">
+    <div class="section-header">
+      <span class="section-badge badge-cta">CTA</span>
+      <span class="section-name">Your clinic deserves a calmer day.</span>
+      <span class="section-id">&lt;section .lp-final-cta&gt;</span>
+    </div>
+    <div class="section-desc">Dark green full-width background. Final conversion push.</div>
+    <div class="links-row">
+      <span class="link-chip"><span>Request a demo</span> <span class="arrow">→</span> <span class="target">/login</span></span>
+      <span class="link-chip"><span>Sign in to workspace</span> <span class="arrow">→</span> <span class="target">/login</span></span>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- FOOTER -->
+  <div class="section-card" style="border-left: 3px solid var(--muted);">
+    <div class="section-header">
+      <span class="section-badge badge-footer">Footer</span>
+      <span class="section-name">Footer</span>
+      <span class="section-id">&lt;footer .lp-footer&gt;</span>
+    </div>
+    <div class="section-desc">4-column: brand + Product + Company + Resources. Copyright bar at bottom.</div>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:16px; margin-top:12px;">
+      <div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:6px;">PRODUCT</div>
+        <div class="content-items" style="margin-top:0;">
+          <div class="content-item"><span class="label">Website Builder</span> <span class="detail">→ #website</span></div>
+          <div class="content-item"><span class="label">Booking</span> <span class="detail">→ #website</span></div>
+          <div class="content-item"><span class="label">Queue & Schedule</span> <span class="detail">→ #operations</span></div>
+          <div class="content-item"><span class="label">CRM</span> <span class="detail">→ #followups</span></div>
+          <div class="content-item"><span class="label">Follow-ups</span> <span class="detail">→ #followups</span></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:6px;">COMPANY</div>
+        <div class="content-items" style="margin-top:0;">
+          <div class="content-item"><span class="label">About</span> <span class="detail" style="text-decoration:line-through;">→ #</span></div>
+          <div class="content-item"><span class="label">Contact</span> <span class="detail">→ mailto:</span></div>
+          <div class="content-item"><span class="label">Privacy</span> <span class="detail">→ /privacy</span></div>
+          <div class="content-item"><span class="label">Terms</span> <span class="detail" style="text-decoration:line-through;">→ #</span></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:6px;">RESOURCES</div>
+        <div class="content-items" style="margin-top:0;">
+          <div class="content-item"><span class="label">Documentation</span> <span class="detail" style="text-decoration:line-through;">→ #</span></div>
+          <div class="content-item"><span class="label">Status</span> <span class="detail" style="text-decoration:line-through;">→ #</span></div>
+          <div class="content-item"><span class="label">Changelog</span> <span class="detail" style="text-decoration:line-through;">→ #</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- VIEW 2: USER JOURNEYS -->
+<div id="view-journey" class="view journey">
+
+  <div class="journey-step">
+    <div class="journey-num">01</div>
+    <div class="journey-content">
+      <h3>New visitor lands on page</h3>
+      <p>Sees hero with value prop and dashboard preview. Scrolls down or clicks nav.</p>
+      <div class="journey-path">
+        <span class="path-node">Hero</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Trust bar (social proof)</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Scrolls to product</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="journey-step">
+    <div class="journey-num">02</div>
+    <div class="journey-content">
+      <h3>Exploring the product</h3>
+      <p>Visitor clicks "Product" in nav or "See how it works" in hero. Both go to #product.</p>
+      <div class="journey-path">
+        <span class="path-node">Nav → Product</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">#product intro</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Website & Booking</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Schedule & Queue</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">CRM & Follow-ups</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="journey-step">
+    <div class="journey-num">03</div>
+    <div class="journey-content">
+      <h3>Building trust</h3>
+      <p>Visitor checks how it works, security, and testimonials before committing.</p>
+      <div class="journey-path">
+        <span class="path-node">How it works</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Security (2x2 grid)</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Testimonials</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="journey-step">
+    <div class="journey-num">04</div>
+    <div class="journey-content">
+      <h3>Ready to convert</h3>
+      <p>Visitor clicks "Request a demo" (nav or pricing section) or "Start your workspace" (hero). All go to /login.</p>
+      <div class="journey-path">
+        <span class="path-node">Pricing card</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node action">Request a demo → /login</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="journey-step">
+    <div class="journey-num">05</div>
+    <div class="journey-content">
+      <h3>Existing user returns</h3>
+      <p>Clicks "Sign in" in nav directly. Skips the whole page.</p>
+      <div class="journey-path">
+        <span class="path-node">Nav → Sign in</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node action">/login</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node action">/dashboard</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="journey-step">
+    <div class="journey-num">06</div>
+    <div class="journey-content">
+      <h3>Has questions</h3>
+      <p>Scrolls to FAQ section. Clicks any of the 8 expandable questions.</p>
+      <div class="journey-path">
+        <span class="path-node">FAQ accordion</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Reads answer</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node">Final CTA</span>
+        <span class="path-arrow">→</span>
+        <span class="path-node action">Request a demo → /login</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="journey-step">
+    <div class="journey-num">07</div>
+    <div class="journey-content">
+      <h3>All CTAs lead to /login</h3>
+      <p>Every conversion button on the page goes to the same destination.</p>
+      <div class="journey-path">
+        <span class="path-node action">Hero: Start workspace → /login</span>
+      </div>
+      <div class="journey-path" style="margin-top:4px;">
+        <span class="path-node action">Nav: Request a demo → #pricing</span>
+      </div>
+      <div class="journey-path" style="margin-top:4px;">
+        <span class="path-node action">Pricing: Request a demo → /login</span>
+      </div>
+      <div class="journey-path" style="margin-top:4px;">
+        <span class="path-node action">Final CTA: Request a demo → /login</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>

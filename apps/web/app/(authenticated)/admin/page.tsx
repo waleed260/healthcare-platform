@@ -168,9 +168,7 @@ export default function AdminPage() {
   return <main className="workspace-page admin-page">
     <div className="workspace-page-header">
       <div>
-        <p className="eyebrow">PLATFORM ADMIN</p>
-        <h1>The control <em>room.</em></h1>
-        <p className="workspace-page-intro">Clinics, subscriptions, support access, audit trail, and platform health at a glance.</p>
+        <h1>Admin</h1>
       </div>
       <div className="header-actions">
         <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>

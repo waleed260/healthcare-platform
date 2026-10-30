@@ -155,13 +155,12 @@ export default function OperationsPage() {
   return <>
     <main className="dash-content operations-content" aria-busy={loading}>
       <div className="dash-topline">
-        <div><p className="eyebrow">FOLLOW-UPS · NOTIFICATIONS</p><h1>Keep care <em>moving.</em></h1></div>
+        <div><h1>Operations</h1></div>
         <div className="header-actions">
           <button className="button button-secondary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
           <button className="button button-primary" type="button" onClick={() => setAddFollowUpOpen(true)}>Create follow-up <span>+</span></button>
         </div>
       </div>
-      <p className="queue-intro">A focused, permission-scoped handoff for tasks that need attention. Patient details stay in the protected patient workspace.</p>
       {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
       {notice && <div className="success-alert" role="status">{notice}</div>}
 
@@ -197,7 +196,7 @@ export default function OperationsPage() {
         {pushState === "denied" && <p className="privacy-caption" role="status">Notifications are blocked in your browser settings.</p>}
         {pushState === "on" ? <p className="privacy-caption" role="status">Alerts are enabled on this device.</p> : (pushState === "off" || pushState === "error") && <button className="button button-secondary" type="button" onClick={() => void enablePush()} disabled={working !== null}>{working === "push" ? "Enabling…" : "Enable browser alerts"} <span>→</span></button>}
       </section>
-      {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · refresh if the clinic day has changed.</p>}
+      {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
     </main>
     <FollowUpDrawer open={addFollowUpOpen} onClose={() => setAddFollowUpOpen(false)} onCreated={() => void load()} />
   </>;

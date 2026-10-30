@@ -8,6 +8,7 @@ import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 import Pagination, { usePagination } from "../_lib/pagination";
+import DataTable, { type Column } from "../_lib/data-table";
 import type { PatientRef, InvoiceSummary, ServiceRef, SessionInfo } from "../_lib/contracts";
 type InvoiceDetail = InvoiceSummary & { patient_name: string; patient_number: string; void_reason: string | null; voided_at: string | null; refunded_minor: number; balance_minor: number; encounter_id: string | null; lines: InvoiceLine[]; payments: Payment[]; refunds: Refund[] };
 type InvoiceLine = { id: string; service_id: string | null; provider_id: string | null; provider_name: string | null; description: string; quantity: number; unit_price_minor: number; tax_minor: number; line_total_minor: number };
@@ -110,6 +111,37 @@ export default function BillingPage() {
   }, [searchParams, services]);
 
   const patientNames = new Map(patients.map((p) => [p.id, p.full_name]));
+
+  const invoiceCols: Column<InvoiceSummary>[] = [
+    { key: "mark", header: "", width: "40px", srOnly: true, render: (inv) => <div className="invoice-mark">{inv.invoice_number.slice(-2)}</div> },
+    { key: "invoice", header: "Invoice", width: "1fr", sortable: true, sortFn: (a, b) => a.invoice_number.localeCompare(b.invoice_number), render: (inv) => {
+      const balance = Math.max(inv.total_minor - inv.paid_minor, 0);
+      return (
+        <div className="invoice-main">
+          <div className="lead-title">
+            <h3><button className="text-control" type="button" onClick={() => void openDetail(inv.id)}>{inv.invoice_number}</button></h3>
+            <span className={`pipeline-status status-${inv.status}`}>{label(inv.status)}</span>
+          </div>
+          <p>{patientNames.get(inv.patient_id) ?? "Patient"} · Issued {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(inv.issued_at))}</p>
+          <small>{money(inv.paid_minor, inv.currency)} paid of {money(inv.total_minor, inv.currency)} · {money(balance, inv.currency)} remaining</small>
+        </div>
+      );
+    }},
+    { key: "actions", header: "Actions", width: "auto", srOnly: true, render: (inv) => {
+      const balance = Math.max(inv.total_minor - inv.paid_minor, 0);
+      return (
+        <div className="invoice-actions">
+          <span className="receipt-links">
+            <a className="text-control" href={`/api/v1/invoices/${inv.id}/receipt.pdf?format=a4`} target="_blank" rel="noreferrer">A4 PDF</a>
+            <a className="text-control" href={`/api/v1/invoices/${inv.id}/receipt.pdf?format=thermal`} target="_blank" rel="noreferrer">80 mm</a>
+          </span>
+          {balance > 0 && inv.status !== "void" && can("billing.manage") && (
+            <button className="text-control" type="button" onClick={() => void openDetail(inv.id).then(() => {})}>Pay / Refund <span>→</span></button>
+          )}
+        </div>
+      );
+    }},
+  ];
 
   // Line item helpers
   function updateLine(index: number, field: keyof LineInput, value: string | number) {
@@ -247,11 +279,10 @@ export default function BillingPage() {
     <main className="dash-content billing-content" aria-busy={loading || pageLoading}>
       <div className="dash-topline">
         <div>
-          <p className="eyebrow">BUSINESS · CLEAR BALANCES</p>
-          <h1>Make the numbers <em>legible.</em></h1>
+          <h1>Billing</h1>
         </div>
         <div className="header-actions">
-          <Link className="button button-secondary" href="/finance" style={{ fontSize: 11 }}>Daily Summary</Link>
+          <Link className="button button-secondary" href="/finance">Daily Summary</Link>
           <button className="button button-secondary" type="button" onClick={() => void reload()} disabled={pageLoading}>Refresh <span>↻</span></button>
           {can("billing.manage") && <button className="button button-primary" type="button" onClick={() => setShowForm((v) => !v)}>{showForm ? "Close form" : "New invoice"} <span>＋</span></button>}
         </div>
@@ -269,7 +300,7 @@ export default function BillingPage() {
       {showForm && (
         <form className="surface-card invoice-builder" onSubmit={(e) => void createInvoice(e)}>
           <div className="surface-card-heading">
-            <div><p className="eyebrow">NEW INVOICE</p><h2>Build the charge.</h2></div>
+            <div><h2>New invoice</h2></div>
           </div>
 
           <div className="invoice-builder-meta">
@@ -340,42 +371,19 @@ export default function BillingPage() {
       {/* Invoice list */}
       <section className="surface-card invoice-card">
         <div className="surface-card-heading">
-          <div><p className="eyebrow">INVOICE LEDGER</p><h2>Every balance, one place.</h2></div>
+          <div><h2>Invoices</h2></div>
           <span className="muted-mono">{pageLoading ? "SYNCING" : `${invoices.length} RECORD${invoices.length === 1 ? "" : "S"}`}</span>
         </div>
 
-        {pageLoading && invoices.length === 0 && <div className="dashboard-empty" role="status"><strong>Loading billing</strong><span>Checking authorized invoices…</span></div>}
-        {!pageLoading && invoices.length === 0 && <div className="dashboard-empty"><strong>No invoices yet</strong><span>Issue the first invoice when a service is ready to be charged.</span></div>}
-
-        {invoices.length > 0 && (
-          <div className="invoice-list">
-            {invoices.map((inv) => {
-              const balance = Math.max(inv.total_minor - inv.paid_minor, 0);
-              return (
-                <article className="invoice-row" key={inv.id}>
-                  <div className="invoice-mark">{inv.invoice_number.slice(-2)}</div>
-                  <div className="invoice-main">
-                    <div className="lead-title">
-                      <h3><button className="text-control" type="button" onClick={() => void openDetail(inv.id)}>{inv.invoice_number}</button></h3>
-                      <span className={`pipeline-status status-${inv.status}`}>{label(inv.status)}</span>
-                    </div>
-                    <p>{patientNames.get(inv.patient_id) ?? "Patient"} · Issued {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(inv.issued_at))}</p>
-                    <small>{money(inv.paid_minor, inv.currency)} paid of {money(inv.total_minor, inv.currency)} · {money(balance, inv.currency)} remaining</small>
-                  </div>
-                  <div className="invoice-actions">
-                    <span className="receipt-links">
-                      <a className="text-control" href={`/api/v1/invoices/${inv.id}/receipt.pdf?format=a4`} target="_blank" rel="noreferrer">A4 PDF</a>
-                      <a className="text-control" href={`/api/v1/invoices/${inv.id}/receipt.pdf?format=thermal`} target="_blank" rel="noreferrer">80 mm</a>
-                    </span>
-                    {balance > 0 && inv.status !== "void" && can("billing.manage") && (
-                      <button className="text-control" type="button" onClick={() => void openDetail(inv.id).then(() => {})}>Pay / Refund <span>→</span></button>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
+        <DataTable
+          columns={invoiceCols}
+          rows={invoices}
+          rowKey={(inv) => inv.id}
+          loading={pageLoading && invoices.length === 0}
+          skeletonRows={4}
+          emptyTitle="No invoices yet"
+          emptyBody="Issue the first invoice when a service is ready to be charged."
+        />
         {(hasMore || invoices.length > 0) && <Pagination hasMore={hasMore} loading={pageLoading} error={pageError} total={invoices.length} onLoadMore={() => void loadMore()} pageSize={pageSize} onPageSizeChange={changePageSize} />}
       </section>
 
@@ -392,7 +400,7 @@ export default function BillingPage() {
                 <h2>{detail.invoice_number}</h2>
                 <p className="drawer-note">{detail.patient_name} · {detail.patient_number}</p>
                 <span className={`pipeline-status status-${detail.status}`}>{label(detail.status)}</span>
-                {detail.encounter_id && <p style={{ marginTop: 6 }}><Link href={`/encounters/${detail.encounter_id}`} style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>View Encounter →</Link></p>}
+                {detail.encounter_id && <p className="inv-encounter-link"><Link href={`/encounters/${detail.encounter_id}`}>View Encounter →</Link></p>}
 
                 {detail.void_reason && <p className="void-reason">Voided: {detail.void_reason}</p>}
 

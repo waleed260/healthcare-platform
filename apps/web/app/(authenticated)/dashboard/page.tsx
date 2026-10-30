@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import PremiumMotion from "../../premium-motion";
+import DataTable, { type Column, RowSkeleton } from "../_lib/data-table";
 import { api } from "../_lib/client";
 
 const AddAppointmentDrawer = dynamic(() => import("../_lib/add-appointment-drawer"), { ssr: false });
@@ -23,6 +23,18 @@ async function getData<T>(url: string): Promise<T | null> {
   try { return await api<T>(url); } catch { return null; }
 }
 const statusClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
+
+const scheduleCols: Column<Appointment>[] = [
+  { key: "time", header: "Time", width: "70px", render: (a) => <time dateTime={a.starts_at}>{time(a.starts_at)}</time> },
+  { key: "reference", header: "Appointment", width: "1fr", sortable: true, sortFn: (a, b) => a.reference.localeCompare(b.reference), render: (a) => <span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span> },
+  { key: "status", header: "Status", width: "auto", render: (a) => <span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span> },
+];
+
+const requestCols: Column<Appointment>[] = [
+  { key: "reference", header: "Reference", width: "1fr", render: (a) => <strong>{a.reference}</strong> },
+  { key: "requested", header: "Requested", width: "auto", render: (a) => <small>{dayShort(a.starts_at)} {time(a.starts_at)}</small> },
+  { key: "action", header: "Action", width: "auto", srOnly: true, render: () => <Link className="text-control" href="/schedule?status=requested">Review</Link> },
+];
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -60,7 +72,7 @@ export default function DashboardPage() {
       setRequests(requested ?? []);
       setQueue(q ?? []); setFollowups(f ?? []);
       setRefreshedAt(new Date());
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "The workspace could not be loaded."); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load dashboard."); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -94,38 +106,37 @@ export default function DashboardPage() {
   const kpi = (value: number | undefined) => (loading && summary === null ? "…" : value ?? "—");
 
   return <main className="dashboard-overview" id="overview" aria-busy={loading}>
-    <PremiumMotion />
-    <div className="dash-topline"><div><p className="eyebrow">Today</p><h1>Today at a <em>glance.</em></h1></div><div className="header-actions">{permissions.includes("appointment.create") && <button className="button button-primary" type="button" onClick={() => setAddApptOpen(true)}>Book appointment <span>+</span></button>}</div></div>
+    <div className="dash-topline"><div><h1>Today</h1></div><div className="header-actions">{permissions.includes("appointment.create") && <button className="button button-primary" type="button" onClick={() => setAddApptOpen(true)}>Book appointment <span>+</span></button>}</div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
     <div className="kpi-grid" aria-live="polite">
-      <Link className="kpi-card" href="/schedule"><span className="kpi-ico kpi-ico-blue" aria-hidden="true">📅</span><div><small>Today&apos;s appointments</small><strong>{kpi(summary?.today_appointments)}</strong></div></Link>
-      <Link className="kpi-card" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true">👥</span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
-      <Link className="kpi-card" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true">🗎</span><div><small>Pending approval</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
-      <Link className="kpi-card" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true">✓</span><div><small>Follow-ups due</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
+      <Link className="kpi-card kpi-card-blue" href="/schedule"><span className="kpi-ico kpi-ico-blue" aria-hidden="true">📅</span><div><small>Appointments</small><strong>{kpi(summary?.today_appointments)}</strong></div></Link>
+      <Link className="kpi-card kpi-card-green" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true">👥</span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
+      <Link className="kpi-card kpi-card-amber" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true">🗎</span><div><small>Pending</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
+      <Link className="kpi-card kpi-card-rose" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true">✓</span><div><small>Follow-ups</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
     </div>
 
     <div className="dash-main-grid">
-      <section className="panel-card" id="schedule"><div className="card-heading"><div><p className="eyebrow">YOUR DAY</p><h2>Today&apos;s schedule</h2></div><Link className="text-link" href="/schedule">View full calendar <span>→</span></Link></div>
-        {loading && schedule.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading schedule…</strong></div> : schedule.length === 0 ? <div className="dashboard-empty"><strong>No appointments</strong><span>Your scoped schedule is clear for now.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head"><span>Time</span><span>Appointment</span><span>Status</span></div>{schedule.map((a) => <div className="dash-table-row" key={a.id}><time dateTime={a.starts_at}>{time(a.starts_at)}</time><span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span><span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span></div>)}</div>}
+      <section className="panel-card" id="schedule"><div className="card-heading"><div><h2>Schedule</h2></div><Link className="text-link" href="/schedule">Full calendar <span>→</span></Link></div>
+        <DataTable columns={scheduleCols} rows={schedule} rowKey={(a) => a.id} loading={loading} skeletonRows={4} emptyTitle="All clear today" />
       </section>
 
       <div className="dash-side-col">
-        <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">NOW</p><h2>Live patient queue</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
-          {loading && queue.length === 0 ? <div className="dashboard-empty" role="status"><strong>Loading…</strong></div> : queue.length === 0 ? <div className="dashboard-empty"><strong>Queue is empty</strong><span>No one is waiting right now.</span></div> : <div className="queue-list">{queue.slice(0, 5).map((e, i) => <div className="queue-row" key={e.id}><span className="queue-num">{String(i + 1).padStart(2, "0")}</span><div className="queue-main"><strong>{e.full_name}</strong><small>{e.checked_in_at ? `in ${time(e.checked_in_at)}` : e.reference}</small></div><span className={`queue-state state-${e.status.replaceAll("_", "-")}`}>{e.status.replaceAll("_", " ")}</span><Link className="queue-action" href="/queue">Start →</Link></div>)}</div>}
+        <section className="panel-card"><div className="card-heading"><div><h2>Queue</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
+          {loading && queue.length === 0 ? <RowSkeleton count={3} /> : queue.length === 0 ? <div className="dashboard-empty"><strong>Queue is empty</strong></div> : <div className="queue-list">{queue.slice(0, 5).map((e, i) => <div className="queue-row" key={e.id}><span className="queue-num">{String(i + 1).padStart(2, "0")}</span><div className="queue-main"><strong>{e.full_name}</strong><small>{e.checked_in_at ? `in ${time(e.checked_in_at)}` : e.reference}</small></div><span className={`queue-state state-${e.status.replaceAll("_", "-")}`}>{e.status.replaceAll("_", " ")}</span><Link className="queue-action" href={`/queue?highlight=${e.id}`}>Start →</Link></div>)}</div>}
         </section>
-        <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">⚡ QUICK ACTIONS</p><h2>Do it now</h2></div></div><div className="quick-grid"><button className="quick-btn" type="button" onClick={() => setAddApptOpen(true)}>＋ Add appointment <span>→</span></button><button className="quick-btn" type="button" onClick={() => setAddPatientOpen(true)}>👤 Add patient <span>→</span></button><Link className="quick-btn" href="/encounters">✍ Encounters <span>→</span></Link><Link className="quick-btn" href="/billing">₿ Billing <span>→</span></Link><Link className="quick-btn" href="/finance">∑ Finance <span>→</span></Link><button className="quick-btn" type="button" onClick={() => setFollowUpOpen(true)}>🗎 Create follow-up <span>→</span></button></div></section>
+        <section className="panel-card quick-actions"><div className="card-heading"><div><p className="eyebrow">QUICK ACTIONS</p></div></div><div className="quick-grid"><button className="quick-btn" type="button" onClick={() => setAddApptOpen(true)}>＋ Appointment <span>→</span></button><button className="quick-btn" type="button" onClick={() => setAddPatientOpen(true)}>👤 Patient <span>→</span></button><Link className="quick-btn" href="/encounters">✍ Encounter <span>→</span></Link><Link className="quick-btn" href="/billing">₿ Billing <span>→</span></Link><Link className="quick-btn" href="/finance">∑ Finance <span>→</span></Link><button className="quick-btn" type="button" onClick={() => setFollowUpOpen(true)}>🗎 Follow-up <span>→</span></button></div></section>
       </div>
     </div>
 
     <div className="dash-bottom-grid">
-      <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">INBOX</p><h2>Appointment requests</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
-        {requests.length === 0 ? <div className="dashboard-empty"><strong>No pending requests</strong><span>New booking requests will appear here.</span></div> : <div className="dash-table"><div className="dash-table-row dash-table-head req-row"><span>Reference</span><span>Requested</span><span>Action</span></div>{requests.slice(0, 5).map((a) => <div className="dash-table-row req-row" key={a.id}><strong>{a.reference}</strong><small>{dayShort(a.starts_at)} {time(a.starts_at)}</small><Link className="text-control" href="/schedule?status=requested">Review</Link></div>)}</div>}
+      <section className="panel-card"><div className="card-heading"><div><h2>Requests</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
+        <DataTable columns={requestCols} rows={requests.slice(0, 5)} rowKey={(a) => a.id} loading={false} emptyTitle="No pending requests" />
       </section>
-      <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">DUE</p><h2>Follow-ups due</h2></div><Link className="text-link" href="/operations">View all <span>→</span></Link></div>
-        {followups.length === 0 ? <div className="dashboard-empty"><strong>Nothing due</strong><span>Follow-up tasks will appear here.</span></div> : <div className="followup-list">{followups.slice(0, 5).map((f) => <div className="followup-row" key={f.id}><div><strong>{f.reason || "Follow-up"}</strong><small>due {dayShort(f.due_at)} {time(f.due_at)}</small></div><span className={`pipeline-status status-${f.status === "overdue" ? "lost" : "qualified"}`}>{f.status}</span></div>)}</div>}
+      <section className="panel-card"><div className="card-heading"><div><h2>Follow-ups</h2></div><Link className="text-link" href="/operations">View all <span>→</span></Link></div>
+        {followups.length === 0 ? <div className="dashboard-empty"><strong>Nothing due</strong></div> : <div className="followup-list">{followups.slice(0, 5).map((f) => <div className="followup-row" key={f.id}><div><strong>{f.reason || "Follow-up"}</strong><small>due {dayShort(f.due_at)} {time(f.due_at)}</small></div><span className={`pipeline-status status-${f.status === "overdue" ? "lost" : "qualified"}`}>{f.status}</span></div>)}</div>}
       </section>
-      <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">📊 TREND</p><h2>Appointments this week</h2></div></div><div className="bar-chart" role="img" aria-label="Appointments by weekday">{weekBars.map((b) => <div className="bar-col" key={b.label}><div className="bar-track"><div className="bar-fill" style={{ height: `${b.pct}%` }} title={`${b.label}: ${b.value}`} /></div><small>{b.label}</small><b>{b.value}</b></div>)}</div></section>
+      <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">TREND</p><h2>This week</h2></div></div><div className="bar-chart" role="img" aria-label="Appointments by weekday">{weekBars.map((b) => <div className="bar-col" key={b.label}><div className="bar-track"><div className="bar-fill" style={{ height: `${b.pct}%` }} title={`${b.label}: ${b.value}`} /></div><small>{b.label}</small><b>{b.value}</b></div>)}</div></section>
     </div>
     {refreshedAt && <p className="stale-note">Updated {refreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
     {clinicSlug && <AddAppointmentDrawer open={addApptOpen} onClose={() => setAddApptOpen(false)} clinicSlug={clinicSlug} onCreated={() => void load()} />}

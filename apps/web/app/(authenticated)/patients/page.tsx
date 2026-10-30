@@ -2,19 +2,33 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { apiPage } from "../_lib/client";
+import { api, apiPage, writeHeaders } from "../_lib/client";
+import { useToast } from "../_lib/toast";
+import { useConfirm } from "../_lib/confirm";
 import Pagination, { usePagination } from "../_lib/pagination";
 import AddPatientDrawer from "../_lib/add-patient-drawer";
+import DataTable, { type Column } from "../_lib/data-table";
 import type { PatientSummary } from "../_lib/contracts";
 
 const statuses = ["active", "inactive", "discharged", "deceased"];
 
+const patientCols: Column<PatientSummary>[] = [
+  { key: "initial", header: "", width: "34px", srOnly: true, render: (p) => <span className="patient-initial" aria-hidden="true">{p.full_name.trim().charAt(0).toUpperCase()}</span> },
+  { key: "name", header: "Name", width: "1.3fr", sortable: true, sortFn: (a, b) => a.full_name.localeCompare(b.full_name), render: (p) => <span className="patient-main"><strong>{p.full_name}</strong><small>{p.patient_number} · {p.status}</small></span> },
+  { key: "contact", header: "Contact", width: "1fr", render: (p) => <span className="patient-contact">{p.normalized_email ?? p.normalized_phone ?? "No contact"}</span> },
+  { key: "arrow", header: "", width: "15px", srOnly: true, render: () => <span className="row-arrow" aria-hidden="true">→</span> },
+];
+
 export default function PatientsPage() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [search, setSearch] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [error] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const fetcher = useCallback(async (cursor: string | null, limit: number) => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -37,15 +51,28 @@ export default function PatientsPage() {
     setActiveSearch(search.trim());
   }
 
-  function onStatusChange(value: string) {
-    setStatusFilter(value);
+  async function bulkArchive() {
+    const ok = await confirm({ message: `Archive ${selectedKeys.size} patient${selectedKeys.size === 1 ? "" : "s"}?`, danger: true });
+    if (!ok) return;
+    setBulkBusy(true);
+    let done = 0;
+    for (const id of selectedKeys) {
+      try {
+        await api(`/api/v1/patients/${id}/archive`, { method: "POST", headers: writeHeaders() });
+        done++;
+      } catch { /* continue */ }
+    }
+    setBulkBusy(false);
+    setSelectedKeys(new Set());
+    toast.success(`${done} patient${done === 1 ? "" : "s"} archived.`);
+    void reload();
   }
+
   return (
     <main className="dash-content patient-content" aria-busy={loading}>
       <div className="dash-topline">
         <div>
-          <p className="eyebrow">CLINIC RECORDS · SCOPED ACCESS</p>
-          <h1>People, <em>carefully.</em></h1>
+          <h1>Patients</h1>
         </div>
         <button className="button button-secondary" type="button" onClick={() => void reload()} disabled={loading}>Refresh <span>↻</span></button>
         <button className="button button-primary" type="button" onClick={() => setAddOpen(true)}>Add patient <span>+</span></button>
@@ -62,13 +89,12 @@ export default function PatientsPage() {
         <div className="patient-filters">
           <label>
             Status
-            <select value={statusFilter} onChange={(e) => onStatusChange(e.target.value)}>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               {statuses.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </label>
         </div>
-        <p className="privacy-caption">Only records in your authorized clinic scope appear here.</p>
       </div>
 
       {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void reload()}>Try again <span>→</span></button></div>}
@@ -76,43 +102,34 @@ export default function PatientsPage() {
       <div className="patient-card">
         <div className="card-heading">
           <div>
-            <p className="eyebrow">PATIENT DIRECTORY</p>
-            <h2>{activeSearch ? `Results for "${activeSearch}"` : statusFilter ? `${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)} patients` : "All active patients"}</h2>
+            <h2>{activeSearch ? `Results for "${activeSearch}"` : statusFilter ? `${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)} patients` : "All patients"}</h2>
           </div>
           <span className="directory-count">{loading && patients.length === 0 ? "…" : `${patients.length} shown`}</span>
         </div>
 
-        {loading && patients.length === 0 && (
-          <div className="dashboard-empty" role="status">
-            <strong>Loading patient records</strong>
-            <span>Checking your authorized clinic scope…</span>
+        <DataTable
+          columns={patientCols}
+          rows={patients}
+          rowKey={(p) => p.id}
+          loading={loading && patients.length === 0}
+          skeletonRows={6}
+          selectable
+          selectedKeys={selectedKeys}
+          onSelectionChange={setSelectedKeys}
+          emptyTitle={activeSearch || statusFilter ? "No matching patients" : "No patients yet"}
+          emptyBody={activeSearch || statusFilter ? "Try a different search or filter." : <><Link href="/onboarding">Set up your clinic</Link>, or receive a public booking.</>}
+          rowHref={(p) => `/patients/${p.id}`}
+        />
+
+        {selectedKeys.size > 0 && (
+          <div className="bulk-bar">
+            <strong>{selectedKeys.size} selected</strong>
+            <button type="button" disabled={bulkBusy} onClick={() => void bulkArchive()}>{bulkBusy ? "Archiving…" : "Archive"}</button>
+            <button type="button" onClick={() => setSelectedKeys(new Set())}>Clear</button>
           </div>
         )}
 
-        {!loading && patients.length === 0 && (
-          <div className="dashboard-empty">
-            <strong>{activeSearch || statusFilter ? "No matching patients" : "No active patients yet"}</strong>
-            <span>{activeSearch || statusFilter ? "Try a different search or filter." : <>Create your clinic foundation in <Link href="/onboarding">onboarding</Link>, or receive a public booking.</>}</span>
-          </div>
-        )}
-
-        {patients.length > 0 && (
-          <div className="patient-list" role="list">
-            {patients.map((patient) => (
-              <Link className="patient-row" href={`/patients/${patient.id}`} key={patient.id} role="listitem">
-                <span className="patient-initial" aria-hidden="true">{patient.full_name.trim().charAt(0).toUpperCase()}</span>
-                <span className="patient-main">
-                  <strong>{patient.full_name}</strong>
-                  <small>{patient.patient_number} · {patient.status}</small>
-                </span>
-                <span className="patient-contact">{patient.normalized_email ?? patient.normalized_phone ?? "No contact recorded"}</span>
-                <span className="row-arrow" aria-hidden="true">→</span>
-              </Link>
-            ))}
-          </div>
-        )}
-
-        <Pagination hasMore={hasMore} loading={loading} error={paginationError} total={patients.length} onLoadMore={() => void load()} pageSize={pageSize} onPageSizeChange={changePageSize} loadMoreLabel="Load more patient records" />
+        <Pagination hasMore={hasMore} loading={loading} error={paginationError} total={patients.length} onLoadMore={() => void load()} pageSize={pageSize} onPageSizeChange={changePageSize} loadMoreLabel="Load more patients" />
       </div>
 
       <AddPatientDrawer open={addOpen} onClose={() => setAddOpen(false)} onCreated={() => void reload()} />

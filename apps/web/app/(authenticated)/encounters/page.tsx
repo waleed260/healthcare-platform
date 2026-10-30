@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
+import DataTable, { type Column } from "../_lib/data-table";
 
 type Encounter = {
   id: string; patient_id: string; patient_name: string; appointment_id: string | null;
@@ -26,10 +27,7 @@ const statusLabel = (v: string) => statusLabels[v] ?? v.charAt(0).toUpperCase() 
 const fmtDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v));
 const fmtDateTime = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
 const typeLabel = (v: string) => v.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
-const statusColor: Record<string, string> = {
-  draft: "#e0a458", in_progress: "var(--accent)", ready_for_discharge: "#5886b4",
-  discharged: "var(--leaf)", finalized: "#3c5149", referred: "#8468a8", transferred: "#4c7d91",
-};
+const statusToClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
 const filterTabs = ["all", "draft", "in_progress", "ready_for_discharge", "discharged", "finalized"];
 
 export default function EncountersPage() {
@@ -45,6 +43,7 @@ export default function EncountersPage() {
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const [patientSearch, setPatientSearch] = useState("");
   const [patientResults, setPatientResults] = useState<Patient[]>([]);
@@ -106,40 +105,19 @@ export default function EncountersPage() {
 
   async function createEncounter(e: FormEvent) {
     e.preventDefault();
-    if (!selectedPatient) {
-      toast.error("Please select a patient from the search results.");
-      return;
-    }
-    if (!selectedDoctor) {
-      toast.error("Please select a doctor.");
-      return;
-    }
+    if (!selectedPatient) { toast.error("Select a patient."); return; }
+    if (!selectedDoctor) { toast.error("Select a doctor."); return; }
     setBusy("create");
     try {
-      const body: Record<string, unknown> = {
-        patient_id: selectedPatient.id,
-        doctor_id: selectedDoctor,
-        encounter_type: encType,
-      };
+      const body: Record<string, unknown> = { patient_id: selectedPatient.id, doctor_id: selectedDoctor, encounter_type: encType };
       if (complaint.trim()) body.chief_complaint = complaint.trim();
       if (appointmentId) body.appointment_id = appointmentId;
       const result = await api<{ id: string }>("/api/v1/encounters", { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) });
       toast.success("Encounter created.");
-      setShowForm(false);
-      setSelectedPatient(null);
-      setPatientSearch("");
-      setComplaint("");
-      setAppointmentId(null);
-      if (result?.id) {
-        window.location.href = `/encounters/${result.id}`;
-      } else {
-        await loadEncounters();
-      }
-    } catch (reason) {
-      toast.error(errorMessage(reason, "Could not create encounter."));
-    } finally {
-      setBusy(null);
-    }
+      setShowForm(false); setSelectedPatient(null); setPatientSearch(""); setComplaint(""); setAppointmentId(null);
+      if (result?.id) { window.location.href = `/encounters/${result.id}`; } else { await loadEncounters(); }
+    } catch (reason) { toast.error(errorMessage(reason, "Could not create encounter.")); }
+    finally { setBusy(null); }
   }
 
   async function deleteEncounter(enc: Encounter) {
@@ -150,11 +128,27 @@ export default function EncountersPage() {
       await api(`/api/v1/encounters/${enc.id}`, { method: "DELETE", headers: writeHeaders() });
       toast.success("Encounter removed.");
       await loadEncounters();
-    } catch (reason) {
-      toast.error(errorMessage(reason, "Could not delete."));
-    } finally {
-      setBusy(null);
+    } catch (reason) { toast.error(errorMessage(reason, "Could not delete.")); }
+    finally { setBusy(null); }
+  }
+
+  async function bulkDeleteDrafts() {
+    const drafts = encounters.filter((e) => e.status === "draft" && selectedKeys.has(e.id));
+    if (drafts.length === 0) { toast.error("No draft encounters selected."); return; }
+    const yes = await confirm({ message: `Delete ${drafts.length} draft encounter${drafts.length === 1 ? "" : "s"}?`, danger: true });
+    if (!yes) return;
+    setBusy("bulk");
+    let done = 0;
+    for (const enc of drafts) {
+      try {
+        await api(`/api/v1/encounters/${enc.id}`, { method: "DELETE", headers: writeHeaders() });
+        done++;
+      } catch { /* continue */ }
     }
+    setBusy(null);
+    setSelectedKeys(new Set());
+    toast.success(`${done} draft${done === 1 ? "" : "s"} deleted.`);
+    await loadEncounters();
   }
 
   const counts: Record<string, number> = {};
@@ -171,12 +165,39 @@ export default function EncountersPage() {
     );
   }, [encounters, searchQuery]);
 
+  const encCols: Column<Encounter>[] = useMemo(() => [
+    { key: "patient", header: "Patient", width: "1fr", sortable: true, sortFn: (a, b) => a.patient_name.localeCompare(b.patient_name), render: (enc) => (
+      <div className="enc-cell-main">
+        <div className="enc-cell-top">
+          {enc.token_number != null && <span className="enc-token">#{enc.token_number}</span>}
+          <Link href={`/encounters/${enc.id}`} className="enc-patient-link">{enc.patient_name}</Link>
+          <span className={statusToClass(enc.status)}>{statusLabel(enc.status)}</span>
+          <span className="enc-type">{typeLabel(enc.encounter_type)}</span>
+        </div>
+        {enc.chief_complaint && <p className="enc-complaint">{enc.chief_complaint.slice(0, 100)}</p>}
+        <div className="enc-meta">
+          <span>Dr. {enc.doctor_name}</span>
+          {enc.diagnosis && <span>Dx: {enc.diagnosis.slice(0, 40)}</span>}
+          <span>{fmtDateTime(enc.created_at)}</span>
+          {enc.finalized_at && <span>Finalized {fmtDate(enc.finalized_at)}</span>}
+        </div>
+      </div>
+    )},
+    { key: "actions", header: "Actions", width: "auto", srOnly: true, render: (enc) => (
+      <div className="enc-actions">
+        <Link className="button button-secondary enc-action-btn" href={`/encounters/${enc.id}`}>{["finalized", "discharged"].includes(enc.status) ? "View" : "Edit"}</Link>
+        {!["finalized", "discharged"].includes(enc.status) && (
+          <button className="ghost-button enc-action-btn danger-control" type="button" onClick={() => void deleteEncounter(enc)}>Delete</button>
+        )}
+      </div>
+    )},
+  ], []);
+
   return (
     <main className="dash-content">
       <div className="dash-topline">
         <div>
-          <p className="eyebrow">CLINICAL · DOCUMENTATION</p>
-          <h1>Encounter <em>forms.</em></h1>
+          <h1>Encounters</h1>
         </div>
         <div className="header-actions">
           <button className="button button-primary" type="button" onClick={() => setShowForm((v) => !v)}>{showForm ? "Close" : "New encounter"} <span>＋</span></button>
@@ -186,7 +207,7 @@ export default function EncountersPage() {
       {error && <div className="workspace-alert" role="alert"><strong>{error}</strong></div>}
 
       <div className="billing-summary">
-        <div><span className="eyebrow">DRAFTS</span><strong style={{ color: (counts.draft ?? 0) > 0 ? "#e0a458" : undefined }}>{counts.draft ?? 0}</strong></div>
+        <div><span className="eyebrow">DRAFTS</span><strong className={counts.draft ? "enc-count-warn" : ""}>{counts.draft ?? 0}</strong></div>
         <div><span className="eyebrow">IN PROGRESS</span><strong>{counts.in_progress ?? 0}</strong></div>
         <div><span className="eyebrow">DISCHARGED</span><strong>{counts.discharged ?? 0}</strong></div>
         <div><span className="eyebrow">TOTAL</span><strong>{encounters.length}</strong></div>
@@ -198,36 +219,36 @@ export default function EncountersPage() {
             <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>{statusLabel(s)}</button>
           ))}
         </div>
-        <input type="search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search by patient, doctor, complaint, diagnosis…" style={{ padding: "6px 12px", border: "1px solid var(--line)", borderRadius: 6, fontSize: 12, background: "var(--surface, var(--bg))", color: "var(--fg)", minWidth: 220 }} />
+        <input type="search" className="enc-search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search patient, doctor, complaint…" />
       </div>
 
       {showForm && (
-        <form className="surface-card" style={{ marginBottom: 16 }} onSubmit={(e) => void createEncounter(e)}>
-          <div className="surface-card-heading"><div><p className="eyebrow">NEW ENCOUNTER</p><h2>Start clinical documentation</h2></div></div>
+        <form className="surface-card enc-form" onSubmit={(e) => void createEncounter(e)}>
+          <div className="surface-card-heading"><div><p className="eyebrow">NEW ENCOUNTER</p><h2>Start documentation</h2></div></div>
           <div className="form-grid">
             <label>
               Patient *
               {selectedPatient ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <strong style={{ fontSize: 13 }}>{selectedPatient.full_name}</strong>
-                  {selectedPatient.mrn && <span style={{ fontSize: 11, color: "var(--muted)" }}>MRN: {selectedPatient.mrn}</span>}
-                  <button className="ghost-button" type="button" style={{ fontSize: 11, color: "var(--coral)" }} onClick={() => { setSelectedPatient(null); setPatientSearch(""); }}>Change</button>
+                <div className="enc-selected-patient">
+                  <strong>{selectedPatient.full_name}</strong>
+                  {selectedPatient.mrn && <span className="enc-mrn">MRN: {selectedPatient.mrn}</span>}
+                  <button className="ghost-button" type="button" onClick={() => { setSelectedPatient(null); setPatientSearch(""); }}>Change</button>
                 </div>
               ) : (
                 <>
                   <input value={patientSearch} onChange={(e) => void searchPatients(e.target.value)} placeholder="Search patient by name…" />
                   {patientResults.length > 0 && (
-                    <div style={{ border: "1px solid var(--line)", borderRadius: 6, maxHeight: 150, overflowY: "auto", marginTop: 4, background: "var(--surface, var(--bg))" }}>
-                      <div style={{ padding: "6px 12px", fontSize: 11, color: "var(--muted)", borderBottom: "1px solid var(--line)" }}>Click to select a patient:</div>
+                    <div className="enc-patient-dropdown">
+                      <div className="enc-dropdown-hint">Click to select:</div>
                       {patientResults.map((p) => (
-                        <button key={p.id} type="button" style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 12, background: "var(--surface, var(--bg))", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }} onClick={() => { setSelectedPatient(p); setPatientResults([]); }}>
-                          {p.full_name} {p.mrn && <span style={{ color: "var(--muted)" }}>· {p.mrn}</span>}
+                        <button key={p.id} type="button" className="enc-dropdown-item" onClick={() => { setSelectedPatient(p); setPatientResults([]); }}>
+                          {p.full_name} {p.mrn && <span className="enc-mrn">· {p.mrn}</span>}
                         </button>
                       ))}
                     </div>
                   )}
                   {patientSearch.length >= 2 && patientResults.length === 0 && (
-                    <span style={{ fontSize: 11, color: "var(--muted)", marginTop: 4, display: "block" }}>No patients found for &ldquo;{patientSearch}&rdquo;</span>
+                    <span className="enc-no-results">No patients found for &ldquo;{patientSearch}&rdquo;</span>
                   )}
                 </>
               )}
@@ -243,45 +264,31 @@ export default function EncountersPage() {
                 {encounterTypes.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
               </select>
             </label>
-            <label style={{ gridColumn: "1 / -1" }}>Chief complaint<textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="Patient's chief complaint" rows={2} style={{ width: "100%", resize: "vertical" }} /></label>
+            <label className="enc-full-width">Chief complaint<textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="Patient's chief complaint" rows={2} /></label>
           </div>
           <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy === "create"}>{busy === "create" ? "Creating…" : "Create encounter"}</button></div>
         </form>
       )}
 
       <section className="surface-card">
-        <div className="surface-card-heading"><div><p className="eyebrow">ENCOUNTERS</p><h2>{filter === "all" ? "All encounters" : statusLabel(filter)}</h2></div><span className="muted-mono">{filtered.length} RECORDS</span></div>
-
-        {loading && <div className="dashboard-empty" role="status"><strong>Loading encounters…</strong></div>}
-        {!loading && filtered.length === 0 && <div className="dashboard-empty"><strong>{searchQuery ? "No matching encounters" : "No encounters"}</strong><span>{searchQuery ? "Try a different search term." : "Create an encounter to start documenting."}</span></div>}
-
-        {!loading && filtered.length > 0 && (
-          <div>
-            {filtered.map((enc) => (
-              <div className="enc-row" key={enc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    {enc.token_number != null && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", fontFamily: "var(--font-mono, monospace)", marginRight: 4 }}>#{enc.token_number}</span>}
-                    <Link href={`/encounters/${enc.id}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{enc.patient_name}</Link>
-                    <span style={{ fontSize: 11, padding: "1px 8px", borderRadius: 10, background: statusColor[enc.status] ?? "var(--line)", color: "#fff" }}>{statusLabel(enc.status)}</span>
-                    <span style={{ fontSize: 10, color: "var(--muted)", background: "var(--line)", padding: "1px 6px", borderRadius: 4 }}>{typeLabel(enc.encounter_type)}</span>
-                  </div>
-                  {enc.chief_complaint && <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>{enc.chief_complaint.slice(0, 100)}</p>}
-                  <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 11, color: "var(--muted)" }}>
-                    <span>Dr. {enc.doctor_name}</span>
-                    {enc.diagnosis && <span>Dx: {enc.diagnosis.slice(0, 40)}</span>}
-                    <span>{fmtDateTime(enc.created_at)}</span>
-                    {enc.finalized_at && <span>Finalized {fmtDate(enc.finalized_at)}</span>}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  <Link className="button button-secondary" href={`/encounters/${enc.id}`} style={{ fontSize: 11, padding: "4px 10px" }}>{["finalized", "discharged"].includes(enc.status) ? "View" : "Edit"}</Link>
-                  {!["finalized", "discharged"].includes(enc.status) && (
-                    <button className="ghost-button" style={{ fontSize: 10, color: "var(--coral)", padding: "2px 6px" }} type="button" onClick={() => void deleteEncounter(enc)}>Delete</button>
-                  )}
-                </div>
-              </div>
-            ))}
+        <div className="surface-card-heading"><div><h2>{filter === "all" ? "All encounters" : statusLabel(filter)}</h2></div><span className="muted-mono">{filtered.length} RECORDS</span></div>
+        <DataTable
+          columns={encCols}
+          rows={filtered}
+          rowKey={(e) => e.id}
+          loading={loading}
+          skeletonRows={5}
+          selectable
+          selectedKeys={selectedKeys}
+          onSelectionChange={setSelectedKeys}
+          emptyTitle={searchQuery ? "No matching encounters" : "No encounters"}
+          emptyBody={searchQuery ? "Try a different search." : "Create one to start documenting."}
+        />
+        {selectedKeys.size > 0 && (
+          <div className="bulk-bar">
+            <strong>{selectedKeys.size} selected</strong>
+            <button type="button" disabled={busy === "bulk"} onClick={() => void bulkDeleteDrafts()}>{busy === "bulk" ? "Deleting…" : "Delete drafts"}</button>
+            <button type="button" onClick={() => setSelectedKeys(new Set())}>Clear</button>
           </div>
         )}
       </section>
