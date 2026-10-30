@@ -148,13 +148,13 @@ export default function QueuePage() {
   return <main className="dash-content queue-content" aria-busy={loading}>
     <div className="dash-topline">
       <div><h1>Queue</h1></div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="queue-header-actions">
         {canManage && <button className="button button-secondary" type="button" onClick={openCheckInPanel} disabled={loadingAppointments}>Check in patient <span>+</span></button>}
         <button className="button button-primary" type="button" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
       </div>
     </div>
 
-    {showCheckIn && <div className="queue-card" style={{ marginBottom: 16 }}>
+    {showCheckIn && <div className="queue-card queue-checkin-card">
       <div className="card-heading">
         <div><p className="eyebrow">CHECK IN</p><h2>Today&apos;s confirmed appointments</h2></div>
         <button className="ghost-button" type="button" onClick={() => setShowCheckIn(false)}>Close <span>✕</span></button>
@@ -172,13 +172,13 @@ export default function QueuePage() {
           <button className="button queue-action" type="button" onClick={() => void checkInFromQueue(appt)} disabled={checkingIn === appt.id}>{checkingIn === appt.id ? "Checking in…" : "Check in"} <span>→</span></button>
         </div>
       </article>)}</div>}
-      <div style={{ padding: "8px 0", textAlign: "right" }}>
-        <button className="ghost-button" type="button" onClick={() => void loadTodayConfirmed()} disabled={loadingAppointments} style={{ fontSize: "0.8rem" }}>Refresh list <span>↻</span></button>
+      <div className="queue-checkin-footer">
+        <button className="ghost-button queue-checkin-refresh" type="button" onClick={() => void loadTodayConfirmed()} disabled={loadingAppointments}>Refresh list <span>↻</span></button>
       </div>
     </div>}
 
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
-    {notice && <div className="success-alert" role="status">{notice}{completedBillingLink && <> <Link href={completedBillingLink} style={{ marginLeft: 8, fontWeight: 600 }}>Go to Billing →</Link></>}</div>}
+    {notice && <div className="success-alert" role="status">{notice}{completedBillingLink && <> <Link href={completedBillingLink} className="queue-billing-link">Go to Billing →</Link></>}</div>}
 
     <div className="queue-card">
       <div className="card-heading">
@@ -199,8 +199,8 @@ export default function QueuePage() {
           {canManage && <button className="ghost-button" type="button" onClick={() => { setReorderTarget(reorderTarget === entry.id ? null : entry.id); setReorderPriority(entry.priority); setReorderReason(""); }} title="Set priority">P</button>}
           <button className="button queue-action" type="button" onClick={() => void advance(entry)} disabled={!canManage || working === entry.id} title={!canManage ? "Requires queue.manage" : undefined}>{working === entry.id ? "Working…" : entry.status === "waiting" ? "Start consultation" : "Complete"}<span>→</span></button>
           {entry.status === "in_consultation" && <>
-            <Link className="button button-secondary" href={`/encounters?start=1&appointment_id=${entry.appointment_id}`} style={{ fontSize: 11, padding: "4px 10px" }}>Start encounter</Link>
-            <Link className="button button-secondary" href={`/billing?from_appointment=${entry.appointment_id}`} style={{ fontSize: 11, padding: "4px 10px" }}>Billing</Link>
+            <Link className="button button-secondary queue-inline-btn" href={`/encounters?start=1&appointment_id=${entry.appointment_id}`}>Start encounter</Link>
+            <Link className="button button-secondary queue-inline-btn" href={`/billing?from_appointment=${entry.appointment_id}`}>Billing</Link>
           </>}
           {canManage && <button className="ghost-button queue-remove" type="button" onClick={() => void remove(entry)} disabled={working === entry.id} title="Remove from queue">✕</button>}
         </div>

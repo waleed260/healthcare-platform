@@ -511,9 +511,9 @@ export default function EncounterDetailPage() {
       {/* Header */}
       <div className="dash-topline">
         <div>
-          <p className="eyebrow"><Link href="/encounters" style={{ color: "var(--muted)" }}>ENCOUNTERS</Link> &middot; {typeLabel(enc.encounter_type).toUpperCase()}</p>
-          <h1><Link href={`/patients/${enc.patient_id}`} style={{ color: "inherit" }}>{enc.patient_name}</Link></h1>
-          <p style={{ color: "var(--muted)", marginTop: 4, fontSize: 13 }}>Dr. {enc.doctor_name}{enc.doctor_specialty && ` · ${enc.doctor_specialty}`}{enc.branch_name && ` · ${enc.branch_name}`}</p>
+          <p className="eyebrow"><Link href="/encounters" className="enc-d-link-muted">ENCOUNTERS</Link> &middot; {typeLabel(enc.encounter_type).toUpperCase()}</p>
+          <h1><Link href={`/patients/${enc.patient_id}`} className="enc-d-link-inherit">{enc.patient_name}</Link></h1>
+          <p className="enc-d-meta">Dr. {enc.doctor_name}{enc.doctor_specialty && ` · ${enc.doctor_specialty}`}{enc.branch_name && ` · ${enc.branch_name}`}</p>
         </div>
         <div className="header-actions">
           <span className="enc-detail-status-badge" style={{ background: statusColor[enc.status] ?? "var(--line)" }}>{statusLabel[enc.status] ?? typeLabel(enc.status)}</span>
@@ -521,11 +521,11 @@ export default function EncounterDetailPage() {
           {enc.status === "in_progress" && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("ready_for_discharge")}>Ready for Discharge</button>}
           {enc.status === "discharged" && <button className="button button-primary" type="button" disabled={busy} onClick={() => void changeStatus("finalized")}>Finalize</button>}
           {(enc.status === "discharged" || enc.status === "finalized") && !invoiceLoading && !invoiceData && (
-            <button className="button button-primary" type="button" disabled={busy} onClick={() => setShowInvoicePreview(true)} style={{ fontSize: 11 }}>Generate Invoice</button>
+            <button className="button button-primary enc-d-sm-btn" type="button" disabled={busy} onClick={() => setShowInvoicePreview(true)}>Generate Invoice</button>
           )}
           {invoiceData && (
-            <Link className="button button-secondary" href={`/billing?invoice=${invoiceData.id}`} style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <span style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: invoiceData.status === "paid" ? "var(--leaf)" : invoiceData.status === "void" ? "var(--coral)" : "var(--accent)", color: "#fff" }}>{invoiceData.status.toUpperCase()}</span>
+            <Link className="button button-secondary enc-d-inv-link" href={`/billing?invoice=${invoiceData.id}`}>
+              <span className="enc-d-inv-badge" style={{ background: invoiceData.status === "paid" ? "var(--leaf)" : invoiceData.status === "void" ? "var(--coral)" : "var(--accent)" }}>{invoiceData.status.toUpperCase()}</span>
               {invoiceData.invoice_number}
             </Link>
           )}
@@ -535,17 +535,17 @@ export default function EncounterDetailPage() {
 
       {/* Summary bar */}
       <div className="billing-summary">
-        <div><span className="eyebrow">CREATED</span><strong style={{ fontSize: 13 }}>{fmtDateTime(enc.created_at)}</strong></div>
-        {enc.discharge_datetime && <div><span className="eyebrow">DISCHARGED</span><strong style={{ fontSize: 13 }}>{fmtDateTime(enc.discharge_datetime)}</strong></div>}
-        {enc.finalized_at && <div><span className="eyebrow">FINALIZED</span><strong style={{ fontSize: 13 }}>{fmtDateTime(enc.finalized_at)}</strong></div>}
-        <div><span className="eyebrow">TYPE</span><strong style={{ fontSize: 13 }}>{typeLabel(enc.encounter_type)}</strong></div>
+        <div><span className="eyebrow">CREATED</span><strong className="enc-d-date-val">{fmtDateTime(enc.created_at)}</strong></div>
+        {enc.discharge_datetime && <div><span className="eyebrow">DISCHARGED</span><strong className="enc-d-date-val">{fmtDateTime(enc.discharge_datetime)}</strong></div>}
+        {enc.finalized_at && <div><span className="eyebrow">FINALIZED</span><strong className="enc-d-date-val">{fmtDateTime(enc.finalized_at)}</strong></div>}
+        <div><span className="eyebrow">TYPE</span><strong className="enc-d-date-val">{typeLabel(enc.encounter_type)}</strong></div>
         {(() => {
           const tTotal = (enc.administered_treatments ?? []).reduce((s, t) => s + (t.unit_price_minor ?? 0) * (t.quantity ?? 1), 0);
           const pTotal = (enc.administered_procedures ?? []).reduce((s, p) => s + (p.unit_price_minor ?? 0), 0);
           const grand = tTotal + pTotal;
           if (grand <= 0) return null;
           const cur = (enc.administered_treatments ?? []).find((t) => t.currency)?.currency ?? (enc.administered_procedures ?? []).find((p) => p.currency)?.currency ?? "PKR";
-          return <div><span className="eyebrow">CHARGES</span><strong style={{ fontSize: 13, color: "var(--leaf)" }}>{formatPrice(grand, cur)}</strong></div>;
+          return <div><span className="eyebrow">CHARGES</span><strong className="enc-d-charges-val">{formatPrice(grand, cur)}</strong></div>;
         })()}
       </div>
 
@@ -572,26 +572,26 @@ export default function EncounterDetailPage() {
         return (
           <div className="enc-detail-modal-overlay" onClick={() => setShowInvoicePreview(false)}>
             <div className="surface-card enc-detail-modal-card" onClick={(e) => e.stopPropagation()}>
-              <h2 style={{ margin: "0 0 4px" }}>Generate Invoice</h2>
-              <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Review line items from this encounter before generating the invoice.</p>
+              <h2 className="enc-d-modal-title">Generate Invoice</h2>
+              <p className="enc-d-modal-desc">Review line items from this encounter before generating the invoice.</p>
               {lines.length === 0 ? (
-                <p style={{ padding: "16px 0", color: "var(--muted)", textAlign: "center" }}>No priced treatments or procedures found. Add prices to treatments first.</p>
+                <p className="enc-d-modal-empty">No priced treatments or procedures found. Add prices to treatments first.</p>
               ) : (
-                <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-                  <thead><tr style={{ borderBottom: "2px solid var(--line)", textAlign: "left" }}><th style={{ padding: "6px 0" }}>Item</th><th style={{ padding: "6px 8px", textAlign: "right" }}>Qty</th><th style={{ padding: "6px 0", textAlign: "right" }}>Amount</th></tr></thead>
+                <table className="enc-d-preview-table">
+                  <thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead>
                   <tbody>
                     {lines.map((l, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid var(--line)" }}>
-                        <td style={{ padding: "8px 0" }}>{l.name}</td>
-                        <td style={{ padding: "8px 8px", textAlign: "right" }}>{l.qty}</td>
-                        <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 600 }}>{formatPrice(l.price * l.qty, l.currency)}</td>
+                      <tr key={i}>
+                        <td>{l.name}</td>
+                        <td>{l.qty}</td>
+                        <td>{formatPrice(l.price * l.qty, l.currency)}</td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot><tr style={{ borderTop: "2px solid var(--line)" }}><td colSpan={2} style={{ padding: "10px 0", fontWeight: 700 }}>Total</td><td style={{ padding: "10px 0", textAlign: "right", fontWeight: 700, color: "var(--leaf)" }}>{formatPrice(total, cur)}</td></tr></tfoot>
+                  <tfoot><tr><td colSpan={2}>Total</td><td>{formatPrice(total, cur)}</td></tr></tfoot>
                 </table>
               )}
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
+              <div className="enc-d-modal-actions">
                 <button className="button button-secondary" type="button" onClick={() => setShowInvoicePreview(false)}>Cancel</button>
                 {lines.length > 0 && <button className="button button-primary" type="button" disabled={busy} onClick={() => void generateInvoice()}>{busy ? "Generating..." : "Confirm & Generate"}</button>}
               </div>
@@ -605,7 +605,7 @@ export default function EncounterDetailPage() {
         {/* ── Tab A: Arrival ─────────────────────────────────────── */}
         {tab === "arrival" && (
           <div className="enc-section surface-card">
-            <div className="surface-card-heading"><div><p className="eyebrow">ARRIVAL</p><h2>Arrival Information</h2></div>{arrivalLocked && <span style={{ fontSize: 11, color: "var(--muted)" }}>Locked after assessment started</span>}</div>
+            <div className="surface-card-heading"><div><p className="eyebrow">ARRIVAL</p><h2>Arrival Information</h2></div>{arrivalLocked && <span className="enc-d-locked-hint">Locked after assessment started</span>}</div>
             <div className="form-grid enc-detail-grid-2col">
               <label>Arrival mode
                 <select value={arrivalMode} onChange={(e) => setArrivalMode(e.target.value)} disabled={readonly || arrivalLocked}>
@@ -624,8 +624,8 @@ export default function EncounterDetailPage() {
             <div className="form-grid enc-detail-grid-1col-mt">
               <label>Condition on arrival<textarea value={conditionOnArrival} onChange={(e) => setConditionOnArrival(e.target.value)} rows={2} disabled={readonly || arrivalLocked} className="enc-detail-textarea" placeholder="Patient's condition when they arrived" /></label>
             </div>
-            <div style={{ marginTop: 16 }}>
-              <p className="eyebrow" style={{ marginBottom: 12 }}>ARRIVAL VITALS</p>
+            <div className="enc-d-section-gap">
+              <p className="eyebrow enc-d-eyebrow-tight">ARRIVAL VITALS</p>
               <VitalsForm vitals={arrivalVitals} onChange={setArrivalVitals} readonly={readonly || arrivalLocked} />
             </div>
           </div>
@@ -636,7 +636,7 @@ export default function EncounterDetailPage() {
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">PATIENT</p><h2>Patient Summary</h2></div></div>
             <div className="enc-detail-info-box">
-              <div><span className="eyebrow">NAME</span><p style={{ fontWeight: 600 }}>{enc.patient_name}</p></div>
+              <div><span className="eyebrow">NAME</span><p className="enc-d-field-name">{enc.patient_name}</p></div>
               <div><span className="eyebrow">MRN</span><p>{enc.mrn ?? "N/A"}</p></div>
               <div><span className="eyebrow">DATE OF BIRTH</span><p>{enc.patient_dob ? `${fmtDate(enc.patient_dob)} (${computeAge(enc.patient_dob)})` : "N/A"}</p></div>
               <div><span className="eyebrow">ALLERGIES (PATIENT RECORD)</span><p>{enc.patient_allergies || "None on file"}</p></div>
@@ -670,9 +670,9 @@ export default function EncounterDetailPage() {
               <div className="form-grid enc-detail-grid-2col">
                 <label>Symptom duration<input value={symptomDuration} onChange={(e) => setSymptomDuration(e.target.value)} disabled={readonly} placeholder="e.g. 3 days" /></label>
                 <label>Pain score (0-10)
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input type="number" min={0} max={10} value={painScore ?? ""} onChange={(e) => setPainScore(e.target.value === "" ? null : parseInt(e.target.value, 10))} disabled={readonly} style={{ width: 80 }} />
-                    {painScore != null && <span style={{ fontSize: 12, fontWeight: 600, color: painScore <= 3 ? "var(--leaf)" : painScore <= 6 ? "#e0a458" : "var(--coral)" }}>{painScore <= 3 ? "Mild" : painScore <= 6 ? "Moderate" : "Severe"}</span>}
+                  <div className="enc-detail-btn-group">
+                    <input type="number" min={0} max={10} value={painScore ?? ""} onChange={(e) => setPainScore(e.target.value === "" ? null : parseInt(e.target.value, 10))} disabled={readonly} className="enc-d-pain-input" />
+                    {painScore != null && <span className="enc-d-xs-btn" style={{ fontWeight: 600, color: painScore <= 3 ? "var(--leaf)" : painScore <= 6 ? "#e0a458" : "var(--coral)" }}>{painScore <= 3 ? "Mild" : painScore <= 6 ? "Moderate" : "Severe"}</span>}
                   </div>
                 </label>
               </div>
@@ -687,7 +687,7 @@ export default function EncounterDetailPage() {
               <label>Treatment plan<textarea value={treatmentPlan} onChange={(e) => setTreatmentPlan(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               <label>Procedures performed<textarea value={procedures} onChange={(e) => setProcedures(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
-              <label>Internal notes<textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" style={{ fontStyle: "italic" }} placeholder="Only visible to staff" /></label>
+              <label>Internal notes<textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea enc-d-italic" placeholder="Only visible to staff" /></label>
             </div>
           </div>
         )}
@@ -695,25 +695,25 @@ export default function EncounterDetailPage() {
         {/* ── Tab D: Administered Treatment ──────────────────────── */}
         {tab === "treatment" && (
           <>
-            {catalogLoadFailed && <div className="workspace-alert" role="alert" style={{ marginBottom: 12, fontSize: 12 }}><strong>Could not load services or inventory.</strong> Check your permissions or refresh.</div>}
+            {catalogLoadFailed && <div className="workspace-alert enc-d-alert-tight" role="alert"><strong>Could not load services or inventory.</strong> Check your permissions or refresh.</div>}
             {!catalogLoadFailed && catalogServices.length === 0 && inventoryProducts.length === 0 && !readonly && (
-              <div className="enc-detail-hint-box">No services or inventory items found. <Link href="/services" style={{ color: "var(--accent)" }}>Add services</Link> to select them here.</div>
+              <div className="enc-detail-hint-box">No services or inventory items found. <Link href="/services" className="enc-d-hint-link">Add services</Link> to select them here.</div>
             )}
             <div className="enc-section surface-card">
               <div className="surface-card-heading"><div><p className="eyebrow">ADMINISTERED</p><h2>Treatments ({treatments.length})</h2></div>
                 {!readonly && <div className="enc-detail-btn-group">
                   <button className="button button-secondary" type="button" onClick={addTreatment}>Add treatment</button>
-                  {catalogServices.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("treat-svc")} style={{ background: pickerOpen === "treat-svc" ? "var(--accent)" : undefined, color: pickerOpen === "treat-svc" ? "#fff" : undefined }}>Add from Service</button>}
-                  {inventoryProducts.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("treat-inv")} style={{ background: pickerOpen === "treat-inv" ? "var(--accent)" : undefined, color: pickerOpen === "treat-inv" ? "#fff" : undefined }}>Add from Inventory</button>}
+                  {catalogServices.length > 0 && <button className={`button button-secondary${pickerOpen === "treat-svc" ? " enc-d-picker-active" : ""}`} type="button" onClick={() => togglePicker("treat-svc")}>Add from Service</button>}
+                  {inventoryProducts.length > 0 && <button className={`button button-secondary${pickerOpen === "treat-inv" ? " enc-d-picker-active" : ""}`} type="button" onClick={() => togglePicker("treat-inv")}>Add from Inventory</button>}
                 </div>}
               </div>
               {pickerOpen === "treat-svc" && (
                 <div className="enc-detail-picker-wrap">
-                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" className="enc-d-picker-search" autoFocus />
                   <div className="enc-detail-picker-list">
                     {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((svc) => (
                       <button key={svc.id} type="button" onClick={() => addTreatmentFromService(svc)} className="enc-detail-picker-item">
-                        <span><strong>{svc.name}</strong>{svc.category && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{svc.category}</span>}</span>
+                        <span><strong>{svc.name}</strong>{svc.category && <span className="enc-d-picker-meta">{svc.category}</span>}</span>
                         {svc.amount_minor != null && <span className="enc-detail-price-tag">{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
                       </button>
                     ))}
@@ -723,12 +723,12 @@ export default function EncounterDetailPage() {
               )}
               {pickerOpen === "treat-inv" && (
                 <div className="enc-detail-picker-wrap">
-                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search inventory items by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search inventory items by name…" className="enc-d-picker-search" autoFocus />
                   <div className="enc-detail-picker-list">
                     {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((prod) => (
                       <button key={prod.id} type="button" onClick={() => addTreatmentFromInventory(prod)} className="enc-detail-picker-item">
                         <span><strong>{prod.name}</strong></span>
-                        <span style={{ fontSize: 10, color: "var(--muted)", textTransform: "capitalize" }}>{prod.product_type} · {prod.unit}</span>
+                        <span className="enc-d-picker-sub">{prod.product_type} · {prod.unit}</span>
                       </button>
                     ))}
                     {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div className="enc-detail-picker-empty">No items match &ldquo;{pickerSearch}&rdquo;</div>}
@@ -738,9 +738,9 @@ export default function EncounterDetailPage() {
               {treatments.length === 0 && <div className="dashboard-empty"><strong>No administered treatments</strong></div>}
               {treatments.map((t, idx) => (
                 <div key={idx} className="enc-detail-item-row">
-                  <label className="enc-detail-field-label-wide">Name <span style={{ color: "var(--coral)" }}>*</span>
+                  <label className="enc-detail-field-label-wide">Name <span className="enc-d-required">*</span>
                     <div className="enc-detail-name-flex">
-                      <input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" style={{ flex: 1 }} />
+                      <input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" className="enc-d-name-input" />
                       {t.service_id && <span className="enc-detail-badge-svc">Service</span>}
                       {t.inventory_product_id && <span className="enc-detail-badge-inv">Inventory</span>}
                       {t.unit_price_minor != null && <span className="enc-detail-price-sm">{formatPrice(t.unit_price_minor, t.currency)}</span>}
@@ -748,7 +748,7 @@ export default function EncounterDetailPage() {
                   </label>
                   <label className="enc-detail-field-label">Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                   <label className="enc-detail-field-label">Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
-                  <label className="enc-detail-field-label">Qty<input type="number" min={1} value={t.quantity ?? 1} onChange={(e) => updateTreatment(idx, "quantity", e.target.value)} disabled={readonly} style={{ width: 60 }} /></label>
+                  <label className="enc-detail-field-label">Qty<input type="number" min={1} value={t.quantity ?? 1} onChange={(e) => updateTreatment(idx, "quantity", e.target.value)} disabled={readonly} className="enc-d-qty-input" /></label>
                   <label className="enc-detail-field-label">Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
                   <label className="enc-detail-field-label">Given by<input value={t.administered_by ?? ""} onChange={(e) => updateTreatment(idx, "administered_by", e.target.value)} disabled={readonly} /></label>
                   <label className="enc-detail-field-label">Response<input value={t.response ?? ""} onChange={(e) => updateTreatment(idx, "response", e.target.value)} disabled={readonly} /></label>
@@ -756,20 +756,20 @@ export default function EncounterDetailPage() {
                 </div>
               ))}
             </div>
-            <div className="enc-section surface-card" style={{ marginTop: 16 }}>
+            <div className="enc-section surface-card enc-d-section-gap">
               <div className="surface-card-heading"><div><p className="eyebrow">PROCEDURES</p><h2>Administered Procedures ({adminProcedures.length})</h2></div>
                 {!readonly && <div className="enc-detail-btn-group">
                   <button className="button button-secondary" type="button" onClick={addProcedure}>Add procedure</button>
-                  {catalogServices.length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("proc-svc")} style={{ background: pickerOpen === "proc-svc" ? "var(--accent)" : undefined, color: pickerOpen === "proc-svc" ? "#fff" : undefined }}>Add from Service</button>}
+                  {catalogServices.length > 0 && <button className={`button button-secondary${pickerOpen === "proc-svc" ? " enc-d-picker-active" : ""}`} type="button" onClick={() => togglePicker("proc-svc")}>Add from Service</button>}
                 </div>}
               </div>
               {pickerOpen === "proc-svc" && (
                 <div className="enc-detail-picker-wrap">
-                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                  <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search services by name…" className="enc-d-picker-search" autoFocus />
                   <div className="enc-detail-picker-list">
                     {catalogServices.filter((s) => !pickerSearch || s.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((svc) => (
                       <button key={svc.id} type="button" onClick={() => addProcedureFromService(svc)} className="enc-detail-picker-item">
-                        <span><strong>{svc.name}</strong>{svc.category && <span style={{ color: "var(--muted)", marginLeft: 6 }}>{svc.category}</span>}</span>
+                        <span><strong>{svc.name}</strong>{svc.category && <span className="enc-d-picker-meta">{svc.category}</span>}</span>
                         {svc.amount_minor != null && <span className="enc-detail-price-tag">{formatPrice(svc.amount_minor, svc.currency, svc.price_mode)}</span>}
                       </button>
                     ))}
@@ -780,9 +780,9 @@ export default function EncounterDetailPage() {
               {adminProcedures.length === 0 && <div className="dashboard-empty"><strong>No administered procedures</strong></div>}
               {adminProcedures.map((p, idx) => (
                 <div key={idx} className="enc-detail-item-row">
-                  <label className="enc-detail-field-label-wide">Name <span style={{ color: "var(--coral)" }}>*</span>
+                  <label className="enc-detail-field-label-wide">Name <span className="enc-d-required">*</span>
                     <div className="enc-detail-name-flex">
-                      <input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" style={{ flex: 1 }} />
+                      <input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" className="enc-d-name-input" />
                       {p.service_id && <span className="enc-detail-badge-svc">Service</span>}
                       {p.unit_price_minor != null && <span className="enc-detail-price-sm">{formatPrice(p.unit_price_minor, p.currency)}</span>}
                     </div>
@@ -794,7 +794,7 @@ export default function EncounterDetailPage() {
                 </div>
               ))}
             </div>
-            <div className="enc-section surface-card" style={{ marginTop: 16 }}>
+            <div className="enc-section surface-card enc-d-section-gap">
               <div className="surface-card-heading"><div><p className="eyebrow">RESPONSE</p><h2>Treatment Response</h2></div></div>
               <div className="form-grid enc-detail-grid-1col">
                 <label>Treatment response<textarea value={treatmentResponse} onChange={(e) => setTreatmentResponse(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" placeholder="How the patient responded to treatment" /></label>
@@ -808,21 +808,21 @@ export default function EncounterDetailPage() {
               if (tTotal + pTotal <= 0) return null;
               const cur = treatments.find((t) => t.currency)?.currency ?? adminProcedures.find((p) => p.currency)?.currency ?? "PKR";
               return (
-                <div className="enc-section surface-card" style={{ marginTop: 16, background: "var(--bg-alt, rgba(0,0,0,0.03))" }}>
+                <div className="enc-section surface-card enc-d-section-gap enc-d-summary-bg">
                   <div className="surface-card-heading"><div><p className="eyebrow">BILLING</p><h2>Charges Summary</h2></div></div>
                   <div className="enc-detail-charges-grid">
-                    <div><span style={{ color: "var(--muted)" }}>Treatments ({treatments.filter((t) => t.unit_price_minor).length})</span><br /><strong>{formatPrice(tTotal, cur)}</strong></div>
-                    <div><span style={{ color: "var(--muted)" }}>Procedures ({adminProcedures.filter((p) => p.unit_price_minor).length})</span><br /><strong>{formatPrice(pTotal, cur)}</strong></div>
-                    <div><span style={{ color: "var(--muted)" }}>Grand Total</span><br /><strong style={{ fontSize: 15, color: "var(--leaf)" }}>{formatPrice(tTotal + pTotal, cur)}</strong></div>
+                    <div><span className="enc-d-link-muted">Treatments ({treatments.filter((t) => t.unit_price_minor).length})</span><br /><strong>{formatPrice(tTotal, cur)}</strong></div>
+                    <div><span className="enc-d-link-muted">Procedures ({adminProcedures.filter((p) => p.unit_price_minor).length})</span><br /><strong>{formatPrice(pTotal, cur)}</strong></div>
+                    <div><span className="enc-d-link-muted">Grand Total</span><br /><strong className="enc-d-grand-total">{formatPrice(tTotal + pTotal, cur)}</strong></div>
                   </div>
                   {invoiceData ? (
                     <div className="enc-detail-invoice-bar">
                       <span>Invoice <strong>{invoiceData.invoice_number}</strong> — <span style={{ color: invoiceData.status === "paid" ? "var(--leaf)" : "var(--accent)" }}>{invoiceData.status.toUpperCase()}</span></span>
-                      <Link href={`/billing?invoice=${invoiceData.id}`} style={{ color: "var(--accent)", fontWeight: 600 }}>View Invoice</Link>
+                      <Link href={`/billing?invoice=${invoiceData.id}`} className="enc-d-inv-link-accent">View Invoice</Link>
                     </div>
                   ) : readonly && (
-                    <div style={{ marginTop: 8 }}>
-                      <button className="button button-primary" type="button" disabled={busy} onClick={() => setShowInvoicePreview(true)} style={{ fontSize: 12 }}>Generate Invoice from Encounter</button>
+                    <div className="enc-d-gen-btn-gap">
+                      <button className="button button-primary enc-d-xs-btn" type="button" disabled={busy} onClick={() => setShowInvoicePreview(true)}>Generate Invoice from Encounter</button>
                     </div>
                   )}
                 </div>
@@ -837,17 +837,17 @@ export default function EncounterDetailPage() {
             <div className="surface-card-heading"><div><p className="eyebrow">PRESCRIPTION</p><h2>Medications ({meds.length})</h2></div>
               {!readonly && <div className="enc-detail-btn-group">
                 <button className="button button-secondary" type="button" onClick={addMed}>Add medication</button>
-                {inventoryProducts.filter((p) => p.product_type === "medicine").length > 0 && <button className="button button-secondary" type="button" onClick={() => togglePicker("med-inv")} style={{ background: pickerOpen === "med-inv" ? "var(--accent)" : undefined, color: pickerOpen === "med-inv" ? "#fff" : undefined }}>Add from Inventory</button>}
+                {inventoryProducts.filter((p) => p.product_type === "medicine").length > 0 && <button className={`button button-secondary${pickerOpen === "med-inv" ? " enc-d-picker-active" : ""}`} type="button" onClick={() => togglePicker("med-inv")}>Add from Inventory</button>}
               </div>}
             </div>
             {pickerOpen === "med-inv" && (
               <div className="enc-detail-picker-wrap">
-                <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search medicines by name…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+                <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search medicines by name…" className="enc-d-picker-search" autoFocus />
                 <div className="enc-detail-picker-list">
                   {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).map((prod) => (
                     <button key={prod.id} type="button" onClick={() => addMedFromInventory(prod)} className="enc-detail-picker-item">
                       <span><strong>{prod.name}</strong></span>
-                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{prod.unit}</span>
+                      <span className="enc-d-picker-sub">{prod.unit}</span>
                     </button>
                   ))}
                   {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).length === 0 && <div className="enc-detail-picker-empty">No medicines match &ldquo;{pickerSearch}&rdquo;</div>}
@@ -857,9 +857,9 @@ export default function EncounterDetailPage() {
             {meds.length === 0 && <div className="dashboard-empty"><strong>No medications</strong></div>}
             {meds.map((med, idx) => (
               <div key={idx} className="enc-detail-item-row">
-                <label className="enc-detail-field-label-wide">Name <span style={{ color: "var(--coral)" }}>*</span>
+                <label className="enc-detail-field-label-wide">Name <span className="enc-d-required">*</span>
                   <div className="enc-detail-name-flex">
-                    <input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" style={{ flex: 1 }} />
+                    <input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" className="enc-d-name-input" />
                     {med.inventory_product_id && <span className="enc-detail-badge-inv">Inventory</span>}
                   </div>
                 </label>
@@ -879,12 +879,12 @@ export default function EncounterDetailPage() {
             <div className="surface-card-heading"><div><p className="eyebrow">OBSERVATIONS</p><h2>Vitals</h2></div></div>
             <div className="enc-detail-vitals-2col">
               <div>
-                <p className="eyebrow" style={{ marginBottom: 12 }}>ARRIVAL VITALS</p>
+                <p className="eyebrow enc-d-eyebrow-tight">ARRIVAL VITALS</p>
                 <VitalsForm vitals={arrivalVitals} onChange={setArrivalVitals} readonly={readonly} />
                 <BMIDisplay vitals={arrivalVitals} label="Arrival" />
               </div>
               <div>
-                <p className="eyebrow" style={{ marginBottom: 12 }}>DISCHARGE VITALS</p>
+                <p className="eyebrow enc-d-eyebrow-tight">DISCHARGE VITALS</p>
                 <VitalsForm vitals={dischargeVitals} onChange={setDischargeVitals} readonly={readonly} />
                 <BMIDisplay vitals={dischargeVitals} label="Discharge" />
               </div>
@@ -931,13 +931,13 @@ export default function EncounterDetailPage() {
                 <label>Referral instructions<textarea value={referralInstructions} onChange={(e) => setReferralInstructions(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               </div>
             )}
-            <div style={{ marginTop: 16 }}>
-              <p className="eyebrow" style={{ marginBottom: 12 }}>DISCHARGE VITALS</p>
+            <div className="enc-d-section-gap">
+              <p className="eyebrow enc-d-eyebrow-tight">DISCHARGE VITALS</p>
               <VitalsForm vitals={dischargeVitals} onChange={setDischargeVitals} readonly={readonly} />
             </div>
             {enc.status === "ready_for_discharge" && (
               <div className="enc-detail-discharge-divider">
-                <button className="button button-primary" type="button" disabled={busy} onClick={() => void completeDischarge()} style={{ background: "var(--leaf)" }}>{busy ? "Discharging..." : "Complete Discharge"}</button>
+                <button className="button button-primary enc-d-discharge-btn" type="button" disabled={busy} onClick={() => void completeDischarge()}>{busy ? "Discharging..." : "Complete Discharge"}</button>
               </div>
             )}
           </div>
@@ -947,8 +947,8 @@ export default function EncounterDetailPage() {
         {tab === "summary" && (
           <>
             {/* Print header (hidden on screen, visible when printing) */}
-            <div className="enc-section surface-card enc-print-header" style={{ display: "none" }}>
-              <h2 style={{ marginBottom: 4 }}>Discharge Summary</h2>
+            <div className="enc-section surface-card enc-print-header">
+              <h2 className="enc-d-print-title">Discharge Summary</h2>
               <p>Patient: <strong>{enc.patient_name}</strong> {enc.mrn && `(MRN: ${enc.mrn})`} | Doctor: <strong>Dr. {enc.doctor_name}</strong>{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
               {enc.branch_name && <p>Branch: {enc.branch_name}</p>}
             </div>
@@ -960,22 +960,22 @@ export default function EncounterDetailPage() {
 
               {/* Token / Reference */}
               <div className="enc-detail-ref-bar">
-                <div><span className="eyebrow">TOKEN NUMBER</span><p style={{ fontSize: 18, fontWeight: 700, margin: "2px 0 0" }}>{enc.token_number != null ? enc.token_number : enc.id.slice(0, 8).toUpperCase()}</p></div>
-                <div style={{ textAlign: "right" }}><span className="eyebrow">STATUS</span><p style={{ fontSize: 14, fontWeight: 600, margin: "2px 0 0", color: statusColor[enc.status] }}>{statusLabel[enc.status] ?? enc.status}</p></div>
+                <div><span className="eyebrow">TOKEN NUMBER</span><p className="enc-d-print-token">{enc.token_number != null ? enc.token_number : enc.id.slice(0, 8).toUpperCase()}</p></div>
+                <div className="enc-d-print-right"><span className="eyebrow">STATUS</span><p className="enc-d-print-status" style={{ color: statusColor[enc.status] }}>{statusLabel[enc.status] ?? enc.status}</p></div>
               </div>
 
               {/* Arrival Vitals */}
-              <div style={{ marginBottom: 16 }}>
-                <p className="eyebrow" style={{ marginBottom: 6 }}>ARRIVAL VITALS</p>
+              <div className="enc-d-section-gap">
+                <p className="eyebrow enc-d-eyebrow-tight-sm">ARRIVAL VITALS</p>
                 <div className="enc-detail-vitals-grid">
-                  {enc.arrival_vitals?.weight_kg != null && <div><span style={{ color: "var(--muted)" }}>Weight</span><br /><strong>{enc.arrival_vitals.weight_kg} kg</strong></div>}
-                  {enc.arrival_vitals?.height_cm != null && <div><span style={{ color: "var(--muted)" }}>Height</span><br /><strong>{enc.arrival_vitals.height_cm} cm</strong></div>}
-                  {enc.arrival_vitals?.weight_kg != null && enc.arrival_vitals?.height_cm != null && <div><span style={{ color: "var(--muted)" }}>BMI</span><br /><strong>{(enc.arrival_vitals.weight_kg / ((enc.arrival_vitals.height_cm / 100) ** 2)).toFixed(1)}</strong></div>}
-                  {enc.arrival_vitals?.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.arrival_vitals.pulse}</strong></div>}
-                  {enc.arrival_vitals?.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.arrival_vitals.blood_pressure}</strong></div>}
-                  {enc.arrival_vitals?.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.arrival_vitals.oxygen_saturation}%</strong></div>}
-                  {enc.arrival_vitals?.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (°C)</span><br /><strong>{enc.arrival_vitals.temperature}°C</strong></div>}
-                  {(enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null) && <div><span style={{ color: "var(--muted)" }}>GCS Score</span><br /><strong>E{enc.gcs_eye ?? "-"} V{enc.gcs_verbal ?? "-"} M{enc.gcs_motor ?? "-"} = {(enc.gcs_eye ?? 0) + (enc.gcs_verbal ?? 0) + (enc.gcs_motor ?? 0)}</strong></div>}
+                  {enc.arrival_vitals?.weight_kg != null && <div><span className="enc-d-print-vitals-label">Weight</span><br /><strong>{enc.arrival_vitals.weight_kg} kg</strong></div>}
+                  {enc.arrival_vitals?.height_cm != null && <div><span className="enc-d-print-vitals-label">Height</span><br /><strong>{enc.arrival_vitals.height_cm} cm</strong></div>}
+                  {enc.arrival_vitals?.weight_kg != null && enc.arrival_vitals?.height_cm != null && <div><span className="enc-d-print-vitals-label">BMI</span><br /><strong>{(enc.arrival_vitals.weight_kg / ((enc.arrival_vitals.height_cm / 100) ** 2)).toFixed(1)}</strong></div>}
+                  {enc.arrival_vitals?.pulse != null && <div><span className="enc-d-print-vitals-label">Pulse (BPM)</span><br /><strong>{enc.arrival_vitals.pulse}</strong></div>}
+                  {enc.arrival_vitals?.blood_pressure && <div><span className="enc-d-print-vitals-label">B.P (mmHg)</span><br /><strong>{enc.arrival_vitals.blood_pressure}</strong></div>}
+                  {enc.arrival_vitals?.oxygen_saturation != null && <div><span className="enc-d-print-vitals-label">SpO2%</span><br /><strong>{enc.arrival_vitals.oxygen_saturation}%</strong></div>}
+                  {enc.arrival_vitals?.temperature != null && <div><span className="enc-d-print-vitals-label">Temp. (°C)</span><br /><strong>{enc.arrival_vitals.temperature}°C</strong></div>}
+                  {(enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null) && <div><span className="enc-d-print-vitals-label">GCS Score</span><br /><strong>E{enc.gcs_eye ?? "-"} V{enc.gcs_verbal ?? "-"} M{enc.gcs_motor ?? "-"} = {(enc.gcs_eye ?? 0) + (enc.gcs_verbal ?? 0) + (enc.gcs_motor ?? 0)}</strong></div>}
                 </div>
               </div>
 
@@ -986,8 +986,8 @@ export default function EncounterDetailPage() {
               {enc.arrival_datetime && <SummarySection label="Arrival Time" value={fmtDateTime(enc.arrival_datetime)} />}
 
               {/* Clinical Findings */}
-              <div style={{ marginTop: 16 }}>
-                <p className="eyebrow" style={{ marginBottom: 6 }}>CLINICAL FINDINGS</p>
+              <div className="enc-d-print-section">
+                <p className="eyebrow enc-d-eyebrow-tight-sm">CLINICAL FINDINGS</p>
                 <SummarySection label="Chief Complaint" value={enc.chief_complaint} />
                 <SummarySection label="HPI" value={enc.history_present_illness} />
                 <SummarySection label="Diagnosis" value={enc.diagnosis} />
@@ -999,8 +999,8 @@ export default function EncounterDetailPage() {
               </div>
 
               {/* Treatment Given */}
-              <div style={{ marginTop: 16 }}>
-                <p className="eyebrow" style={{ marginBottom: 6 }}>TREATMENT GIVEN BY CLINIC</p>
+              <div className="enc-d-print-section">
+                <p className="eyebrow enc-d-eyebrow-tight-sm">TREATMENT GIVEN BY CLINIC</p>
                 {(enc.medications?.length ?? 0) > 0 && <SummarySection label="Medicines" value={enc.medications!.map((m) => `${m.name}${m.dosage ? ` ${m.dosage}` : ""}${m.route ? ` (${m.route})` : ""}${m.frequency ? ` ${m.frequency}` : ""}${m.duration ? ` x ${m.duration}` : ""}`).join("; ")} />}
                 {(enc.administered_treatments?.length ?? 0) > 0 && <SummarySection label="Treatments" value={enc.administered_treatments!.map((t) => `${t.name}${t.dosage ? ` ${t.dosage}` : ""}${t.route ? ` (${t.route})` : ""}${t.administered_by ? ` — by ${t.administered_by}` : ""}`).join("; ")} />}
                 {(enc.administered_procedures?.length ?? 0) > 0 && <SummarySection label="Procedures" value={enc.administered_procedures!.map((p) => `${p.name}${p.performer ? ` by ${p.performer}` : ""}${p.findings ? ` — ${p.findings}` : ""}`).join("; ")} />}
@@ -1010,8 +1010,8 @@ export default function EncounterDetailPage() {
               </div>
 
               {/* Condition at Discharge */}
-              <div style={{ marginTop: 16 }}>
-                <p className="eyebrow" style={{ marginBottom: 6 }}>DISCHARGE</p>
+              <div className="enc-d-print-section">
+                <p className="eyebrow enc-d-eyebrow-tight-sm">DISCHARGE</p>
                 <SummarySection label="Condition at Discharge" value={enc.discharge_condition} />
                 <SummarySection label="Discharge Outcome" value={enc.discharge_outcome ? typeLabel(enc.discharge_outcome) : null} />
                 {enc.discharge_datetime && <SummarySection label="Discharge Time" value={fmtDateTime(enc.discharge_datetime)} />}
@@ -1019,13 +1019,13 @@ export default function EncounterDetailPage() {
 
               {/* Discharge Vitals */}
               {enc.discharge_vitals && Object.values(enc.discharge_vitals).some((v) => v != null && v !== "") && (
-                <div style={{ marginTop: 12 }}>
-                  <p className="eyebrow" style={{ marginBottom: 6 }}>DISCHARGE VITAL SIGNS</p>
+                <div className="enc-d-print-section">
+                  <p className="eyebrow enc-d-eyebrow-tight-sm">DISCHARGE VITAL SIGNS</p>
                   <div className="enc-detail-vitals-grid">
-                    {enc.discharge_vitals.pulse != null && <div><span style={{ color: "var(--muted)" }}>Pulse (BPM)</span><br /><strong>{enc.discharge_vitals.pulse}</strong></div>}
-                    {enc.discharge_vitals.blood_pressure && <div><span style={{ color: "var(--muted)" }}>B.P (mmHg)</span><br /><strong>{enc.discharge_vitals.blood_pressure}</strong></div>}
-                    {enc.discharge_vitals.oxygen_saturation != null && <div><span style={{ color: "var(--muted)" }}>SpO2%</span><br /><strong>{enc.discharge_vitals.oxygen_saturation}%</strong></div>}
-                    {enc.discharge_vitals.temperature != null && <div><span style={{ color: "var(--muted)" }}>Temp. (°C)</span><br /><strong>{enc.discharge_vitals.temperature}°C</strong></div>}
+                    {enc.discharge_vitals.pulse != null && <div><span className="enc-d-print-vitals-label">Pulse (BPM)</span><br /><strong>{enc.discharge_vitals.pulse}</strong></div>}
+                    {enc.discharge_vitals.blood_pressure && <div><span className="enc-d-print-vitals-label">B.P (mmHg)</span><br /><strong>{enc.discharge_vitals.blood_pressure}</strong></div>}
+                    {enc.discharge_vitals.oxygen_saturation != null && <div><span className="enc-d-print-vitals-label">SpO2%</span><br /><strong>{enc.discharge_vitals.oxygen_saturation}%</strong></div>}
+                    {enc.discharge_vitals.temperature != null && <div><span className="enc-d-print-vitals-label">Temp. (°C)</span><br /><strong>{enc.discharge_vitals.temperature}°C</strong></div>}
                   </div>
                 </div>
               )}
@@ -1045,13 +1045,13 @@ export default function EncounterDetailPage() {
               <div className="enc-detail-sign-footer">
                 <div>
                   <span className="eyebrow">EXAMINED BY</span>
-                  <p style={{ fontWeight: 600, margin: "4px 0 0" }}>Dr. {enc.doctor_name}{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
-                  <p style={{ color: "var(--muted)", margin: "2px 0 0" }}>{fmtDateTime(enc.created_at)}</p>
+                  <p className="enc-d-print-doctor">Dr. {enc.doctor_name}{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
+                  <p className="enc-d-print-date">{fmtDateTime(enc.created_at)}</p>
                 </div>
                 <div>
                   <span className="eyebrow">{enc.discharged_by ? "DISCHARGED BY" : "PRINTED BY"}</span>
-                  <p style={{ fontWeight: 600, margin: "4px 0 0" }}>{enc.discharged_by ?? `Dr. ${enc.doctor_name}`}</p>
-                  {enc.discharge_datetime && <p style={{ color: "var(--muted)", margin: "2px 0 0" }}>{fmtDateTime(enc.discharge_datetime)}</p>}
+                  <p className="enc-d-print-doctor">{enc.discharged_by ?? `Dr. ${enc.doctor_name}`}</p>
+                  {enc.discharge_datetime && <p className="enc-d-print-date">{fmtDateTime(enc.discharge_datetime)}</p>}
                 </div>
               </div>
 
@@ -1060,13 +1060,13 @@ export default function EncounterDetailPage() {
 
             {/* Amendment history */}
             {(enc.amendment_history?.length ?? 0) > 0 && (
-              <div className="enc-section surface-card" style={{ marginTop: 16 }}>
+              <div className="enc-section surface-card enc-d-section-gap">
                 <div className="surface-card-heading"><div><p className="eyebrow">AUDIT</p><h2>Amendment History</h2></div></div>
                 {enc.amendment_history!.map((a, idx) => (
-                  <div key={idx} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)", fontSize: 13 }}>
+                  <div key={idx} className="enc-d-amend-row">
                     <strong>{AMENDABLE_FIELDS.find((f) => f.value === a.field)?.label ?? a.field}</strong> amended on {fmtDateTime(a.amended_at)}
-                    <p style={{ color: "var(--muted)", marginTop: 2 }}>Reason: {a.reason}</p>
-                    <p style={{ marginTop: 2 }}>New value: {a.new_value.length > 200 ? a.new_value.slice(0, 200) + "..." : a.new_value}</p>
+                    <p className="enc-d-amend-reason">Reason: {a.reason}</p>
+                    <p className="enc-d-amend-value">New value: {a.new_value.length > 200 ? a.new_value.slice(0, 200) + "..." : a.new_value}</p>
                   </div>
                 ))}
               </div>
@@ -1074,7 +1074,7 @@ export default function EncounterDetailPage() {
 
             {/* Amend form */}
             {(enc.status === "discharged" || enc.status === "finalized") && (
-              <div className="enc-section surface-card" style={{ marginTop: 16 }}>
+              <div className="enc-section surface-card enc-d-section-gap">
                 <div className="surface-card-heading"><div><p className="eyebrow">CORRECTION</p><h2>Amend Record</h2></div></div>
                 <div className="form-grid enc-detail-grid-2col">
                   <label>Field to amend
@@ -1084,7 +1084,7 @@ export default function EncounterDetailPage() {
                     </select>
                   </label>
                   {amendField && (
-                    <div><span className="eyebrow">CURRENT VALUE</span><p style={{ fontSize: 13, marginTop: 4, maxHeight: 60, overflow: "auto" }}>{((enc as Record<string, unknown>)[amendField] as string) || "(empty)"}</p></div>
+                    <div><span className="eyebrow">CURRENT VALUE</span><p className="enc-d-amend-current">{((enc as Record<string, unknown>)[amendField] as string) || "(empty)"}</p></div>
                   )}
                 </div>
                 {amendField && (
@@ -1101,13 +1101,13 @@ export default function EncounterDetailPage() {
 
         {/* Save button (not on discharge or summary tabs) */}
         {!readonly && tab !== "summary" && tab !== "discharge" && (
-          <div className="form-actions" style={{ marginTop: 16 }}>
+          <div className="form-actions enc-d-form-gap">
             <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Save encounter"}</button>
           </div>
         )}
         {/* Discharge tab: also allow saving without completing discharge */}
         {!readonly && tab === "discharge" && enc.status !== "ready_for_discharge" && (
-          <div className="form-actions" style={{ marginTop: 16 }}>
+          <div className="form-actions enc-d-form-gap">
             <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Save encounter"}</button>
           </div>
         )}
@@ -1128,8 +1128,8 @@ function GCSCalculator({ eye, verbal, motor, onChange, readonly }: { eye: number
   const classColor = classification === "Mild" ? "var(--leaf)" : classification === "Moderate" ? "#e0a458" : classification === "Severe" ? "var(--coral)" : "var(--muted)";
 
   return (
-    <div className="enc-detail-alt-panel" style={{ marginTop: 16 }}>
-      <p className="eyebrow" style={{ marginBottom: 8 }}>GLASGOW COMA SCALE (GCS)</p>
+    <div className="enc-detail-alt-panel enc-d-section-gap">
+      <p className="eyebrow enc-d-eyebrow-tight-xs">GLASGOW COMA SCALE (GCS)</p>
       <div className="enc-detail-gcs-grid">
         <label className="enc-detail-gcs-label">Eye Response (E)
           <select value={eye ?? ""} onChange={(e) => onChange("eye", e.target.value === "" ? null : parseInt(e.target.value, 10))} disabled={readonly}>
@@ -1149,10 +1149,10 @@ function GCSCalculator({ eye, verbal, motor, onChange, readonly }: { eye: number
             {GCS_MOTOR.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
         </label>
-        <div style={{ textAlign: "center", minWidth: 80 }}>
-          <p style={{ fontSize: 11, color: "var(--muted)" }}>TOTAL</p>
-          <p style={{ fontSize: 22, fontWeight: 700 }}>{hasAll ? total : "-"}</p>
-          {classification && <p style={{ fontSize: 11, fontWeight: 600, color: classColor }}>{classification}</p>}
+        <div className="enc-d-gcs-total">
+          <p className="enc-d-gcs-label">TOTAL</p>
+          <p className="enc-d-gcs-score">{hasAll ? total : "-"}</p>
+          {classification && <p className="enc-d-bmi-cat" style={{ fontWeight: 600, color: classColor }}>{classification}</p>}
         </div>
       </div>
     </div>
@@ -1168,9 +1168,9 @@ function BMIDisplay({ vitals, label }: { vitals: Vitals; label: string }) {
   const color = category === "Normal" ? "var(--leaf)" : category === "Underweight" ? "#5886b4" : category === "Overweight" ? "#e0a458" : "var(--coral)";
   return (
     <div className="enc-detail-bmi">
-      <span style={{ fontWeight: 600 }}>{label} BMI:</span>
-      <span style={{ fontWeight: 700, color }}>{bmiStr}</span>
-      <span style={{ color, fontSize: 11 }}>({category})</span>
+      <span className="enc-d-bmi-label">{label} BMI:</span>
+      <span className="enc-d-bmi-value" style={{ color }}>{bmiStr}</span>
+      <span className="enc-d-bmi-cat" style={{ color }}>({category})</span>
     </div>
   );
 }
@@ -1181,7 +1181,7 @@ function SummarySection({ label, value }: { label: string; value: string | null 
   return (
     <div className="enc-detail-summary-row">
       <span className="eyebrow">{label.toUpperCase()}</span>
-      <p style={{ fontSize: 13, marginTop: 2, whiteSpace: "pre-wrap" }}>{value}</p>
+      <p className="enc-d-finding-text">{value}</p>
     </div>
   );
 }

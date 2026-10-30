@@ -180,7 +180,7 @@ export default function AdminPage() {
 
     {isAdmin && !loading && <>
       {/* Metrics hero */}
-      {metrics && <div className="report-hero-grid" style={{ marginBottom: 20 }}>
+      {metrics && <div className="report-hero-grid admin-metrics-hero">
         <div className="report-hero-card report-hero-dark">
           <span className="eyebrow">TENANTS</span>
           <strong>{clinics.length}</strong>
@@ -199,7 +199,7 @@ export default function AdminPage() {
       </div>}
 
       {/* Tab bar */}
-      <div className="pipeline-tabs" role="tablist" style={{ marginBottom: 16 }}>
+      <div className="pipeline-tabs admin-tab-bar" role="tablist">
         {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
           {t.label}{t.count !== undefined ? ` (${t.count})` : ""}
         </button>)}
@@ -209,11 +209,11 @@ export default function AdminPage() {
       {tab === "clinics" && <section className="surface-card">
         <div className="surface-card-heading">
           <div><p className="eyebrow">TENANT LIST</p><h2>Registered clinics</h2></div>
-          <input type="search" placeholder="Search clinics…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ maxWidth: 220, padding: "6px 12px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.85rem", background: "var(--surface-1, #fff)" }} />
+          <input type="search" className="admin-search-input" placeholder="Search clinics…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         {filteredClinics.length === 0 ? <div className="dashboard-empty"><strong>{search ? "No matching clinics" : "No clinics registered"}</strong><span>Tenants appear here after onboarding.</span></div>
           : <div className="invoice-list">
-            {filteredClinics.map((clinic) => <article className="invoice-row" key={clinic.id} style={{ cursor: "pointer" }} onClick={() => setClinicDrawer(clinic)}>
+            {filteredClinics.map((clinic) => <article className="invoice-row admin-clinic-row" key={clinic.id} onClick={() => setClinicDrawer(clinic)}>
               <div className="invoice-mark">{clinic.name.slice(0, 2).toUpperCase()}</div>
               <div className="invoice-main">
                 <h3>{clinic.name}</h3>
@@ -301,12 +301,12 @@ export default function AdminPage() {
       {tab === "audit" && <section className="surface-card">
         <div className="surface-card-heading">
           <div><p className="eyebrow">PLATFORM AUDIT</p><h2>Global event log</h2></div>
-          <input type="search" placeholder="Filter by action…" value={auditFilter} onChange={(e) => setAuditFilter(e.target.value)} style={{ maxWidth: 220, padding: "6px 12px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.85rem", background: "var(--surface-1, #fff)" }} />
+          <input type="search" className="admin-search-input" placeholder="Filter by action…" value={auditFilter} onChange={(e) => setAuditFilter(e.target.value)} />
         </div>
         {filteredAudit.length === 0 ? <div className="dashboard-empty"><strong>{auditFilter ? "No matching events" : "No audit events"}</strong><span>Platform actions will be logged here.</span></div>
           : <div className="invoice-list">
             {filteredAudit.map((item) => <article className="invoice-row" key={item.id}>
-              <div className="invoice-mark" style={{ fontSize: "0.7rem" }}>⊙</div>
+              <div className="invoice-mark admin-audit-icon">⊙</div>
               <div className="invoice-main">
                 <h3>{item.action}</h3>
                 <p>{item.entity_type} · {item.outcome}</p>
@@ -333,8 +333,8 @@ export default function AdminPage() {
                 <h3>{plan.name}</h3>
                 <p>Code: {plan.code} · {Object.keys(plan.limits).length} feature limits</p>
                 <small>Created {shortDate(plan.created_at)}</small>
-                {Object.keys(plan.limits).length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                  {Object.entries(plan.limits).map(([code, limit]) => <span key={code} style={{ fontSize: "0.72rem", padding: "2px 6px", borderRadius: 4, background: "var(--surface-2, #f5f5f0)", color: "var(--text-secondary, #666)" }}>{code}: {limit.limit_value}{!limit.enabled ? " (off)" : ""}</span>)}
+                {Object.keys(plan.limits).length > 0 && <div className="admin-plan-limits">
+                  {Object.entries(plan.limits).map(([code, limit]) => <span key={code} className="admin-plan-badge">{code}: {limit.limit_value}{!limit.enabled ? " (off)" : ""}</span>)}
                 </div>}
               </div>
               <div className="invoice-actions">
@@ -351,7 +351,7 @@ export default function AdminPage() {
           <button className="button button-primary" onClick={() => setAnnouncementForm((v) => !v)}>{announcementForm ? "Cancel" : "New"} <span>{announcementForm ? "✕" : "＋"}</span></button>
         </div>
 
-        {announcementForm && <form style={{ padding: "16px 20px" }} onSubmit={(e) => void createAnnouncement(e)}>
+        {announcementForm && <form className="admin-announcement-form" onSubmit={(e) => void createAnnouncement(e)}>
           <div className="form-grid">
             <label>Title<input required value={annTitle} onChange={(e) => setAnnTitle(e.target.value)} placeholder="What should users know?" /></label>
             <label>Severity
@@ -371,7 +371,7 @@ export default function AdminPage() {
         {announcements.length === 0 && !announcementForm ? <div className="dashboard-empty"><strong>No announcements</strong><span>System-wide announcements appear here.</span></div>
           : <div className="invoice-list">
             {announcements.map((item) => <article className="invoice-row" key={item.id}>
-              <div className="invoice-mark" style={{ fontSize: "0.8rem" }}>{item.severity === "critical" ? "⚠" : item.severity === "warning" ? "△" : "ⓘ"}</div>
+              <div className="invoice-mark">{item.severity === "critical" ? "⚠" : item.severity === "warning" ? "△" : "ⓘ"}</div>
               <div className="invoice-main">
                 <h3>{item.title}</h3>
                 <p>{item.body.length > 120 ? `${item.body.slice(0, 120)}…` : item.body}</p>
@@ -388,10 +388,10 @@ export default function AdminPage() {
 
       {/* Clinic detail drawer */}
       <Drawer open={!!clinicDrawer} onClose={() => setClinicDrawer(null)} title={clinicDrawer?.name ?? ""} subtitle={clinicDrawer?.slug}>
-        {clinicDrawer && <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {clinicDrawer && <div className="admin-drawer-body">
           <div className="form-grid">
             <label>Status
-              <span className={`pipeline-status ${clinicDrawer.status === "active" ? "status-paid" : "status-void"}`} style={{ display: "inline-block", marginLeft: 8 }}>{clinicDrawer.status.toUpperCase()}</span>
+              <span className={`pipeline-status admin-drawer-status ${clinicDrawer.status === "active" ? "status-paid" : "status-void"}`}>{clinicDrawer.status.toUpperCase()}</span>
             </label>
             <label>Timezone<input readOnly value={clinicDrawer.timezone} /></label>
             <label>Locale<input readOnly value={clinicDrawer.locale} /></label>
