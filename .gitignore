@@ -33,7 +33,7 @@ docker.env
 neon_*.url
 
 # Claude Code local settings (personal, not committed)
-.claude/settings.local.json
+.claude/
 
 # tunnel watchdog secrets
 infra/tunnel-guard.env
