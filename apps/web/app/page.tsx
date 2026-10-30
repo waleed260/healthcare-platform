@@ -32,10 +32,10 @@ const features = [
 ];
 
 const metrics = [
-  { value: "6,200+", label: "Appointments managed" },
-  { value: "48", label: "Clinics onboarded" },
+  { value: "2hrs", label: "Saved per clinic, per day" },
   { value: "99.9%", label: "Platform uptime" },
   { value: "<2min", label: "Average setup time" },
+  { value: "0", label: "Spreadsheets needed" },
 ];
 
 const securityItems = [
@@ -71,15 +71,8 @@ const footerLinks = {
     { label: "Follow-ups", href: "#followups" },
   ],
   company: [
-    { label: "About", href: "#" },
     { label: "Contact", href: "mailto:hello@carefully.health" },
     { label: "Privacy", href: "/privacy" },
-    { label: "Terms", href: "#" },
-  ],
-  resources: [
-    { label: "Documentation", href: "#" },
-    { label: "Status", href: "#" },
-    { label: "Changelog", href: "#" },
   ],
 };
 
@@ -230,7 +223,7 @@ export default function HomePage() {
       <section className="lp-trust-bar" aria-label="Platform statistics" data-reveal>
         <div className="shell lp-trust-inner">
           {metrics.map((m) => (
-            <div key={m.label} className="lp-trust-stat">
+            <div key={m.label} className="lp-trust-stat lp-stagger">
               <strong data-count={m.value}>{m.value}</strong>
               <span>{m.label}</span>
             </div>
@@ -275,19 +268,19 @@ export default function HomePage() {
             <h2 id="how-title">From setup to<br /><em>steady days.</em></h2>
           </div>
           <div className="lp-steps" data-reveal>
-            <article className="lp-step">
+            <article className="lp-step lp-stagger">
               <div className="lp-step-number">01</div>
               <h3>Onboard</h3>
               <p>Set up your clinic, services, team roles, and the shape of your day. Most clinics finish in under a day.</p>
             </article>
             <div className="lp-step-line" aria-hidden="true" />
-            <article className="lp-step">
+            <article className="lp-step lp-stagger">
               <div className="lp-step-number">02</div>
               <h3>Publish</h3>
               <p>Launch your clinic website and booking page. Patients see real availability and book without a phone call.</p>
             </article>
             <div className="lp-step-line" aria-hidden="true" />
-            <article className="lp-step">
+            <article className="lp-step lp-stagger">
               <div className="lp-step-number">03</div>
               <h3>Run the day</h3>
               <p>Move from request to appointment to follow-up with less context switching and fewer dropped balls.</p>
@@ -305,7 +298,7 @@ export default function HomePage() {
         </div>
         <div className="lp-security-grid" data-reveal>
           {securityItems.map((item) => (
-            <article key={item.title} className="lp-sec-card">
+            <article key={item.title} className="lp-sec-card lp-stagger">
               <SecurityIcon type={item.icon} />
               <h3>{item.title}</h3>
               <p>{item.desc}</p>
@@ -323,7 +316,7 @@ export default function HomePage() {
           </div>
           <div className="lp-testimonial-grid" data-reveal>
             {testimonials.map((t) => (
-              <article key={t.name} className="lp-testimonial-card">
+              <article key={t.name} className="lp-testimonial-card lp-stagger">
                 <blockquote>&ldquo;{t.quote}&rdquo;</blockquote>
                 <footer>
                   <div className="lp-testimonial-avatar">{t.name.split(" ").map((n) => n[0]).join("")}</div>
@@ -338,7 +331,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Pricing / Demo CTA */}
+      {/* Pricing */}
       <section className="lp-pricing shell" id="pricing" aria-labelledby="pricing-title">
         <div className="lp-pricing-card" data-reveal>
           <p className="lp-eyebrow">EARLY ACCESS</p>
@@ -400,10 +393,6 @@ export default function HomePage() {
           <div className="lp-footer-col">
             <h4>Company</h4>
             {footerLinks.company.map((l) => l.href.startsWith("/") ? <Link key={l.label} href={l.href}>{l.label}</Link> : <a key={l.label} href={l.href}>{l.label}</a>)}
-          </div>
-          <div className="lp-footer-col">
-            <h4>Resources</h4>
-            {footerLinks.resources.map((l) => <a key={l.label} href={l.href}>{l.label}</a>)}
           </div>
         </div>
         <div className="shell lp-footer-bottom">
