@@ -33,6 +33,7 @@ export default function MediaPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [editItem, setEditItem] = useState<MediaItem | null>(null);
   const [altText, setAltText] = useState("");
+  const [viewItem, setViewItem] = useState<MediaItem | null>(null);
   const toast = useToast();
   const confirm = useConfirm();
   const can = (p: string) => permissions.includes(p);
@@ -179,8 +180,9 @@ export default function MediaPage() {
           <img
             src={`/api/v1/websites/media/${item.id}/preview`}
             alt={item.alt_text || item.original_filename || ""}
-            style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)" }}
+            style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)", cursor: "pointer" }}
             loading="lazy"
+            onClick={() => setViewItem(item)}
           />
           <div style={{ padding: "8px 10px" }}>
             <strong style={{ fontSize: 12, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.original_filename || item.alt_text || item.id.slice(0, 12)}</strong>
@@ -192,6 +194,7 @@ export default function MediaPage() {
               {item.alt_text || "No alt text"}{item.size_bytes ? ` · ${fileSize(item.size_bytes)}` : ""} · {date(item.created_at)}
             </small>
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <button className="text-control" style={{ fontSize: 11 }} onClick={() => setViewItem(item)}>View</button>
               {can("website.edit") && !item.is_public && <button className="text-control" style={{ fontSize: 11 }} disabled={busy} onClick={() => { setEditItem(item); setAltText(item.alt_text); }}>Edit</button>}
               {can("website.edit") && !item.is_public && <button className="text-control" style={{ fontSize: 11, color: "var(--coral)" }} disabled={busy} onClick={() => void deleteMedia(item)}>Delete</button>}
             </div>
@@ -215,5 +218,39 @@ export default function MediaPage() {
         </div>
       </div>}
     </Drawer>
+
+    {/* Image lightbox */}
+    {viewItem && (
+      <div
+        style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}
+        onClick={() => setViewItem(null)}
+        onKeyDown={(e) => { if (e.key === "Escape") setViewItem(null); }}
+        role="dialog"
+        aria-label="Image viewer"
+        tabIndex={-1}
+        ref={(el) => el?.focus()}
+      >
+        <button
+          type="button"
+          onClick={() => setViewItem(null)}
+          style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", color: "#fff", fontSize: 28, cursor: "pointer", lineHeight: 1, padding: 8 }}
+          aria-label="Close"
+        >
+          ✕
+        </button>
+        <img
+          src={`/api/v1/websites/media/${viewItem.id}/preview`}
+          alt={viewItem.alt_text || viewItem.original_filename || ""}
+          style={{ maxWidth: "90vw", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}
+          onClick={(e) => e.stopPropagation()}
+        />
+        <div style={{ marginTop: 12, textAlign: "center", color: "#fff" }} onClick={(e) => e.stopPropagation()}>
+          <strong style={{ fontSize: 14 }}>{viewItem.original_filename || viewItem.alt_text || viewItem.id.slice(0, 12)}</strong>
+          <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.7 }}>
+            {viewItem.alt_text}{viewItem.size_bytes ? ` · ${fileSize(viewItem.size_bytes)}` : ""} · {viewItem.mime_type.replace("image/", "").toUpperCase()} · {date(viewItem.created_at)}
+          </p>
+        </div>
+      </div>
+    )}
   </main>;
 }

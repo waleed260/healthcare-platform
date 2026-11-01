@@ -157,6 +157,7 @@ export default function PatientDetailPage() {
   const [media, setMedia] = useState<PatientMedia[]>([]);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [viewMedia, setViewMedia] = useState<PatientMedia | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -1105,8 +1106,9 @@ export default function PatientDetailPage() {
                         <img
                           src={`/api/v1/patients/${patientId}/media/${m.id}/image`}
                           alt={`${m.media_kind} — ${m.captured_on}`}
-                          style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)" }}
+                          style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)", cursor: "pointer" }}
                           loading="lazy"
+                          onClick={() => setViewMedia(m)}
                         />
                         <div style={{ padding: "8px 10px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -1116,6 +1118,7 @@ export default function PatientDetailPage() {
                           <small style={{ display: "block", color: "var(--muted)", marginTop: 4, fontSize: 10 }}>
                             {m.media_kind} · {formatDate(m.captured_on)} · {Math.round(m.size_bytes / 1024)} KB
                           </small>
+                          <button className="text-control" style={{ fontSize: 11, marginTop: 4 }} type="button" onClick={() => setViewMedia(m)}>View</button>
                         </div>
                       </div>
                     ))}
@@ -1249,6 +1252,32 @@ export default function PatientDetailPage() {
             sourcePatientName={patient.full_name}
             onMerged={() => { window.location.href = "/patients"; }}
           />
+
+          {viewMedia && (
+            <div
+              style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}
+              onClick={() => setViewMedia(null)}
+              onKeyDown={(e) => { if (e.key === "Escape") setViewMedia(null); }}
+              role="dialog"
+              aria-label="Image viewer"
+              tabIndex={-1}
+              ref={(el) => el?.focus()}
+            >
+              <button type="button" onClick={() => setViewMedia(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", color: "#fff", fontSize: 28, cursor: "pointer", lineHeight: 1, padding: 8 }} aria-label="Close">✕</button>
+              <img
+                src={`/api/v1/patients/${patientId}/media/${viewMedia.id}/image`}
+                alt={`${viewMedia.media_kind} — ${viewMedia.captured_on}`}
+                style={{ maxWidth: "90vw", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              <div style={{ marginTop: 12, textAlign: "center", color: "#fff" }} onClick={(e) => e.stopPropagation()}>
+                <strong style={{ fontSize: 14 }}>{viewMedia.media_kind}</strong>
+                <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.7 }}>
+                  {formatDate(viewMedia.captured_on)} · {Math.round(viewMedia.size_bytes / 1024)} KB · {viewMedia.mime_type.replace("image/", "").toUpperCase()}
+                </p>
+              </div>
+            </div>
+          )}
         </>
       )}
     </main>
