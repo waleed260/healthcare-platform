@@ -15,9 +15,11 @@ from app.modules.clinical.routes import _authorized, _write_authorized
 from app.modules.clinical_media.scanner import MAX_PATIENT_MEDIA_BYTES
 from app.modules.clinical_media.schemas import PatientMediaApproval, PatientMediaCreate, PatientMediaRevoke
 from app.modules.crm.routes import _require_patient
-from app.modules.files.storage import delete_private_object, put_private_object
+from app.modules.files.storage import delete_private_object, put_private_object, read_private_object
 from app.modules.identity.routes import _error
 from app.modules.websites.scanner import validate_image_magic
+
+from fastapi.responses import Response
 
 
 router = APIRouter(prefix="/api/v1/patients", tags=["clinical-media"])
@@ -164,3 +166,21 @@ def media_revoke(patient_id: UUID, media_id: UUID, payload: PatientMediaRevoke, 
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="patient_media.revoke_website_approval", entity_type="patient_media", entity_id=media_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/{patient_id}/media/{media_id}/image")
+def media_image(patient_id: UUID, media_id: UUID, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> Response:
+    session = _authorized(db, session_token, "patient.media.read")
+    _require_patient(db, session, patient_id)
+    row = db.execute(text("""
+        SELECT storage_key, mime_type FROM patient_media
+        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :media_id AND archived_at IS NULL
+    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "media_id": media_id}).mappings().one_or_none()
+    db.commit()
+    if row is None:
+        raise _error("NOT_FOUND", "Image not found.", status.HTTP_404_NOT_FOUND)
+    try:
+        content = read_private_object(row["storage_key"])
+    except Exception as exc:
+        raise _error("NOT_FOUND", "Image not found.", status.HTTP_404_NOT_FOUND) from exc
+    return Response(content=content, media_type=row["mime_type"], headers={"Cache-Control": "private, no-store, max-age=0"})

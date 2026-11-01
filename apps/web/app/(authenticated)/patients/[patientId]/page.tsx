@@ -28,9 +28,10 @@ type TreatmentPlan = { id: string; title: string; diagnosis: string | null; stat
 type PatientPackage = { id: string; name: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number; purchased_at: string; expires_at: string };
 type Admission = { id: string; branch_id: string; branch_name: string | null; admitting_doctor_id: string; admitting_doctor_name: string | null; consulting_doctor_id: string | null; consulting_doctor_name: string | null; ward: string | null; bed: string | null; admission_type: string; reason: string; diagnosis_on_admission: string | null; expected_stay_days: number | null; status: string; admitted_at: string; discharged_at: string | null; notes: string | null; version: number; created_at: string };
 
-type Tab = "overview" | "encounters" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages";
+type Tab = "overview" | "encounters" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages" | "media";
 
 type PatientEncounter = { id: string; encounter_type: string; status: string; chief_complaint: string | null; diagnosis: string | null; doctor_name: string; created_at: string; finalized_at: string | null };
+type PatientMedia = { id: string; treatment_plan_item_id: string | null; provider_user_id: string | null; captured_on: string; media_kind: string; mime_type: string; size_bytes: number; scan_status: string; scan_failure_reason: string | null; approval_status: string; approved_for_website: boolean; consent_record_id: string | null; approved_by_user_id: string | null; approved_at: string | null; version: number; created_at: string; updated_at: string };
 
 function computeAge(dob: string | null): { years: number; months: number; label: string; category: string } | null {
   if (!dob) return null;
@@ -65,6 +66,7 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "prescriptions", label: "Prescriptions" },
   { key: "invoices", label: "Invoices" },
   { key: "packages", label: "Packages" },
+  { key: "media", label: "Media" },
   { key: "documents", label: "Documents" },
   { key: "consents", label: "Consents" },
   { key: "notes", label: "Notes" },
@@ -152,6 +154,9 @@ export default function PatientDetailPage() {
   const [admissionForm, setAdmissionForm] = useState({ branch_id: "", admitting_doctor_id: "", ward: "", bed: "", admission_type: "elective", reason: "", diagnosis_on_admission: "", expected_stay_days: "", notes: "" });
   const [admissionSaving, setAdmissionSaving] = useState(false);
   const [doctors, setDoctors] = useState<{ id: string; public_name: string }[]>([]);
+  const [media, setMedia] = useState<PatientMedia[]>([]);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [mediaUploading, setMediaUploading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
@@ -378,6 +383,36 @@ export default function PatientDetailPage() {
     } catch (reason) { toast.error(errorMessage(reason, "Encounters could not be loaded.")); }
   }, [patientId, toast]);
 
+  const loadMedia = useCallback(async () => {
+    try {
+      const page = await apiPage<PatientMedia>(`/api/v1/patients/${patientId}/media?limit=100`);
+      setMedia(page.data);
+      setMediaLoaded(true);
+    } catch (reason) { toast.error(errorMessage(reason, "Media could not be loaded.")); }
+  }, [patientId, toast]);
+
+  async function uploadMedia(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Only JPEG, PNG, or WebP images are accepted.");
+      return;
+    }
+    setMediaUploading(true);
+    try {
+      const resp = await fetch(`/api/v1/patients/${patientId}/media/upload?media_kind=other`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": file.type, ...writeHeaders() },
+        body: await file.arrayBuffer(),
+      });
+      if (!resp.ok) { const err = await resp.json().catch(() => null); throw new Error(err?.error?.message ?? "Upload failed."); }
+      toast.success("Image uploaded.");
+      await loadMedia();
+    } catch (reason) { toast.error(errorMessage(reason, "Image could not be uploaded.")); }
+    finally { setMediaUploading(false); }
+  }
+
   const loadAdmissions = useCallback(async () => {
     try {
       const [a, b, d] = await Promise.all([
@@ -438,7 +473,8 @@ export default function PatientDetailPage() {
     if (activeTab === "transfers" && !transfersLoaded) void loadTransfers();
     if (activeTab === "admissions" && !admissionsLoaded) void loadAdmissions();
     if (activeTab === "encounters" && !encountersLoaded) void loadEncounters();
-  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, admissionsLoaded, encountersLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers, loadAdmissions, loadEncounters]);
+    if (activeTab === "media" && !mediaLoaded) void loadMedia();
+  }, [activeTab, notesLoaded, historyLoaded, appointmentsLoaded, documentsLoaded, consentsLoaded, prescriptionsLoaded, invoicesLoaded, vitalsLoaded, treatmentsLoaded, packagesLoaded, transfersLoaded, admissionsLoaded, encountersLoaded, mediaLoaded, loadNotes, loadHistory, loadAppointments, loadDocuments, loadConsents, loadPrescriptions, loadInvoices, loadVitals, loadTreatments, loadPackages, loadTransfers, loadAdmissions, loadEncounters, loadMedia]);
 
   function startEditing() {
     if (!patient) return;
@@ -1040,6 +1076,50 @@ export default function PatientDetailPage() {
                       <button className="button button-secondary" type="button" onClick={() => void loadNotes(notesCursor)}>Load more notes</button>
                     )}
                   </>
+                )}
+              </section>
+            )}
+
+            {activeTab === "media" && (
+              <section className="detail-card">
+                <div className="card-heading">
+                  <div><p className="eyebrow">CLINICAL MEDIA</p><h2>Patient images</h2></div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span className="directory-count">{media.length} shown</span>
+                    {can("patient.media.write") && (
+                      <label className="button button-primary" style={{ cursor: "pointer" }}>
+                        {mediaUploading ? "Uploading…" : "Upload image"} <span>+</span>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => void uploadMedia(e)} disabled={mediaUploading} />
+                      </label>
+                    )}
+                  </div>
+                </div>
+                {!mediaLoaded ? (
+                  <div className="dashboard-empty" role="status"><strong>Loading media…</strong></div>
+                ) : media.length === 0 ? (
+                  <div className="dashboard-empty"><strong>No media</strong><span>Patient images will appear here after upload.</span></div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16, marginTop: 8 }}>
+                    {media.map((m) => (
+                      <div key={m.id} style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
+                        <img
+                          src={`/api/v1/patients/${patientId}/media/${m.id}/image`}
+                          alt={`${m.media_kind} — ${m.captured_on}`}
+                          style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)" }}
+                          loading="lazy"
+                        />
+                        <div style={{ padding: "8px 10px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span className={`pipeline-status status-${m.scan_status === "clean" ? "qualified" : m.scan_status === "pending" ? "new" : "lost"}`} style={{ fontSize: 10 }}>{m.scan_status}</span>
+                            <span className={`pipeline-status status-${m.approval_status === "approved" ? "qualified" : m.approval_status === "revoked" ? "lost" : "new"}`} style={{ fontSize: 10 }}>{m.approval_status}</span>
+                          </div>
+                          <small style={{ display: "block", color: "var(--muted)", marginTop: 4, fontSize: 10 }}>
+                            {m.media_kind} · {formatDate(m.captured_on)} · {Math.round(m.size_bytes / 1024)} KB
+                          </small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </section>
             )}
