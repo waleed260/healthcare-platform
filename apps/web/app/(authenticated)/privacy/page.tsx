@@ -189,10 +189,10 @@ export default function PrivacyPage() {
     </div>
 
     {/* New request form */}
-    {showForm && <form className="surface-card" style={{ marginBottom: 16, padding: "20px" }} onSubmit={createRequest}>
+    {showForm && <form className="privacy-form" onSubmit={createRequest}>
       <div className="surface-card-heading"><div><p className="eyebrow">NEW REQUEST</p><h2>Start a review</h2></div></div>
-      <div className="form-grid">
-        <div ref={pickerRef} className="patient-picker">
+      <div className="privacy-form-fields">
+        <div ref={pickerRef} className="patient-picker privacy-form-full">
           <label>Patient
             {selectedPatient
               ? <span className="patient-picker-selected">
@@ -219,9 +219,9 @@ export default function PrivacyPage() {
             <option value="deletion">Deletion</option>
           </select>
         </label>
-        <label>Reason<textarea value={reason} onChange={(e) => setReason(e.target.value)} required minLength={1} maxLength={1000} rows={3} placeholder="Describe the basis for this request" /></label>
+        <label className="privacy-form-full">Reason<textarea value={reason} onChange={(e) => setReason(e.target.value)} required minLength={1} maxLength={1000} rows={3} placeholder="Describe the basis for this request" /></label>
       </div>
-      <div className="form-actions">
+      <div className="privacy-form-actions">
         <button className="button button-secondary" type="button" onClick={() => setShowForm(false)}>Cancel</button>
         <button className="button button-primary" type="submit" disabled={working !== null || !patientId}>{working === "create" ? "Recording…" : "Record request"} <span>→</span></button>
       </div>

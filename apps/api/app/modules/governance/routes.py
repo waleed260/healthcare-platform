@@ -49,7 +49,7 @@ def _write_authorized(db: Session, request: Request, session_token: str | None, 
 
 
 def _patient_visible_to_user(db: Session, session: dict, patient_id: UUID) -> bool:
-    return bool(db.execute(text("""
+    return bool(db.execute(text(f"""
         SELECT EXISTS (
             SELECT 1
             FROM patients p
