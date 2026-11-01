@@ -23,9 +23,10 @@ const todayLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "n
 async function getData<T>(url: string): Promise<T | null> {
   try { return await api<T>(url); } catch { return null; }
 }
-const statusClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
+/* Turn pill/status tokens into bottom-border chips. */
+const statusClass = (s: string) => `queue-state state-${s.replaceAll("_", "-")}`;
 
-/* Inline SVG icon set — replaces emoji glyphs for a consistent, premium look. */
+/* Inline SVG icon set — consistent stroke icons for a calmer page. */
 function Icon({ children }: { children: ReactNode }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 }
@@ -40,6 +41,7 @@ const IconCard = () => <Icon><rect x="2" y="5" width="20" height="14" rx="2" /><
 const IconChart = () => <Icon><path d="M3 3v18h18" /><path d="M8 17v-6M13 17V7M18 17v-4" /></Icon>;
 const IconFlag = () => <Icon><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1Z" /><path d="M4 22v-7" /></Icon>;
 
+/* Appointment row: time + reference + status */
 const scheduleCols: Column<Appointment>[] = [
   { key: "time", header: "Time", width: "70px", render: (a) => <time dateTime={a.starts_at}>{time(a.starts_at)}</time> },
   { key: "reference", header: "Appointment", width: "1fr", sortable: true, sortFn: (a, b) => a.reference.localeCompare(b.reference), render: (a) => <span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span> },
@@ -101,7 +103,7 @@ export default function DashboardPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [load]);
 
-  /* Light tick so countdowns and waiting times stay honest between refreshes. */
+  /* Use a lighter heartbeat so the next-up section never fights the page for attention. */
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
@@ -173,12 +175,12 @@ const statusLabel = (s: string) => s.replaceAll("_", " ");
     {nextUpView}
 
     <div className="dash-main-grid">
-      <section className="panel-card" id="schedule"><div className="card-heading"><div><h2>Schedule</h2></div><Link className="text-link" href="/schedule">Full calendar <span>→</span></Link></div>
+      <section className="panel-card" id="schedule"><div className="card-heading"><div><h2>Today's room</h2></div><Link className="text-link" href="/schedule">Full calendar <span>→</span></Link></div>
         <DataTable columns={scheduleCols} rows={schedule} rowKey={(a) => a.id} loading={loading} skeletonRows={4} emptyTitle="All clear today" emptyBody={<><IconCalendar /><span>No appointments are booked for today yet.</span>{permissions.includes("appointment.create") && <button className="text-control" type="button" onClick={() => setAddApptOpen(true)}>Book the first one <span>→</span></button>}</>} />
       </section>
 
       <div className="dash-side-col">
-        <section className="panel-card"><div className="card-heading"><div><h2>Queue</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
+        <section className="panel-card"><div className="card-heading"><div><h2>Waiting room</h2></div><Link className="text-link" href="/queue">View all <span>→</span></Link></div>
           {loading && queue.length === 0 ? <RowSkeleton count={3} /> : queue.length === 0 ? <div className="dashboard-empty"><IconUsers /><strong>Queue is empty</strong><span>Checked-in patients will appear here as the day fills up.</span></div> : <div className="queue-list">{queue.slice(0, 5).map((e, i) => {
             const waited = e.status === "waiting" && e.checked_in_at ? Math.max(0, Math.round((now - new Date(e.checked_in_at).getTime()) / 60000)) : null;
             const heat = waited === null ? "" : waited >= 20 ? " wait-hot" : waited >= 10 ? " wait-warm" : "";
@@ -191,10 +193,10 @@ const statusLabel = (s: string) => s.replaceAll("_", " ");
     </div>
 
     <div className="dash-bottom-grid">
-      <section className="panel-card"><div className="card-heading"><div><h2>Requests</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
+      <section className="panel-card"><div className="card-heading"><div><h2>Handoffs awaiting you</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
         <DataTable columns={requestCols} rows={requests.slice(0, 5)} rowKey={(a) => a.id} loading={false} emptyTitle="No pending requests" />
       </section>
-      <section className="panel-card"><div className="card-heading"><div><h2>Follow-ups</h2></div><Link className="text-link" href="/operations">View all <span>→</span></Link></div>
+      <section className="panel-card"><div className="card-heading"><div><h2>Follow-ups due</h2></div><Link className="text-link" href="/operations">View all <span>→</span></Link></div>
         {followups.length === 0 ? <div className="dashboard-empty"><IconCheck /><strong>Nothing due</strong><span>Follow-ups land here the moment a task is assigned.</span></div> : <div className="followup-list">{followups.slice(0, 5).map((f) => <div className="followup-row" key={f.id}><div><strong>{f.reason || "Follow-up"}</strong><small>due {dayShort(f.due_at)} {time(f.due_at)}</small></div><span className={`pipeline-status ${f.status === "overdue" ? "pipeline-status-lost" : "pipeline-status-qualified"}`}>{f.status}</span></div>)}</div>}
       </section>
       <section className="panel-card"><div className="card-heading"><div><p className="eyebrow">TREND</p><h2>This week</h2></div><Link className="text-link" href="/schedule">Full view <span>→</span></Link></div><div className="bar-chart" role="img" aria-label="Appointments by weekday">{weekBars.map((b) => <div className={`bar-col${b.today ? " bar-today" : ""}`} key={b.label}><div className="bar-track"><div className="bar-fill" style={{ height: `${b.pct}%` }} title={`${b.label}: ${b.value}`} /></div><small>{b.label}</small><b>{b.value}</b></div>)}</div></section>
