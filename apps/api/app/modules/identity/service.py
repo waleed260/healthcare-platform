@@ -43,9 +43,26 @@ class TokenError(RuntimeError):
     code = "INVALID_TOKEN"
 
 
+class PasswordPolicyError(RuntimeError):
+    code = "WEAK_PASSWORD"
+
+    def __init__(self, violations: list[str]):
+        self.violations = violations
+        super().__init__(", ".join(violations))
+
+
 def _validate_password_policy(password: str) -> None:
-    if len(password) < 12 or password.lower() == password or password.upper() == password or not any(char.isdigit() for char in password):
-        raise AuthenticationError()
+    violations: list[str] = []
+    if len(password) < 12:
+        violations.append("at least 12 characters")
+    if password.lower() == password:
+        violations.append("at least one uppercase letter")
+    if password.upper() == password:
+        violations.append("at least one lowercase letter")
+    if not any(c.isdigit() for c in password):
+        violations.append("at least one digit")
+    if violations:
+        raise PasswordPolicyError(violations)
 
 
 @dataclass(frozen=True)

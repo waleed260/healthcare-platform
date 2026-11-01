@@ -31,6 +31,7 @@ export function middleware(request: NextRequest) {
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
+    ...(development ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
   requestHeaders.set("Content-Security-Policy", csp);
   response.headers.set("Content-Security-Policy", csp);

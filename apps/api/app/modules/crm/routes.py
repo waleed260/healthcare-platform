@@ -13,7 +13,10 @@ from app.db.tenant import set_tenant_context
 from app.core.security import cursor_payload, encode_cursor
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.crm.merge import merge_patients
+from app.core.sql import assert_safe_columns
 from app.modules.crm.schemas import AdmissionCreate, AdmissionDischarge, AdmissionUpdate, CareTeamMemberCreate, CareTeamPolicyUpdate, ConsentCreate, ConsentRevoke, ContactCreate, DischargeCreate, PatientCreate, PatientMerge, PatientNoteCreate, PatientNoteUpdate, PatientUpdate, TagCreate, TransferCreate, VitalCreate
+
+_ADMISSION_UPDATE_COLUMNS = frozenset(AdmissionUpdate.model_fields) - {"expected_version"}
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
@@ -968,6 +971,7 @@ def admission_update(patient_id: UUID, admission_id: UUID, payload: AdmissionUpd
     values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
     if not values:
         raise _error("INVALID_INPUT", "At least one field is required.", status.HTTP_400_BAD_REQUEST)
+    assert_safe_columns(values.keys(), _ADMISSION_UPDATE_COLUMNS)
     updates = [f"{field} = :{field}" for field in values]
     row = db.execute(text(f"""
         UPDATE patient_admissions SET {', '.join(updates)}, version = version + 1, updated_at = now()

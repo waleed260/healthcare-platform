@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.modules.identity.schemas import InvitationConsumeRequest, InvitationCreateRequest, LoginRequest, ManualResetConsumeRequest, MfaEnrollResponse, MfaRecoveryRequest, MfaVerifyRequest, SessionRevokeRequest
 from app.modules.identity.service import (
     AuthenticationError,
+    PasswordPolicyError,
     SessionError,
     TokenError,
     authenticate,
@@ -201,6 +202,9 @@ def manual_reset_consume(payload: ManualResetConsumeRequest, request: Request, d
             record_event(db, clinic_id=clinic_id, actor_user_id=user_id, action="auth.password_reset", entity_type="user", entity_id=user_id, outcome="success", request_id=UUID(request.state.request_id))
         db.commit()
         return {"data": {"reset": True}, "meta": {"request_id": request.state.request_id}}
+    except PasswordPolicyError as exc:
+        db.rollback()
+        raise _error(exc.code, "Password does not meet policy.", status.HTTP_400_BAD_REQUEST, fields={"new_password": "Must contain " + ", ".join(exc.violations)}) from exc
     except (TokenError, AuthenticationError) as exc:
         db.rollback()
         raise _error(exc.code, "The reset link is invalid or expired.", status.HTTP_400_BAD_REQUEST) from exc
@@ -291,6 +295,9 @@ def manual_invite_consume(payload: InvitationConsumeRequest, request: Request, d
                 """), {"clinic_id": clinic_id, "user_id": invite_row["invited_by"], "body": f"{invite_row['new_user_name']} has accepted the invitation and created their account."})
         db.commit()
         return {"data": {"user_id": user_id, "activated": True}, "meta": {"request_id": request.state.request_id}}
+    except PasswordPolicyError as exc:
+        db.rollback()
+        raise _error(exc.code, "Password does not meet policy.", status.HTTP_400_BAD_REQUEST, fields={"password": "Must contain " + ", ".join(exc.violations)}) from exc
     except (TokenError, AuthenticationError) as exc:
         db.rollback()
-        raise _error("INVALID_INVITATION", "The invitation is invalid, expired, or the password does not meet policy.", status.HTTP_400_BAD_REQUEST) from exc
+        raise _error("INVALID_INVITATION", "The invitation is invalid or expired.", status.HTTP_400_BAD_REQUEST) from exc

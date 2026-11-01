@@ -36,7 +36,7 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
   const response = await fetch(url, { credentials: "include", ...(isGet ? {} : { cache: "no-store" as const }), ...init });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (!response.ok) {
-    if (response.status === 401 && payload?.error?.code === "SESSION_EXPIRED") {
+    if (response.status === 401) {
       redirectToLogin();
       throw new Error("Session expired — redirecting to login.");
     }

@@ -27,6 +27,7 @@ split across the source and target rows.
 """
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from sqlalchemy import text
@@ -60,6 +61,9 @@ _DEDUPE_MEMBERSHIP = (
     ("patient_care_team", "clinic_id, patient_id, doctor_id, assigned_by_user_id", "clinic_id, :target, doctor_id, assigned_by_user_id"),
     ("patient_tags", "clinic_id, patient_id, tag_id", "clinic_id, :target, tag_id"),
 )
+
+assert all(re.match(r"^[a-z][a-z0-9_]+$", t) for t in _DIRECT_REPOINT)
+assert all(re.match(r"^[a-z][a-z0-9_]+$", t) for t, _, _ in _DEDUPE_MEMBERSHIP)
 
 
 def merge_patients(db: Session, *, clinic_id: UUID, actor_user_id: UUID, source_id: UUID, target_id: UUID, reason: str | None) -> dict[str, int]:

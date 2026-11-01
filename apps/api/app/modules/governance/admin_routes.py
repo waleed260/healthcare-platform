@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime
 from uuid import UUID
 
@@ -172,6 +173,8 @@ _ISOLATION_TABLES = (
     ("patient_documents", "Documents"),
     ("websites", "Website drafts"),
 )
+
+assert all(re.match(r"^[a-z][a-z0-9_]+$", t) for t, _ in _ISOLATION_TABLES)
 
 
 @router.get("/tenant-isolation")

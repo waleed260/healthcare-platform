@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_cursor, encode_cursor
+from app.core.sql import assert_safe_columns
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
@@ -14,6 +15,8 @@ from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.inventory.schemas import InventoryAdjustmentCreate, InventoryCategoryCreate, InventoryCategoryUpdate, InventoryProductCreate, InventoryProductUpdate, InventoryStatusUpdate
+
+_PRODUCT_UPDATE_COLUMNS = frozenset(InventoryProductUpdate.model_fields) - {"expected_version"}
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 
@@ -88,6 +91,7 @@ def product_update(product_id: UUID, payload: InventoryProductUpdate, request: R
     values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
     if not values:
         raise _error("INVALID_INPUT", "At least one product field must be provided.", status.HTTP_400_BAD_REQUEST)
+    assert_safe_columns(values.keys(), _PRODUCT_UPDATE_COLUMNS)
     assignments = ", ".join(f"{field} = :{field}" for field in values)
     try:
         row = db.execute(text(f"UPDATE inventory_products SET {assignments}, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL AND version = :expected_version RETURNING id, sku, name, product_type, unit, minimum_stock, status, version, updated_at, category_id, cost_minor, selling_price_minor, currency, tax_inclusive"), {"clinic_id": session["clinic_id"], "id": product_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
