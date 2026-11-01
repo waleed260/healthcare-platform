@@ -206,7 +206,7 @@ export default function HomePage() {
       {/* Hero */}
       <section className="lp-hero shell" aria-labelledby="hero-title">
         <div className="lp-hero-copy" data-reveal>
-          <p className="lp-eyebrow"><span className="lp-eyebrow-dot" /> Clinic operations, with room to breathe</p>
+          <div className="lp-badge"><span className="lp-badge-dot" /> Early access — now open</div>
           <h1 id="hero-title">Make care feel <em>well run.</em></h1>
           <p className="lp-hero-lede">Website, booking, queue, CRM, and follow-ups — one workspace for your entire clinic.</p>
           <div className="lp-hero-actions">

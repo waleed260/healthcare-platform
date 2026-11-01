@@ -1,9 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, label, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
+import type { PatientSummary } from "../_lib/contracts";
 
 type PrivacyRequestType = "access" | "correction" | "deletion" | "restriction";
 type RequestRow = { id: string; patient_id: string; request_type: string; status: string; reason: string; requested_at: string; resolved_at: string | null; resolution_note: string | null; identity_verified_at: string | null };
@@ -21,6 +22,13 @@ export default function PrivacyPage() {
   const [exports, setExports] = useState<ExportRow[]>([]);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [patientId, setPatientId] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientResults, setPatientResults] = useState<PatientSummary[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [reason, setReason] = useState("");
   const [requestType, setRequestType] = useState<PrivacyRequestType>("access");
   const [evidence, setEvidence] = useState<Record<string, string>>({});
@@ -31,6 +39,44 @@ export default function PrivacyPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const can = (p: string) => permissions.includes(p);
+
+  function searchPatients(term: string) {
+    setPatientSearch(term);
+    setShowResults(true);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (term.trim().length < 2) { setPatientResults([]); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const results = await api<PatientSummary[]>(`/api/v1/patients?search=${encodeURIComponent(term.trim())}&limit=6`);
+        setPatientResults(results ?? []);
+      } catch { setPatientResults([]); }
+      setSearching(false);
+    }, 300);
+  }
+
+  function pickPatient(p: PatientSummary) {
+    setSelectedPatient(p);
+    setPatientId(p.id);
+    setPatientSearch("");
+    setPatientResults([]);
+    setShowResults(false);
+  }
+
+  function clearPatient() {
+    setSelectedPatient(null);
+    setPatientId("");
+    setPatientSearch("");
+    setPatientResults([]);
+  }
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowResults(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +105,8 @@ export default function PrivacyPage() {
     try {
       await post(`/api/v1/governance/patients/${patientId.trim()}/privacy-requests`, { request_type: requestType, reason: reason.trim() });
       setPatientId("");
+      setSelectedPatient(null);
+      setPatientSearch("");
       setReason("");
       setShowForm(false);
       toast.success("Privacy request recorded for review.");
@@ -144,7 +192,25 @@ export default function PrivacyPage() {
     {showForm && <form className="surface-card" style={{ marginBottom: 16, padding: "20px" }} onSubmit={createRequest}>
       <div className="surface-card-heading"><div><p className="eyebrow">NEW REQUEST</p><h2>Start a review</h2></div></div>
       <div className="form-grid">
-        <label>Patient ID<input value={patientId} onChange={(e) => setPatientId(e.target.value)} required placeholder="Authorized patient UUID" /></label>
+        <div ref={pickerRef} className="patient-picker">
+          <label>Patient
+            {selectedPatient
+              ? <span className="patient-picker-selected">
+                  <span><strong>{selectedPatient.full_name}</strong> <small>{selectedPatient.patient_number}</small></span>
+                  <button type="button" className="ghost-button" onClick={clearPatient} aria-label="Clear selection">✕</button>
+                </span>
+              : <input value={patientSearch} onChange={(e) => searchPatients(e.target.value)} onFocus={() => patientResults.length > 0 && setShowResults(true)} placeholder="Search by name, email, or phone" autoComplete="off" />}
+          </label>
+          {showResults && !selectedPatient && <div className="patient-picker-dropdown">
+            {searching && <div className="patient-picker-item muted">Searching…</div>}
+            {!searching && patientSearch.trim().length >= 2 && patientResults.length === 0 && <div className="patient-picker-item muted">No patients found</div>}
+            {patientResults.map((p) => <button key={p.id} type="button" className="patient-picker-item" onClick={() => pickPatient(p)}>
+              <strong>{p.full_name}</strong>
+              <small>{p.patient_number}{p.normalized_email ? ` · ${p.normalized_email}` : p.normalized_phone ? ` · ${p.normalized_phone}` : ""}</small>
+            </button>)}
+          </div>}
+          <input type="hidden" name="patientId" value={patientId} required />
+        </div>
         <label>Request type
           <select value={requestType} onChange={(e) => setRequestType(e.target.value as PrivacyRequestType)}>
             <option value="access">Access export</option>
@@ -157,7 +223,7 @@ export default function PrivacyPage() {
       </div>
       <div className="form-actions">
         <button className="button button-secondary" type="button" onClick={() => setShowForm(false)}>Cancel</button>
-        <button className="button button-primary" type="submit" disabled={working !== null}>{working === "create" ? "Recording…" : "Record request"} <span>→</span></button>
+        <button className="button button-primary" type="submit" disabled={working !== null || !patientId}>{working === "create" ? "Recording…" : "Record request"} <span>→</span></button>
       </div>
     </form>}
 
