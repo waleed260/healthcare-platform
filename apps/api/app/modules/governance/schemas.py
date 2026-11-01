@@ -126,6 +126,16 @@ class AnnouncementCreate(BaseModel):
     ends_at: str | None = Field(default=None, max_length=40)
 
 
+class ClinicCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=200)
+    slug: str = Field(min_length=2, max_length=80, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    owner_email: str = Field(min_length=5, max_length=320)
+    timezone: str = Field(default="UTC", max_length=60)
+    default_currency: str = Field(default="PKR", min_length=3, max_length=3, pattern="^[A-Z]{3}$")
+
+
 class TenantIsolationCheck(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

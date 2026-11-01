@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.tenant import set_platform_context, set_tenant_context
 from app.modules.audit.service import record_event
-from app.modules.governance.schemas import AnnouncementCreate, ClinicLifecycleUpdate, PlanCreate, PlanLimitUpdate, PlatformSupportAccessCreate, RetentionPolicyAssign, RetentionPolicyCreate, TenantIsolationCheck
+from app.modules.governance.schemas import AnnouncementCreate, ClinicCreate, ClinicLifecycleUpdate, PlanCreate, PlanLimitUpdate, PlatformSupportAccessCreate, RetentionPolicyAssign, RetentionPolicyCreate, TenantIsolationCheck
+from app.modules.identity.service import create_staff_invitation
 from app.modules.identity.routes import _error, _session_or_401, _set_session_cookies, _validate_origin
 from app.modules.identity.service import SessionError, rotate_session, verify_csrf
 from app.core.observability import request_metrics
@@ -433,6 +434,27 @@ def announcement_create(payload: AnnouncementCreate, request: Request, db: Sessi
     record_event(db, clinic_id=None, actor_user_id=session["user_id"], action="admin.announcement.create", entity_type="system_announcement", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"severity": payload.severity})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@router.post("/clinics", status_code=status.HTTP_201_CREATED)
+def clinic_create(payload: ClinicCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write(db, request, session_token, csrf_token)
+    try:
+        clinic = db.execute(text("""
+            INSERT INTO clinics (name, slug, timezone, default_currency)
+            VALUES (:name, :slug, :timezone, :currency)
+            RETURNING id, name, slug, status, timezone, default_currency, created_at
+        """), {"name": payload.name.strip(), "slug": payload.slug.strip().lower(), "timezone": payload.timezone, "currency": payload.default_currency}).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        if "clinics_slug_key" in str(exc):
+            raise _error("DUPLICATE", "A clinic with this slug already exists.", status.HTTP_409_CONFLICT) from exc
+        raise
+    set_tenant_context(db, clinic["id"], session["user_id"])
+    invitation_token = create_staff_invitation(db, clinic["id"], None, payload.owner_email, role_name="owner")
+    record_event(db, clinic_id=None, actor_user_id=session["user_id"], action="admin.clinic.create", entity_type="clinic", entity_id=clinic["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"name": clinic["name"], "slug": clinic["slug"], "owner_email": payload.owner_email})
+    db.commit()
+    return {"data": {**dict(clinic), "invitation_token": invitation_token}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/clinics")
