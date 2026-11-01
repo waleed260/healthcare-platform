@@ -196,12 +196,12 @@
 
 /* — How it works — */
 .lp-how{background:#e7eee4;padding:100px 0 110px}
-.lp-steps{display:flex;align-items:flex-start;gap:0;margin-top:50px}
-.lp-step{flex:1;text-align:center;padding:0 20px}
-.lp-step-number{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:var(--leaf);color:white;font:14px 'DM Mono',monospace;margin-bottom:24px}
-.lp-step h3{font:500 26px Fraunces,serif;margin:0 0 10px}
+.lp-steps{display:flex;align-items:stretch;gap:0;margin-top:50px}
+.lp-step{flex:1;text-align:center;padding:28px 24px;background:var(--paper);border:1px solid var(--line);border-radius:12px}
+.lp-step-number{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:50%;background:var(--leaf);color:white;font:13px 'DM Mono',monospace;margin-bottom:20px}
+.lp-step h3{font:500 24px Fraunces,serif;margin:0 0 10px}
 .lp-step p{max-width:260px;margin:0 auto;color:var(--muted);font-size:13px;line-height:1.55}
-.lp-step-line{width:60px;height:2px;background:#a9c8b7;margin-top:24px;flex-shrink:0}
+.lp-step-line{width:40px;height:2px;background:#a9c8b7;margin-top:50px;flex-shrink:0;align-self:center}
 
 /* — Security — */
 .lp-security{padding:110px 0}
@@ -235,22 +235,26 @@
 .lp-pricing-actions{display:flex;flex-direction:column;align-items:center;gap:14px}
 
 /* — FAQ — */
-.lp-faq{padding:100px 0;display:grid;grid-template-columns:.7fr 1.3fr;gap:60px}
-.lp-faq .lp-section-header{text-align:left;margin:0}
-.lp-faq-list{border-top:1px solid var(--line)}
-.lp-faq-list details{border-bottom:1px solid var(--line);padding:18px 0}
-.lp-faq-list summary{display:flex;justify-content:space-between;cursor:pointer;font-size:15px;font-weight:500;list-style:none}
+.lp-faq{padding:100px 0;display:block}
+.lp-faq .lp-section-header{text-align:center;margin:0 auto 50px}
+.lp-faq-list{max-width:680px;margin:0 auto}
+.lp-faq-list details{border:1px solid var(--line);border-radius:10px;padding:0;margin-bottom:10px;background:var(--cream);transition:box-shadow .2s ease}
+.lp-faq-list details[open]{box-shadow:0 4px 16px rgba(28,41,40,.06)}
+.lp-faq-list summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-size:15px;font-weight:500;list-style:none;padding:18px 22px}
 .lp-faq-list summary::-webkit-details-marker{display:none}
-.lp-faq-list summary span{color:var(--coral);font-size:22px;transition:transform .2s ease;flex-shrink:0;margin-left:16px}
+.lp-faq-list summary span{color:var(--coral);font-size:22px;transition:transform .2s ease;flex-shrink:0;margin-left:16px;width:24px;height:24px;display:grid;place-items:center}
 .lp-faq-list details[open] summary span{transform:rotate(45deg)}
 .lp-faq-list summary:hover{color:var(--leaf)}
-.lp-faq-list p{max-width:560px;color:var(--muted);line-height:1.6;font-size:14px;margin:12px 0 0;padding-right:30px}
+.lp-faq-list p{color:var(--muted);line-height:1.6;font-size:14px;margin:0;padding:0 22px 18px}
 
 /* — Final CTA — */
-.lp-final-cta{background:var(--leaf);color:var(--paper);padding:110px 0;text-align:center;position:relative;overflow:hidden}
+.lp-final-cta{background:var(--leaf);color:var(--paper);padding:110px 0;text-align:center;position:relative;overflow:hidden;border-radius:18px;margin:0 auto 0;max-width:1180px}
 .lp-final-cta::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 50% at 50% 120%,rgba(255,255,255,.06),transparent);pointer-events:none}
 .lp-final-cta .lp-eyebrow{color:#a9c8b7}
-.lp-final-cta h2{font:500 clamp(42px,5.5vw,72px)/.94 Fraunces,serif;letter-spacing:-.05em;margin:0 0 36px}
+.lp-final-cta h2{font:500 clamp(42px,5.5vw,72px)/.94 Fraunces,serif;letter-spacing:-.05em;margin:0 0 28px}
+.lp-final-tags{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:36px}
+.lp-final-tag{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border:1px solid rgba(169,200,183,.3);border-radius:999px;font:12px 'DM Mono',monospace;color:#d8e6de;background:rgba(255,255,255,.06)}
+.lp-final-tag-dot{width:6px;height:6px;border-radius:50%;background:#a9c8b7}
 .lp-final-actions{display:flex;justify-content:center;gap:20px;align-items:center;flex-wrap:wrap}
 .lp-final-note{margin:24px 0 0;font:12px 'DM Mono',monospace;color:#a9c8b7}
 
@@ -326,7 +330,7 @@
 .lp-pricing-card::before{transition:opacity .4s ease}
 
 /* CTA - richer gradient */
-.lp-final-cta{background:linear-gradient(145deg,#1c2928 0%,var(--leaf) 50%,#1e3b32 100%)}
+.landing-page .lp-final-cta{background:linear-gradient(145deg,#1c2928 0%,var(--leaf) 50%,#1e3b32 100%);width:min(1180px,calc(100% - 64px));padding:90px 40px;margin-bottom:0}
 .lp-final-cta::before{background:radial-gradient(ellipse 60% 50% at 50% 100%,rgba(207,229,215,.12),transparent),radial-gradient(ellipse 40% 40% at 20% 30%,rgba(184,79,56,.08),transparent)}
 .lp-final-cta h2 em{color:var(--mint)}
 
@@ -346,8 +350,7 @@
   .lp-showcase-right .lp-showcase-inner{direction:ltr}
   .lp-showcase-visual{flex-wrap:wrap}
   .lp-testimonial-grid{grid-template-columns:1fr}
-  .lp-faq{grid-template-columns:1fr;gap:32px}
-  .lp-faq .lp-section-header{text-align:center}
+  .lp-faq .lp-faq-list{max-width:100%}
   .lp-footer-inner{grid-template-columns:1fr 1fr;gap:28px}
   .lp-steps{flex-direction:column;align-items:center}
   .lp-step-line{width:2px;height:30px;margin:0}

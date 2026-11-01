@@ -367,10 +367,15 @@ export default function HomePage() {
       </section>
 
       {/* Final CTA */}
-      <section className="lp-final-cta" data-reveal>
-        <div className="shell">
+      <section className="lp-final-cta shell" data-reveal>
+        <div>
           <p className="lp-eyebrow">When the day feels full</p>
           <h2>Your clinic deserves<br /><em>a calmer day.</em></h2>
+          <div className="lp-final-tags">
+            {["Website Builder", "Patient Booking", "Live Queue", "Patient CRM", "Follow-ups", "Team Scheduling", "Consent Tracking", "Audit Trail"].map((tag) => (
+              <span key={tag} className="lp-final-tag"><span className="lp-final-tag-dot" />{tag}</span>
+            ))}
+          </div>
           <div className="lp-final-actions">
             <Link className="lp-btn lp-btn-light" href="/login">Request a demo <span>→</span></Link>
             <Link className="lp-btn-text-light" href="/login">Sign in to your workspace <span>→</span></Link>
