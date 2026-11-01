@@ -403,7 +403,7 @@ export default function PatientDetailPage() {
     try {
       const resp = await fetch(`/api/v1/patients/${patientId}/media/upload?media_kind=other`, {
         method: "POST", credentials: "include",
-        headers: { "Content-Type": file.type, ...writeHeaders() },
+        headers: { ...writeHeaders(), "Content-Type": file.type },
         body: await file.arrayBuffer(),
       });
       if (!resp.ok) { const err = await resp.json().catch(() => null); throw new Error(err?.error?.message ?? "Upload failed."); }

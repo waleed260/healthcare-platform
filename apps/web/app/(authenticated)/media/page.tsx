@@ -174,22 +174,27 @@ export default function MediaPage() {
         <span className="muted-mono">{filtered.length} FILE{filtered.length !== 1 ? "S" : ""}</span>
       </div>
       {!loading && filtered.length === 0 && <div className="dashboard-empty"><strong>{search || typeFilter !== "all" ? "No matching media" : "No media uploaded yet"}</strong><span>Upload images to use them on your website pages.</span></div>}
-      {filtered.length > 0 && <div className="invoice-list">
-        {filtered.map((item) => <article className="invoice-row" key={item.id}>
-          <div className="invoice-mark" style={{ fontSize: "0.7rem", textTransform: "uppercase" }}>{item.mime_type.replace("image/", "").slice(0, 4)}</div>
-          <div className="invoice-main">
-            <h3>{item.original_filename || item.alt_text || item.id.slice(0, 12)}</h3>
-            <p>{item.alt_text || "No alt text"}{item.size_bytes ? ` · ${fileSize(item.size_bytes)}` : ""}</p>
-            <small>
-              <span className={`pipeline-status ${scanColor[item.scan_status] ?? ""}`}>{label(item.scan_status)}</span>
-              {item.is_public ? " · Published" : " · Draft"}
-              {" · "}{date(item.created_at)}
+      {filtered.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
+        {filtered.map((item) => <article key={item.id} style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
+          <img
+            src={`/api/v1/websites/media/${item.id}/preview`}
+            alt={item.alt_text || item.original_filename || ""}
+            style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)" }}
+            loading="lazy"
+          />
+          <div style={{ padding: "8px 10px" }}>
+            <strong style={{ fontSize: 12, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.original_filename || item.alt_text || item.id.slice(0, 12)}</strong>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+              <span className={`pipeline-status ${scanColor[item.scan_status] ?? ""}`} style={{ fontSize: 10 }}>{label(item.scan_status)}</span>
+              {item.is_public && <span className="pipeline-status status-paid" style={{ fontSize: 10 }}>Published</span>}
+            </div>
+            <small style={{ display: "block", color: "var(--muted)", marginTop: 4, fontSize: 10 }}>
+              {item.alt_text || "No alt text"}{item.size_bytes ? ` · ${fileSize(item.size_bytes)}` : ""} · {date(item.created_at)}
             </small>
-          </div>
-          <div className="invoice-actions" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {can("website.edit") && !item.is_public && <button className="text-control" disabled={busy} onClick={() => { setEditItem(item); setAltText(item.alt_text); }}>Edit</button>}
-            {can("website.edit") && !item.is_public && <button className="text-control" disabled={busy} onClick={() => void deleteMedia(item)}>Delete</button>}
-            {item.is_public && <span className="pipeline-status status-paid" style={{ fontSize: "0.72rem" }}>PUBLISHED</span>}
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              {can("website.edit") && !item.is_public && <button className="text-control" style={{ fontSize: 11 }} disabled={busy} onClick={() => { setEditItem(item); setAltText(item.alt_text); }}>Edit</button>}
+              {can("website.edit") && !item.is_public && <button className="text-control" style={{ fontSize: 11, color: "var(--coral)" }} disabled={busy} onClick={() => void deleteMedia(item)}>Delete</button>}
+            </div>
           </div>
         </article>)}
       </div>}
@@ -198,6 +203,7 @@ export default function MediaPage() {
     {/* Edit alt text drawer */}
     <Drawer open={!!editItem} onClose={() => setEditItem(null)} title="Edit media" subtitle={editItem?.original_filename ?? editItem?.id}>
       {editItem && <div>
+        <img src={`/api/v1/websites/media/${editItem.id}/preview`} alt={editItem.alt_text} style={{ width: "100%", maxHeight: 240, objectFit: "contain", borderRadius: 6, background: "var(--line)", marginBottom: 12 }} />
         <div className="form-grid">
           <label>File<input readOnly value={editItem.original_filename || editItem.id} /></label>
           <label>Type<input readOnly value={editItem.mime_type} /></label>

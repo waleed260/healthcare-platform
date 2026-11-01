@@ -480,7 +480,7 @@ def media_list(request: Request, cursor: str | None = Query(default=None, max_le
     session = _authorized(db, session_token, "website.read")
     after = _collection_cursor(cursor, "website-media")
     rows = db.execute(text("""
-        SELECT id, alt_text, mime_type, scan_status, is_public, version, created_at
+        SELECT id, original_filename, alt_text, mime_type, size_bytes, scan_status, is_public, version, created_at
         FROM website_media
         WHERE clinic_id = :clinic_id
           AND (:after_created_at IS NULL OR created_at < :after_created_at OR (created_at = :after_created_at AND id < :after_id))
@@ -580,6 +580,26 @@ def media_delete(media_id: UUID, payload: WebsiteVersionCommand, request: Reques
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="website.media_delete", entity_type="website_media", entity_id=media_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": {"id": deleted["id"], "deleted": True}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.get("/media/{media_id}/preview")
+def media_preview(media_id: UUID, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> Response:
+    session = _authorized(db, session_token, "website.read")
+    row = db.execute(text("""
+        SELECT storage_key, public_storage_key, mime_type, is_public FROM website_media
+        WHERE clinic_id = :clinic_id AND id = :media_id
+    """), {"clinic_id": session["clinic_id"], "media_id": media_id}).mappings().one_or_none()
+    db.commit()
+    if row is None:
+        raise _error("NOT_FOUND", "Media not found.", status.HTTP_404_NOT_FOUND)
+    try:
+        if row["is_public"] and row["public_storage_key"]:
+            content = read_public_object(row["public_storage_key"])
+        else:
+            content = read_private_object(row["storage_key"])
+    except Exception as exc:
+        raise _error("NOT_FOUND", "Image not found.", status.HTTP_404_NOT_FOUND) from exc
+    return Response(content=content, media_type=row["mime_type"], headers={"Cache-Control": "private, max-age=300"})
 
 
 @router.get("/{website_id}/themes")
