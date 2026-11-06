@@ -245,7 +245,7 @@ export default function BookingPage() {
             <div className="booking-fields">
               <label>Full name <input required maxLength={160} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Your name" /></label>
               <label>Email <span className="optional">optional</span><input type="email" maxLength={320} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" /></label>
-              <label>Phone <span className="optional">optional</span><input maxLength={40} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="A number the clinic can reach" /></label>
+              <label>Phone <input required type="tel" inputMode="tel" maxLength={40} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="A number the clinic can reach" /></label>
             </div>
           </section>
         )}

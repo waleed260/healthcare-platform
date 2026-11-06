@@ -20,6 +20,7 @@ def test_public_booking_answers_are_strict_and_bounded() -> None:
         service_id="00000000-0000-0000-0000-000000000002",
         starts_at="2026-09-15T10:00:00+00:00",
         full_name="Synthetic Patient",
+        phone="+1 555 123 4567",
         answers=[BookingAnswer(question_id="00000000-0000-0000-0000-000000000003", value="yes")],
     )
     assert payload.answers[0].value == "yes"

@@ -1,7 +1,20 @@
+import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from uuid import UUID
+
+# Permissive international phone pattern: allow + and digits/spaces/dashes/parens,
+# require at least 7 digits total — matches the frontend hint.
+_PHONE_DIGITS = re.compile(r"\d")
+
+
+def _validate_phone(value: str) -> str:
+    cleaned = value.strip()
+    digits = _PHONE_DIGITS.findall(cleaned)
+    if len(digits) < 7:
+        raise ValueError("phone number must contain at least 7 digits")
+    return cleaned
 
 
 class PublicBookingRequest(BaseModel):
@@ -13,9 +26,14 @@ class PublicBookingRequest(BaseModel):
     starts_at: datetime
     full_name: str = Field(min_length=1, max_length=160)
     email: str | None = Field(default=None, max_length=320)
-    phone: str | None = Field(default=None, max_length=40)
+    phone: str = Field(min_length=1, max_length=40)
     date_of_birth: date | None = None
     answers: list["BookingAnswer"] = Field(default_factory=list, max_length=50)
+
+    @field_validator("phone")
+    @classmethod
+    def _check_phone(cls, value: str) -> str:
+        return _validate_phone(value)
 
 
 class InternalBookingRequest(BaseModel):
@@ -32,6 +50,16 @@ class InternalBookingRequest(BaseModel):
     date_of_birth: date | None = None
     appointment_type: str | None = Field(default=None, max_length=20)
     payment_method: str | None = Field(default=None, max_length=40)
+
+    @model_validator(mode="after")
+    def _require_phone_for_new_patient(self) -> "InternalBookingRequest":
+        if self.patient_id is None:
+            if not self.phone or not self.phone.strip():
+                raise ValueError("phone is required when creating a new patient")
+            _validate_phone(self.phone)
+        elif self.phone:
+            _validate_phone(self.phone)
+        return self
 
 
 class BookingAnswer(BaseModel):

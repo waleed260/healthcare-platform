@@ -99,6 +99,7 @@ def test_public_idempotency_body_hash_query_is_tenant_scoped(monkeypatch) -> Non
         service_id=service_id,
         starts_at=datetime(2030, 1, 1, 9, tzinfo=timezone.utc),
         full_name="Synthetic Patient",
+        phone="+1 555 123 4567",
     )
     import hashlib
     import json

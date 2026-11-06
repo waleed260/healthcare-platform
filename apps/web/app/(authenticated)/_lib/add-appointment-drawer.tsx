@@ -8,6 +8,11 @@ import { api, writeHeaders } from "./client";
 
 type Option = { id: string; name?: string; public_name?: string };
 type Patient = { id: string; full_name: string; patient_number?: string };
+type PatientDetail = { id: string; full_name: string; normalized_phone: string | null; version: number };
+
+function digitCount(value: string): number {
+  return (value.match(/\d/g) || []).length;
+}
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -54,6 +59,9 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   const [slotDate, setSlotDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedPatientDetail, setSelectedPatientDetail] = useState<PatientDetail | null>(null);
+  const [existingPhoneDraft, setExistingPhoneDraft] = useState("");
+  const [savingExistingPhone, setSavingExistingPhone] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -96,6 +104,32 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
       setDoctorServiceIds(new Set((d?.services ?? []).map((s) => s.id)));
     }).catch(() => setDoctorServiceIds(new Set()));
   }, [form.doctor_id]);
+
+  useEffect(() => {
+    if (!form.patient_id || form.patient_mode !== "existing") { setSelectedPatientDetail(null); setExistingPhoneDraft(""); return; }
+    void api<PatientDetail>(`/api/v1/patients/${form.patient_id}`).then((p) => {
+      if (p) { setSelectedPatientDetail(p); setExistingPhoneDraft(p.normalized_phone ?? ""); }
+    }).catch(() => { setSelectedPatientDetail(null); setExistingPhoneDraft(""); });
+  }, [form.patient_id, form.patient_mode]);
+
+  async function saveExistingPatientPhone() {
+    if (!selectedPatientDetail) return;
+    if (digitCount(existingPhoneDraft) < 7) { toast.error("Enter a valid phone with at least 7 digits."); return; }
+    setSavingExistingPhone(true);
+    try {
+      const updated = await api<PatientDetail>(`/api/v1/patients/${selectedPatientDetail.id}`, {
+        method: "PATCH",
+        headers: writeHeaders(),
+        body: JSON.stringify({ expected_version: selectedPatientDetail.version, phone: existingPhoneDraft.trim() }),
+      });
+      if (updated) setSelectedPatientDetail(updated);
+      toast.success("Phone saved.");
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : "Could not save phone.");
+    } finally {
+      setSavingExistingPhone(false);
+    }
+  }
 
   const reset = useCallback(() => {
     setForm(() => ({
@@ -176,7 +210,13 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
     if (s === 1) return !!form.branch_id && !!form.doctor_id;
     if (s === 2) return true;
     if (s === 3) return !!form.starts_at && !!form.service_id;
-    if (s === 4) return form.patient_mode === "existing" ? !!form.patient_id : !!form.full_name.trim();
+    if (s === 4) {
+      if (form.patient_mode === "existing") {
+        if (!form.patient_id) return false;
+        return !!selectedPatientDetail?.normalized_phone && digitCount(selectedPatientDetail.normalized_phone) >= 7;
+      }
+      return !!form.full_name.trim() && digitCount(form.phone) >= 7;
+    }
     return true;
   };
 
@@ -331,12 +371,33 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
               ))}
               {filteredPatients.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>No patients found. Try a different search or add a new patient.</p>}
             </div>
+            {selectedPatientDetail && !selectedPatientDetail.normalized_phone && (
+              <div style={{ marginTop: 14, padding: 12, border: "1px solid var(--coral, #a14937)", borderRadius: 8, background: "rgba(161,73,55,0.05)" }}>
+                <p style={{ margin: 0, marginBottom: 8, fontSize: 12, color: "var(--coral, #a14937)" }}>This patient has no phone on file. Add one to continue.</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    placeholder="+92 300 1234567"
+                    value={existingPhoneDraft}
+                    onChange={(e) => setExistingPhoneDraft(e.target.value)}
+                    style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--line)", background: "white" }}
+                  />
+                  <button type="button" className="button button-primary" disabled={savingExistingPhone} onClick={() => void saveExistingPatientPhone()}>
+                    {savingExistingPhone ? "Saving…" : "Save phone"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {selectedPatientDetail?.normalized_phone && (
+              <p style={{ marginTop: 10, fontSize: 11, color: "var(--muted)" }}>Phone on file: {selectedPatientDetail.normalized_phone}</p>
+            )}
           </>}
 
           {form.patient_mode === "new" && <div className="form-grid">
             <label>Full name<input required maxLength={160} value={form.full_name} onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))} placeholder="Patient's full name" /></label>
             <label>Email<input type="email" maxLength={320} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="patient@example.com" /></label>
-            <label>Phone<input maxLength={40} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+92 300 1234567" /></label>
+            <label>Phone *<input required type="tel" inputMode="tel" maxLength={40} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+92 300 1234567" /></label>
             <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
               <button type="button" className={`button ${form.dob_mode === "age" ? "button-primary" : "button-secondary"}`} style={{ flex: 1, padding: "6px 10px", fontSize: 11 }} onClick={() => setForm((f) => ({ ...f, dob_mode: "age" as const }))}>Enter age</button>
               <button type="button" className={`button ${form.dob_mode === "dob" ? "button-primary" : "button-secondary"}`} style={{ flex: 1, padding: "6px 10px", fontSize: 11 }} onClick={() => setForm((f) => ({ ...f, dob_mode: "dob" as const }))}>Date of birth</button>
@@ -374,7 +435,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
               if (!el) return;
               const w = window.open("", "_blank", "width=400,height=500");
               if (!w) return;
-              w.document.write(`<html><head><title>Token #${bookingResult.token_number}</title><style>body{font-family:system-ui,sans-serif;padding:20px}dt{color:#666;font-size:11px}dd{margin:0}dl{display:grid;gap:6px}dl>div{display:flex;justify-content:space-between}.token{font-size:48px;font-weight:700;text-align:center;margin:16px 0}.eyebrow{font-size:10px;letter-spacing:1px;text-transform:uppercase;text-align:center;margin:0 0 4px}@media print{button{display:none}}</style></head><body>${el.innerHTML}</body></html>`);
+              w.document.write(`<html><head><title>Token #${bookingResult.token_number}</title><style>@page{size:80mm auto;margin:4mm}html,body{margin:0;padding:0}body{font-family:system-ui,sans-serif;padding:8px;width:72mm;color:#000}dt{color:#555;font-size:10px}dd{margin:0;font-size:12px}dl{display:grid;gap:4px;margin:0}dl>div{display:flex;justify-content:space-between;gap:8px}.token{font-size:48px;font-weight:700;text-align:center;margin:8px 0}.eyebrow{font-size:9px;letter-spacing:1px;text-transform:uppercase;text-align:center;margin:0 0 2px;color:#555}@media print{button{display:none}html,body{background:#fff!important}}</style></head><body>${el.innerHTML}</body></html>`);
               w.document.close();
               w.print();
             }}>Print Token</button>
