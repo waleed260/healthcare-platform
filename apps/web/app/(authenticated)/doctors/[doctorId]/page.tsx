@@ -220,6 +220,25 @@ export default function DoctorDetailPage() {
       setBusy(false);
     }
   }
+
+  async function changeStatus(nextStatus: "active" | "inactive" | "archived") {
+    if (!doctor) return;
+    const label = nextStatus === "archived" ? "archive" : nextStatus === "inactive" ? "deactivate" : "reactivate";
+    const warning = doctor.upcoming_appointments > 0
+      ? ` They have ${doctor.upcoming_appointments} upcoming appointment${doctor.upcoming_appointments === 1 ? "" : "s"}; those records stay intact.`
+      : "";
+    if (!(await confirm({ message: `${label.charAt(0).toUpperCase() + label.slice(1)} Dr. ${doctor.public_name}?${warning}`, danger: nextStatus === "archived" }))) return;
+    setBusy(true);
+    try {
+      await post(`/api/v1/doctors/${doctorId}/status`, { status: nextStatus });
+      toast.success(`Doctor ${label}d.`);
+      await load();
+    } catch (reason) {
+      toast.error(errorMessage(reason, `Could not ${label} doctor.`));
+    } finally {
+      setBusy(false);
+    }
+  }
   if (loading) return <main className="dash-content"><div className="dashboard-empty" role="status"><strong>Loading doctor profile…</strong></div></main>;
   if (error || !doctor) return <main className="dash-content"><div className="workspace-alert" role="alert"><strong>{error ?? "Doctor not found."}</strong></div><Link className="button button-secondary" href="/doctors">Back to doctors</Link></main>;
 
@@ -259,7 +278,23 @@ export default function DoctorDetailPage() {
         <div className="doctor-detail-card surface-card">
           <div className="surface-card-heading">
             <div><p className="eyebrow">PROFILE</p><h2>Doctor information</h2></div>
-            {!editing && <button className="button button-secondary" type="button" onClick={startEdit}>Edit profile</button>}
+            {!editing && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="button button-secondary" type="button" onClick={startEdit}>Edit profile</button>
+                {doctor.status === "active" && (
+                  <button className="ghost-button" type="button" disabled={busy} onClick={() => void changeStatus("inactive")}>Deactivate</button>
+                )}
+                {doctor.status === "inactive" && (
+                  <button className="ghost-button" type="button" disabled={busy} onClick={() => void changeStatus("active")}>Reactivate</button>
+                )}
+                {doctor.status !== "archived" && (
+                  <button className="ghost-button danger-control" type="button" disabled={busy} onClick={() => void changeStatus("archived")}>Archive</button>
+                )}
+                {doctor.status === "archived" && (
+                  <button className="button button-secondary" type="button" disabled={busy} onClick={() => void changeStatus("active")}>Restore</button>
+                )}
+              </div>
+            )}
           </div>
 
           {editing ? (

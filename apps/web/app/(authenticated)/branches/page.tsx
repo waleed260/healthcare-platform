@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api, writeHeaders, errorMessage, post } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
+import { useConfirm } from "../_lib/confirm";
 
 type AllDoctor = { id: string; public_name: string; specialty: string | null; status: string };
 type AllService = { id: string; name: string; category: string | null };
@@ -95,6 +96,7 @@ function defaultSlotDrafts(hours: BranchHour[]): SlotDraft[][] {
 
 export default function BranchesPage() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchDoctors, setBranchDoctors] = useState<Record<string, Doctor[]>>({});
   const [branchServices, setBranchServices] = useState<Record<string, Service[]>>({});
@@ -368,6 +370,25 @@ export default function BranchesPage() {
       .finally(() => setBusy(false));
   }
 
+  async function changeBranchStatus(branch: Branch, nextStatus: "active" | "inactive" | "archived") {
+    const verb = nextStatus === "archived" ? "archive" : nextStatus === "inactive" ? "deactivate" : "reactivate";
+    const warning = nextStatus === "archived"
+      ? " Its doctors, services, appointments, and history stay intact and remain readable."
+      : "";
+    const ok = await confirm({ message: `${verb.charAt(0).toUpperCase() + verb.slice(1)} branch "${branch.name}"?${warning}`, danger: nextStatus === "archived" });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await post(`/api/v1/branches/${branch.id}/status`, { status: nextStatus });
+      toast.success(`Branch ${verb}d.`);
+      await load();
+    } catch (reason) {
+      toast.error(errorMessage(reason, `Could not ${verb} branch.`));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="dash-content" aria-busy={loading}>
       <div className="dash-topline">
@@ -409,6 +430,16 @@ export default function BranchesPage() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span className={`pipeline-status status-${b.status === "active" ? "qualified" : "lost"}`} style={{ fontSize: 10 }}>{b.status}</span>
+                  {canManageBranch && b.status !== "archived" && (
+                    <button type="button" className="ghost-button danger-control" disabled={busy}
+                      onClick={(ev) => { ev.stopPropagation(); void changeBranchStatus(b, "archived"); }}
+                      style={{ fontSize: 11 }} title="Archive branch">Archive</button>
+                  )}
+                  {canManageBranch && b.status === "archived" && (
+                    <button type="button" className="ghost-button" disabled={busy}
+                      onClick={(ev) => { ev.stopPropagation(); void changeBranchStatus(b, "active"); }}
+                      style={{ fontSize: 11 }} title="Restore branch">Restore</button>
+                  )}
                   <span className={`nav-group-chevron ${isOpen ? "" : "collapsed"}`} style={{ fontSize: 18 }} aria-hidden="true">›</span>
                 </div>
               </div>
