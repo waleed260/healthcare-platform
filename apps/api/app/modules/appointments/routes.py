@@ -262,11 +262,33 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
+@appointment_router.get("/availability")
+def internal_availability(*, request: Request, branch_id: UUID = Query(), service_id: UUID = Query(), from_date: date = Query(), to_date: date = Query(), doctor_id: UUID | None = Query(default=None), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _staff_authorized(db, session_token, "appointment.read")
+    clinic_id = session["clinic_id"]
+    _validate_availability_range(from_date, to_date)
+    branch = db.execute(text("SELECT id, timezone FROM branches WHERE clinic_id = :clinic_id AND id = :branch_id AND status = 'active' AND archived_at IS NULL"), {"clinic_id": clinic_id, "branch_id": branch_id}).mappings().one_or_none()
+    service = db.execute(text("SELECT s.id, s.duration_minutes, s.buffer_before_minutes, s.buffer_after_minutes FROM services s JOIN branch_services bs ON bs.clinic_id = s.clinic_id AND bs.service_id = s.id WHERE s.clinic_id = :clinic_id AND s.id = :service_id AND bs.branch_id = :branch_id AND s.status = 'active' AND s.archived_at IS NULL"), {"clinic_id": clinic_id, "service_id": service_id, "branch_id": branch_id}).mappings().one_or_none()
+    if branch is None or service is None:
+        raise _error("NOT_FOUND", "Branch or service not found.", status.HTTP_404_NOT_FOUND)
+    hours = db.execute(text("SELECT weekday, opens_at, closes_at FROM branch_hours WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND is_closed = false AND opens_at IS NOT NULL AND closes_at IS NOT NULL"), {"clinic_id": clinic_id, "branch_id": branch_id}).mappings().all()
+    rules = db.execute(text("SELECT weekday, starts_at, ends_at, effective_from, effective_to, slot_cadence_minutes FROM availability_rules WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND doctor_id = :doctor_id AND (service_id IS NULL OR service_id = :service_id)"), {"clinic_id": clinic_id, "branch_id": branch_id, "doctor_id": doctor_id, "service_id": service_id}).mappings().all()
+    holiday_rows = db.execute(text("SELECT holiday_date, starts_at, ends_at FROM clinic_holidays WHERE clinic_id = :clinic_id AND holiday_date BETWEEN :from_date AND :to_date AND (branch_id IS NULL OR branch_id = :branch_id)"), {"clinic_id": clinic_id, "branch_id": branch_id, "from_date": from_date, "to_date": to_date}).mappings().all()
+    holidays = {row["holiday_date"] for row in holiday_rows if row["starts_at"] is None and row["ends_at"] is None}
+    holiday_blocks = [(row["holiday_date"], row["starts_at"], row["ends_at"]) for row in holiday_rows if row["starts_at"] is not None and row["ends_at"] is not None]
+    busy_rows = db.execute(text("SELECT occupancy_start, occupancy_end FROM appointments WHERE clinic_id = :clinic_id AND doctor_id = :doctor_id AND blocks_time = true AND status NOT IN ('cancelled', 'rescheduled') AND occupancy_end > :from_date::date AND occupancy_start < (:to_date::date + interval '1 day')"), {"clinic_id": clinic_id, "doctor_id": doctor_id, "from_date": from_date, "to_date": to_date}).all()
+    busy_rows.extend(db.execute(text("SELECT starts_at, ends_at FROM leave_blocks WHERE clinic_id = :clinic_id AND doctor_id = :doctor_id AND ends_at > :from_date::date AND starts_at < (:to_date::date + interval '1 day')"), {"clinic_id": clinic_id, "doctor_id": doctor_id, "from_date": from_date, "to_date": to_date}).all())
+    busy_rows.extend(db.execute(text("SELECT starts_at, ends_at FROM blocked_slots WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND (doctor_id IS NULL OR doctor_id = :doctor_id) AND ends_at > :from_date::date AND starts_at < (:to_date::date + interval '1 day')"), {"clinic_id": clinic_id, "branch_id": branch_id, "doctor_id": doctor_id, "from_date": from_date, "to_date": to_date}).all())
+    slots = generate_slots(start_date=from_date, end_date=to_date, timezone_name=branch["timezone"], branch_intervals=[AvailabilityInterval(r["weekday"], r["opens_at"], r["closes_at"]) for r in hours], doctor_intervals=[AvailabilityInterval(r["weekday"], r["starts_at"], r["ends_at"], r["effective_from"], r["effective_to"], r["slot_cadence_minutes"]) for r in rules], duration_minutes=service["duration_minutes"], buffer_before_minutes=service["buffer_before_minutes"], buffer_after_minutes=service["buffer_after_minutes"], busy_ranges=[(row[0], row[1]) for row in busy_rows], holidays=holidays, holiday_blocks=holiday_blocks, minimum_notice=timedelta(minutes=0))
+    db.commit()
+    return {"data": [s.isoformat() for s in slots], "meta": {"request_id": request.state.request_id}}
+
+
 @appointment_router.get("/{appointment_id}")
 def appointment_detail(appointment_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     branch_id = _appointment_branch_id(db, session_token, appointment_id)
     session = _staff_authorized(db, session_token, "appointment.read", branch_id=branch_id)
-    row = db.execute(text("SELECT appointments.id, reference, branch_id, doctor_id, service_id, patient_id, (SELECT full_name FROM patients p WHERE p.clinic_id = appointments.clinic_id AND p.id = appointments.patient_id) AS patient_name, starts_at, ends_at, occupancy_start, occupancy_end, status, source, policy_snapshot, appointments.version, appointments.created_at, appointments.updated_at FROM appointments WHERE clinic_id = :clinic_id AND appointments.id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
+    row = db.execute(text("SELECT appointments.id, reference, branch_id, doctor_id, service_id, patient_id, token_number, (SELECT full_name FROM patients p WHERE p.clinic_id = appointments.clinic_id AND p.id = appointments.patient_id) AS patient_name, starts_at, ends_at, occupancy_start, occupancy_end, status, source, policy_snapshot, appointments.version, appointments.created_at, appointments.updated_at FROM appointments WHERE clinic_id = :clinic_id AND appointments.id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
     db.commit()
@@ -482,12 +504,20 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
         policy["appointment_type"] = payload.appointment_type
     if payload.payment_method:
         policy["payment_method"] = payload.payment_method
+    booking_date = starts_at.date()
+    token_number = db.execute(text("""
+        INSERT INTO appointment_token_sequences (clinic_id, branch_id, sequence_date, next_value)
+        VALUES (:clinic_id, :branch_id, :seq_date, 2)
+        ON CONFLICT (clinic_id, branch_id, sequence_date)
+        DO UPDATE SET next_value = appointment_token_sequences.next_value + 1
+        RETURNING next_value - 1
+    """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "seq_date": booking_date}).scalar_one()
     try:
         appointment = db.execute(text("""
-            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot)
-            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb))
-            RETURNING id, reference, status
-        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": doctor_id, "service_id": payload.service_id, "patient_id": patient_id, "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "reference": reference, "idempotency_key": idempotency_key, "body_hash": body_hash, "policy": json.dumps(policy)}).mappings().one()
+            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, token_number)
+            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :token_number)
+            RETURNING id, reference, status, token_number
+        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": doctor_id, "service_id": payload.service_id, "patient_id": patient_id, "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "reference": reference, "idempotency_key": idempotency_key, "body_hash": body_hash, "policy": json.dumps(policy), "token_number": token_number}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
         replay = _replay_idempotent_booking(db, clinic_id, idempotency_key, body_hash, request)
@@ -499,7 +529,7 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, to_status, actor_user_id) VALUES (:clinic_id, :appointment_id, 'confirmed', :actor)"), {"clinic_id": clinic_id, "appointment_id": appointment["id"], "actor": session["user_id"]})
     _audit(db, request, session, "appointment.create", appointment["id"])
     db.commit()
-    return {"data": {"reference": appointment["reference"], "status": appointment["status"]}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"reference": appointment["reference"], "status": appointment["status"], "token_number": appointment["token_number"], "starts_at": starts_at.isoformat()}, "meta": {"request_id": request.state.request_id}}
 
 
 @availability_router.get("")
@@ -727,8 +757,12 @@ def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doct
           AND occupancy_end > :occupancy_start AND occupancy_start < :occupancy_end
         LIMIT 1
     """), {**params, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end}).scalar_one_or_none()
-    if leave or blocked or busy:
-        raise _booking_unavailable()
+    if leave:
+        raise _booking_unavailable("The doctor is on leave during this time.")
+    if blocked:
+        raise _booking_unavailable("This time slot has been blocked.")
+    if busy:
+        raise _booking_unavailable("The selected time conflicts with an existing appointment.")
 
 
 def _record_public_booking_conflict(db: Session, clinic_id: UUID, request: Request) -> None:

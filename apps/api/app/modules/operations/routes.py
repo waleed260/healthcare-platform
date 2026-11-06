@@ -413,7 +413,8 @@ def queue_list(request: Request, cursor: str | None = Query(default=None, max_le
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
         SELECT q.id, q.appointment_id, q.status, q.checked_in_at, q.priority, q.version,
-               p.full_name, a.reference, a.starts_at
+               p.full_name, p.id AS patient_id, a.reference, a.starts_at,
+               a.doctor_id, a.service_id, a.policy_snapshot
         FROM queue_entries q
         JOIN appointments a ON a.id = q.appointment_id AND a.clinic_id = q.clinic_id
         JOIN patients p ON p.id = a.patient_id AND p.clinic_id = a.clinic_id

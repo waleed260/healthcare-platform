@@ -100,6 +100,49 @@ def _serialize_jsonb(field: str, val):
     return json.dumps(val)
 
 
+def _inventory_qty_map(items: list | None) -> dict[str, int]:
+    """Build {inventory_product_id: total_quantity} from treatments or medications."""
+    m: dict[str, int] = {}
+    for item in items or []:
+        pid = item.get("inventory_product_id") if isinstance(item, dict) else getattr(item, "inventory_product_id", None)
+        qty = (item.get("quantity") if isinstance(item, dict) else getattr(item, "quantity", None)) or 1
+        if pid:
+            m[pid] = m.get(pid, 0) + int(qty)
+    return m
+
+
+def _apply_inventory_deltas(db: Session, clinic_id, user_id, branch_id, old_row: dict, new_values: dict) -> None:
+    """Deduct/restore inventory based on changes to administered_treatments and medications."""
+    for field in ("administered_treatments", "medications"):
+        if field not in new_values:
+            continue
+        old_map = _inventory_qty_map(old_row.get(field))
+        new_map = _inventory_qty_map(new_values[field])
+        for pid in set(old_map) | set(new_map):
+            delta = old_map.get(pid, 0) - new_map.get(pid, 0)
+            if delta == 0:
+                continue
+            stock = db.execute(text(
+                "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = CAST(:pid AS uuid) FOR UPDATE"
+            ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid}).mappings().one_or_none()
+            if stock is None and delta < 0:
+                continue
+            if stock is None:
+                db.execute(text(
+                    "INSERT INTO inventory_stock (clinic_id, branch_id, product_id, quantity) VALUES (:clinic_id, :branch_id, CAST(:pid AS uuid), :qty)"
+                ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid, "qty": delta})
+            else:
+                new_qty = max(0, stock["quantity"] + delta)
+                db.execute(text(
+                    "UPDATE inventory_stock SET quantity = :qty, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"
+                ), {"clinic_id": clinic_id, "id": stock["id"], "qty": new_qty})
+            db.execute(text(
+                "INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, delta, reason, adjusted_by_user_id) "
+                "VALUES (:clinic_id, :branch_id, CAST(:pid AS uuid), :delta, :reason, :user_id)"
+            ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid, "delta": delta,
+                "reason": "Encounter treatment", "user_id": user_id})
+
+
 # ── List ──────────────────────────────────────────────────────────────
 @router.get("")
 def encounter_list(
@@ -192,6 +235,15 @@ def encounter_create(
     doctor = db.execute(text("SELECT 1 FROM doctor_profiles WHERE clinic_id = :clinic_id AND id = :doctor_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "doctor_id": payload.doctor_id}).scalar_one_or_none()
     if doctor is None:
         raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
+    if payload.appointment_id:
+        appt = db.execute(text("SELECT patient_id, doctor_id, status FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": payload.appointment_id}).mappings().one_or_none()
+        if appt is None:
+            raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
+        if appt["patient_id"] != payload.patient_id:
+            raise _error("INVALID_INPUT", "Patient does not match the appointment.", status.HTTP_400_BAD_REQUEST)
+        existing_enc = db.execute(text("SELECT id FROM encounter_forms WHERE clinic_id = :clinic_id AND appointment_id = :appt_id AND archived_at IS NULL LIMIT 1"), {"clinic_id": session["clinic_id"], "appt_id": payload.appointment_id}).scalar_one_or_none()
+        if existing_enc is not None:
+            raise _error("DUPLICATE", "An encounter already exists for this appointment.", status.HTTP_409_CONFLICT)
     row = db.execute(text("""
         INSERT INTO encounter_forms (clinic_id, patient_id, appointment_id, doctor_id, branch_id,
                                      encounter_type, chief_complaint, arrival_vitals, created_by,
@@ -240,7 +292,10 @@ def encounter_update(
     csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict:
     session = _write_authorized(db, request, session_token, "clinical.manage", csrf_token)
-    current = db.execute(text("SELECT version, status FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": encounter_id}).mappings().one_or_none()
+    inventory_fields = {"administered_treatments", "medications"}
+    needs_inventory = bool(inventory_fields & set((payload.model_dump(exclude={"expected_version"}, exclude_unset=True)).keys()))
+    select_extra = ", branch_id, administered_treatments, medications" if needs_inventory else ""
+    current = db.execute(text(f"SELECT version, status{select_extra} FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": encounter_id}).mappings().one_or_none()
     if current is None:
         raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
     if current["status"] in ("discharged", "finalized"):
@@ -267,6 +322,8 @@ def encounter_update(
         WHERE clinic_id = :clinic_id AND id = :id
         RETURNING {RETURNING_COLUMNS}
     """), params).mappings().one()
+    if needs_inventory and current.get("branch_id"):
+        _apply_inventory_deltas(db, session["clinic_id"], session["user_id"], current["branch_id"], current, values)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.update", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(values.keys())})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
@@ -302,6 +359,8 @@ def encounter_status_update(
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.status", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"from": current["status"], "to": payload.status})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
 
 
 # ── Discharge ─────────────────────────────────────────────────────────

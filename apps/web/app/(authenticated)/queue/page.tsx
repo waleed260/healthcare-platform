@@ -6,7 +6,7 @@ import { api, apiPage, errorMessage, post, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 
-type QueueEntry = { id: string; appointment_id: string; status: "waiting" | "in_consultation"; checked_in_at: string; priority: number; full_name: string; reference: string; starts_at: string; version: number };
+type QueueEntry = { id: string; appointment_id: string; status: "waiting" | "in_consultation"; checked_in_at: string; priority: number; full_name: string; patient_id: string; reference: string; starts_at: string; doctor_id: string | null; service_id: string | null; policy_snapshot: Record<string, unknown> | null; version: number };
 
 type TodayAppointment = { id: string; reference: string; patient_name: string; starts_at: string; status: string; version: number };
 
@@ -199,7 +199,7 @@ export default function QueuePage() {
           {canManage && <button className="ghost-button" type="button" onClick={() => { setReorderTarget(reorderTarget === entry.id ? null : entry.id); setReorderPriority(entry.priority); setReorderReason(""); }} title="Set priority">P</button>}
           <button className="button queue-action" type="button" onClick={() => void advance(entry)} disabled={!canManage || working === entry.id} title={!canManage ? "Requires queue.manage" : undefined}>{working === entry.id ? "Working…" : entry.status === "waiting" ? "Start consultation" : "Complete"}<span>→</span></button>
           {entry.status === "in_consultation" && <>
-            <Link className="button button-secondary queue-inline-btn" href={`/encounters?start=1&appointment_id=${entry.appointment_id}`}>Start encounter</Link>
+            <Link className="button button-secondary queue-inline-btn" href={`/encounters?start=1&appointment_id=${entry.appointment_id}&patient_id=${entry.patient_id}&doctor_id=${entry.doctor_id ?? ""}${entry.policy_snapshot?.appointment_type ? `&type=${entry.policy_snapshot.appointment_type}` : ""}`}>Start encounter</Link>
             <Link className="button button-secondary queue-inline-btn" href={`/billing?from_appointment=${entry.appointment_id}`}>Billing</Link>
           </>}
           {canManage && <button className="ghost-button queue-remove" type="button" onClick={() => void remove(entry)} disabled={working === entry.id} title="Remove from queue">✕</button>}

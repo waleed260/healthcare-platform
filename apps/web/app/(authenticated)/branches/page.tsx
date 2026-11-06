@@ -450,7 +450,7 @@ export default function BranchesPage() {
                             {/* Doctor's services */}
                             <div style={{ marginTop: 8, paddingTop: 6, borderTop: "1px solid var(--line)" }}>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                                <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'DM Mono', monospace", letterSpacing: ".06em" }}>SERVICES ({dSvcs.length})</span>
+                                <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "'DM Mono', monospace", letterSpacing: ".06em" }}>DOCTOR SERVICES ({dSvcs.length})</span>
                                 {canManageService && unassignedSvcs.length > 0 && (
                                   <select disabled={busy} style={{ fontSize: 10, padding: "2px 6px", border: "1px solid var(--line)", borderRadius: 4, background: "white" }}
                                     value="" onChange={(e) => { if (e.target.value) void assignDoctorService(d.id, e.target.value); }}>
@@ -477,7 +477,7 @@ export default function BranchesPage() {
                   )}
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <p className="eyebrow" style={{ margin: 0 }}>SERVICES ({svcs.length})</p>
+                    <p className="eyebrow" style={{ margin: 0 }}>BRANCH SERVICES ({svcs.length})</p>
                     {canManageService && (() => {
                       const unassigned = allServices.filter((s) => !svcs.some((bs) => bs.id === s.id));
                       return unassigned.length > 0 ? (

@@ -71,6 +71,20 @@ export default function EncountersPage() {
         if (p) setSelectedPatient(p);
       }).catch(() => {});
     }
+    if (apptId && (!doctorId || !patientId)) {
+      void api<{ doctor_id?: string; patient_id?: string; policy_snapshot?: Record<string, unknown> }>(`/api/v1/appointments/${apptId}`).then((a) => {
+        if (a) {
+          if (!doctorId && a.doctor_id) setSelectedDoctor(a.doctor_id);
+          if (!patientId && a.patient_id) {
+            void api<Patient>(`/api/v1/patients/${a.patient_id}`).then((p) => { if (p) setSelectedPatient(p); }).catch(() => {});
+          }
+          if (!type && a.policy_snapshot?.appointment_type) {
+            const at = String(a.policy_snapshot.appointment_type);
+            if (encounterTypes.includes(at as typeof encounterTypes[number])) setEncType(at);
+          }
+        }
+      }).catch(() => {});
+    }
   }, [searchParams]);
 
   const loadEncounters = useCallback(async () => {

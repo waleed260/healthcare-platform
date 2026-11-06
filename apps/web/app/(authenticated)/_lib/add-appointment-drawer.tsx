@@ -49,6 +49,11 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(1);
   const [branchLoadError, setBranchLoadError] = useState(false);
+  const [serviceLoadError, setServiceLoadError] = useState(false);
+  const [bookingResult, setBookingResult] = useState<{ reference: string; token_number: number; starts_at: string } | null>(null);
+  const [slotDate, setSlotDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -64,16 +69,25 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   }, [open]);
 
   useEffect(() => {
-    if (!form.branch_id) { setBranchServices([]); setBranchDoctors([]); setBranchLoadError(false); return; }
+    if (!form.branch_id) { setBranchServices([]); setBranchDoctors([]); setBranchLoadError(false); setServiceLoadError(false); return; }
     setBranchLoadError(false);
-    void Promise.all([
-      api<Option[]>(`/api/v1/branches/${form.branch_id}/services?limit=100`),
-      api<Option[]>(`/api/v1/branches/${form.branch_id}/doctors?limit=100`),
-    ]).then(([s, d]) => {
-      setBranchServices(s ?? []);
-      setBranchDoctors(d ?? []);
-    }).catch(() => { setBranchLoadError(true); });
+    setServiceLoadError(false);
+    void api<Option[]>(`/api/v1/branches/${form.branch_id}/services?limit=100`)
+      .then((s) => setBranchServices(s ?? []))
+      .catch(() => { setServiceLoadError(true); setBranchServices([]); });
+    void api<Option[]>(`/api/v1/branches/${form.branch_id}/doctors?limit=100`)
+      .then((d) => setBranchDoctors(d ?? []))
+      .catch(() => { setBranchLoadError(true); setBranchDoctors([]); });
   }, [form.branch_id]);
+
+  useEffect(() => {
+    if (!form.branch_id || !form.doctor_id || !form.service_id || !slotDate) { setAvailableSlots([]); return; }
+    setLoadingSlots(true);
+    const params = new URLSearchParams({ branch_id: form.branch_id, service_id: form.service_id, doctor_id: form.doctor_id, from_date: slotDate, to_date: slotDate });
+    void api<string[]>(`/api/v1/appointments/availability?${params.toString()}`).then((slots) => {
+      setAvailableSlots(slots ?? []);
+    }).catch(() => setAvailableSlots([])).finally(() => setLoadingSlots(false));
+  }, [form.branch_id, form.doctor_id, form.service_id, slotDate]);
 
   useEffect(() => {
     if (!form.doctor_id) { setDoctorServiceIds(new Set()); return; }
@@ -99,6 +113,9 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
     setBranchDoctors([]);
     setDoctorServiceIds(new Set());
     setBranchLoadError(false);
+    setBookingResult(null);
+    setAvailableSlots([]);
+    setSlotDate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; });
   }, [setForm, resetDirty]);
 
   useEffect(() => { if (!open) reset(); }, [open, reset]);
@@ -135,14 +152,19 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
       body.appointment_type = form.appointment_type;
       body.payment_method = form.payment_method;
 
-      const result = await api<{ reference?: string }>("/api/v1/appointments", {
+      const result = await api<{ reference?: string; token_number?: number; starts_at?: string }>("/api/v1/appointments", {
         method: "POST",
         headers: { ...writeHeaders(), "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify(body),
       });
       toast.success(`Appointment ${result?.reference ?? ""} booked.`);
       onCreated?.();
-      onClose();
+      if (result?.token_number) {
+        setBookingResult({ reference: result.reference ?? "", token_number: result.token_number, starts_at: result.starts_at ?? form.starts_at });
+        setStep(6);
+      } else {
+        onClose();
+      }
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : "The appointment could not be booked.");
     } finally {
@@ -165,7 +187,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
       title="Book appointment"
       subtitle="NEW BOOKING"
       dirty={dirty}
-      footer={
+      footer={step === 6 ? undefined :
         <>
           {step > 1 && <button className="button button-secondary" type="button" onClick={() => setStep((s) => s - 1)} disabled={busy}>← Back</button>}
           {step < 5 && <button className="button button-primary" type="button" onClick={() => setStep((s) => s + 1)} disabled={!canProceed(step)}>Next <span>→</span></button>}
@@ -243,11 +265,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
             ? branchServices.filter((s) => doctorServiceIds.has(s.id))
             : branchServices;
           return <>
-            <p className="eyebrow" style={{ marginBottom: 12 }}>STEP 3 — DATE, TIME & SERVICE</p>
-            <label style={{ display: "grid", gap: 6, marginBottom: 16 }}>
-              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>Date & time</span>
-              <input type="datetime-local" required value={form.starts_at} onChange={(e) => setForm((f) => ({ ...f, starts_at: e.target.value }))} />
-            </label>
+            <p className="eyebrow" style={{ marginBottom: 12 }}>STEP 3 — DATE, SERVICE & TIME</p>
             <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500, display: "block", marginBottom: 8 }}>Service</span>
             <div style={{ display: "grid", gap: 8 }}>
               {availableServices.map((s) => (
@@ -261,10 +279,26 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
                   {s.name}
                 </button>
               ))}
-              {availableServices.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>
-                {doctorServiceIds.size > 0 ? "This doctor has no services at this branch. Assign services from the Branches page." : "No services assigned to this branch. Assign services from the Branches page."}
+              {availableServices.length === 0 && <p style={{ color: serviceLoadError ? "var(--coral, #a14937)" : "var(--muted)", fontSize: 13 }}>
+                {serviceLoadError ? "Could not load services. Please try again." : doctorServiceIds.size > 0 ? "This doctor has no services at this branch. Assign services from the Branches page." : "No services assigned to this branch. Assign services from the Branches page."}
               </p>}
             </div>
+            {form.service_id && <>
+              <label style={{ display: "grid", gap: 6, margin: "16px 0 8px" }}>
+                <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>Date</span>
+                <input type="date" value={slotDate} onChange={(e) => { setSlotDate(e.target.value); setForm((f) => ({ ...f, starts_at: "" })); }} />
+              </label>
+              <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500, display: "block", marginBottom: 8 }}>Available times</span>
+              {loadingSlots && <p style={{ color: "var(--muted)", fontSize: 13 }}>Loading available times…</p>}
+              {!loadingSlots && availableSlots.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>No available times for this date. Try a different day.</p>}
+              {!loadingSlots && availableSlots.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 6 }}>
+                {availableSlots.map((slot) => {
+                  const d = new Date(slot);
+                  const iso = d.toISOString();
+                  return <button key={slot} type="button" className={`button ${form.starts_at === iso ? "button-primary" : "button-secondary"}`} style={{ padding: "8px 4px", fontSize: 13 }} onClick={() => setForm((f) => ({ ...f, starts_at: iso }))}>{d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</button>;
+                })}
+              </div>}
+            </>}
           </>;
         })()}
 
@@ -312,6 +346,40 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
               : <label>Date of birth<input type="date" value={form.date_of_birth} onChange={(e) => setForm((f) => ({ ...f, date_of_birth: e.target.value }))} /></label>
             }
           </div>}
+        </>}
+
+        {/* Step 6: Booking Success + Print Token */}
+        {step === 6 && bookingResult && <>
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Appointment Booked</h2>
+            <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>Reference: {bookingResult.reference}</p>
+          </div>
+          <div id="token-print-area" style={{ background: "var(--paper, #f9f9f6)", padding: 20, borderRadius: 10, border: "2px dashed var(--line, #e5e5e3)", marginBottom: 16 }}>
+            <div style={{ textAlign: "center", marginBottom: 12 }}>
+              <p className="eyebrow" style={{ margin: "0 0 4px" }}>TOKEN NUMBER</p>
+              <div style={{ fontSize: 48, fontWeight: 700, color: "var(--leaf, #274c42)" }}>{bookingResult.token_number}</div>
+            </div>
+            <dl style={{ margin: 0, display: "grid", gap: 6, fontSize: 13 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Patient</dt><dd style={{ margin: 0 }}>{form.patient_mode === "existing" ? (patients.find((p) => p.id === form.patient_id)?.full_name ?? "—") : form.full_name || "—"}</dd></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Doctor</dt><dd style={{ margin: 0 }}>{(branchDoctors.find((d) => d.id === form.doctor_id) ?? doctors.find((d) => d.id === form.doctor_id))?.public_name ?? "—"}</dd></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Service</dt><dd style={{ margin: 0 }}>{branchServices.find((s) => s.id === form.service_id)?.name ?? "—"}</dd></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Date/Time</dt><dd style={{ margin: 0 }}>{new Date(bookingResult.starts_at).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</dd></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><dt style={{ color: "var(--muted)", fontSize: 11 }}>Reference</dt><dd style={{ margin: 0 }}>{bookingResult.reference}</dd></div>
+            </dl>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="button button-primary" type="button" style={{ flex: 1 }} onClick={() => {
+              const el = document.getElementById("token-print-area");
+              if (!el) return;
+              const w = window.open("", "_blank", "width=400,height=500");
+              if (!w) return;
+              w.document.write(`<html><head><title>Token #${bookingResult.token_number}</title><style>body{font-family:system-ui,sans-serif;padding:20px}dt{color:#666;font-size:11px}dd{margin:0}dl{display:grid;gap:6px}dl>div{display:flex;justify-content:space-between}.token{font-size:48px;font-weight:700;text-align:center;margin:16px 0}.eyebrow{font-size:10px;letter-spacing:1px;text-transform:uppercase;text-align:center;margin:0 0 4px}@media print{button{display:none}}</style></head><body>${el.innerHTML}</body></html>`);
+              w.document.close();
+              w.print();
+            }}>Print Token</button>
+            <button className="button button-secondary" type="button" style={{ flex: 1 }} onClick={onClose}>Close</button>
+          </div>
         </>}
 
         {/* Step 5: Payment Method + Review */}
