@@ -1360,26 +1360,33 @@ legend{font-size:var(--text-xs)}
 .enc-print-header{display:none}
 @media print{
   @page{size:A4;margin:8mm 10mm}
-  .workspace-sidebar,.workspace-topbar,.pipeline-toolbar,.form-actions,.header-actions,.button,.ghost-button,.back-link,.mobile-nav-toggle,.enc-detail-internal-note{display:none!important}
+  html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .workspace-sidebar,.workspace-topbar,.pipeline-toolbar,.form-actions,.header-actions,.button,.ghost-button,.back-link,.mobile-nav-toggle,.enc-detail-internal-note,nav,aside{display:none!important}
   .workspace-layout{display:block!important}
   .workspace-body .dash-content{width:100%!important;padding:0!important;margin:0!important}
-  .surface-card{break-inside:avoid;border:1px solid #ddd!important;box-shadow:none!important;padding:6px 8px!important;margin:4px 0!important}
-  .enc-print-header{display:block!important;margin-bottom:6px;padding-bottom:4px;border-bottom:1.5px solid #333}
+  .surface-card{break-inside:avoid;page-break-inside:avoid;border:1px solid #ddd!important;box-shadow:none!important;padding:6px 8px!important;margin:4px 0!important}
+  .enc-print-header{display:block!important;margin-bottom:6px;padding-bottom:4px;border-bottom:1.5px solid #333;page-break-after:avoid}
   .enc-print-header h2{font-size:14px;margin:0 0 2px}
   .enc-print-header p{font-size:10px;margin:1px 0}
-  body{background:#fff!important;color:#000!important;font-size:10px;line-height:1.25}
-  h1,h2,h3{font-size:11px;margin:2px 0}
+  body{background:#fff!important;color:#000!important;font-size:10px;line-height:1.25;orphans:3;widows:3}
+  h1,h2,h3{font-size:11px;margin:2px 0;page-break-after:avoid}
   p,dd,dt,span,strong,label,li{font-size:10px!important}
   .eyebrow{font-size:8px!important;letter-spacing:.5px;margin:2px 0 1px!important}
-  .enc-d-print-section{margin-top:4px!important}
+  .enc-d-print-section{margin-top:4px!important;page-break-inside:avoid}
   .enc-d-print-title{font-size:13px;margin-bottom:2px}
   .enc-d-print-token{font-size:12px;margin:0}
   .enc-d-print-status{font-size:10px;margin:0}
   .enc-d-print-doctor{font-size:10px;margin:1px 0 0}
   .enc-d-print-date{font-size:9px;margin:0}
-  .enc-detail-vitals-grid{gap:4px!important;grid-template-columns:repeat(4,1fr)!important}
-  .enc-detail-ref-bar{margin:2px 0!important;padding:2px 0!important}
-  .enc-detail-sign-footer{margin-top:6px!important;padding-top:4px!important}
+  .enc-detail-vitals-grid{gap:4px!important;grid-template-columns:repeat(4,1fr)!important;page-break-inside:avoid}
+  .enc-detail-ref-bar{margin:2px 0!important;padding:2px 0!important;page-break-inside:avoid}
+  .enc-detail-sign-footer{margin-top:6px!important;padding-top:4px!important;page-break-inside:avoid}
   .enc-d-section-gap{margin-top:4px!important}
   a{color:inherit!important;text-decoration:none!important}
+  /* Letter-paper fallback: keep margins tight so A4-tuned content still fits */
+  @page :first{margin-top:6mm}
+}
+@media print and (max-width:150mm){
+  @page{margin:5mm}
+  body{font-size:9px}
 }
