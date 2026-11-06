@@ -245,7 +245,8 @@ def list_doctors(request: Request, cursor: str | None = Query(default=None, max_
         FROM doctor_profiles
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = doctor_profiles.id AND s.user_id = :user_id))
+               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = doctor_profiles.id AND s.user_id = :user_id)
+               OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = doctor_profiles.id))
           AND (:after_name IS NULL OR public_name > :after_name OR (public_name = :after_name AND id > :after_id))
         ORDER BY public_name, id
         LIMIT :page_size
@@ -284,7 +285,8 @@ def update_doctor(doctor_id: str, payload: DoctorUpdate, request: Request, db: S
         UPDATE doctor_profiles SET {', '.join(f'{field} = :{field}' for field in values)}, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :doctor_id AND archived_at IS NULL AND version = :expected_version
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id))
+               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id)
+               OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = CAST(:doctor_id AS uuid)))
         RETURNING id, public_name, specialty, registration, license_number, verification_status,
                   bio, phone, email, consultation_duration_minutes, booking_status, room_id, notes, status, version, updated_at
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
@@ -293,7 +295,8 @@ def update_doctor(doctor_id: str, payload: DoctorUpdate, request: Request, db: S
             SELECT version FROM doctor_profiles
             WHERE clinic_id = :clinic_id AND id = :doctor_id AND archived_at IS NULL
               AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-                   OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id))
+                   OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id)
+                   OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = CAST(:doctor_id AS uuid)))
         """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id}).scalar_one_or_none()
         if exists is None:
             raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
@@ -317,7 +320,8 @@ def doctor_detail(doctor_id: str, request: Request, db: Session = Depends(get_db
         FROM doctor_profiles d
         WHERE d.clinic_id = :clinic_id AND d.id = CAST(:doctor_id AS uuid) AND d.archived_at IS NULL
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = d.id AND s.user_id = :user_id))
+               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = d.id AND s.user_id = :user_id)
+               OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = d.id))
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
@@ -356,7 +360,8 @@ def doctor_status(doctor_id: str, payload: CatalogStatusUpdate, request: Request
             version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :doctor_id
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
-               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id))
+               OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id)
+               OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = CAST(:doctor_id AS uuid)))
         RETURNING id, public_name, status, version, archived_at, updated_at
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id, "status": payload.status}).mappings().one_or_none()
     if row is None:
@@ -591,6 +596,7 @@ def assign_doctor_service(doctor_id: str, service_id: str, request: Request, db:
                 JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id
                 WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = :doctor_id AND s.user_id = :user_id
             )
+            OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = CAST(:doctor_id AS uuid))
           )
     """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "doctor_id": doctor_id}).scalar_one_or_none()
     service_exists = db.execute(text("SELECT 1 FROM services WHERE clinic_id = :clinic_id AND id = :service_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "service_id": service_id}).scalar_one_or_none()
