@@ -203,7 +203,7 @@ def purchase_receive(
 ) -> dict:
     session = _write_authorized(db, request, session_token, "purchase.manage", csrf_token)
     po = db.execute(text("""
-        SELECT po.id, po.status, po.version, w.branch_id, po.warehouse_id, po.order_number
+        SELECT po.id, po.status, po.version, w.branch_id, po.warehouse_id, po.order_number, po.currency
         FROM purchase_orders po
         JOIN warehouses w ON w.clinic_id = po.clinic_id AND w.id = po.warehouse_id
         WHERE po.clinic_id = :clinic_id AND po.id = :id
@@ -216,9 +216,10 @@ def purchase_receive(
         raise _error("VERSION_CONFLICT", "The purchase order changed before this update.", status.HTTP_409_CONFLICT)
     branch_id = po["branch_id"]
     warehouse_id = po["warehouse_id"]
+    purchase_expense_total = 0
     for recv_line in payload.lines:
         po_line = db.execute(text(
-            "SELECT id, product_id, quantity_ordered, quantity_received FROM purchase_order_lines "
+            "SELECT id, product_id, quantity_ordered, quantity_received, unit_cost_minor FROM purchase_order_lines "
             "WHERE clinic_id = :clinic_id AND id = :line_id AND purchase_order_id = :po_id"
         ), {"clinic_id": session["clinic_id"], "line_id": recv_line.line_id, "po_id": purchase_id}).mappings().one_or_none()
         if po_line is None:
@@ -227,6 +228,7 @@ def purchase_receive(
         db.execute(text("UPDATE purchase_order_lines SET quantity_received = :qty WHERE clinic_id = :clinic_id AND id = :id"),
                    {"clinic_id": session["clinic_id"], "id": recv_line.line_id, "qty": new_received})
         if recv_line.quantity_received > 0:
+            purchase_expense_total += int(recv_line.quantity_received) * int(po_line["unit_cost_minor"])
             stock = db.execute(text(
                 "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id FOR UPDATE"
             ), {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": po_line["product_id"]}).mappings().one_or_none()
@@ -254,12 +256,27 @@ def purchase_receive(
         "UPDATE purchase_orders SET status = :status, received_at = CASE WHEN :status = 'received' THEN now() ELSE received_at END, "
         "version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"
     ), {"clinic_id": session["clinic_id"], "id": purchase_id, "status": new_status})
+    # Finance posting: record this receiving event as an inventory purchase
+    # expense so cashier/net/day reports reflect the cost on the received date.
+    # Each receive call makes its own expense row — partial receives aggregate
+    # correctly across multiple expense rows without double-counting a single
+    # receipt.
+    if purchase_expense_total > 0:
+        db.execute(text("""
+            INSERT INTO expenses (clinic_id, branch_id, category, description, amount_minor, currency, incurred_on, recorded_by_user_id)
+            VALUES (:clinic_id, :branch_id, 'inventory_purchase', :description, :amount_minor, :currency, (now() AT TIME ZONE (SELECT timezone FROM clinics WHERE id = :clinic_id))::date, :user_id)
+        """), {
+            "clinic_id": session["clinic_id"], "branch_id": branch_id,
+            "description": f"Purchase order {po['order_number']} (receive)",
+            "amount_minor": purchase_expense_total, "currency": po["currency"],
+            "user_id": session["user_id"],
+        })
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"],
                  action="inventory.purchase.receive", entity_type="purchase_order", entity_id=purchase_id,
                  outcome="success", request_id=UUID(request.state.request_id),
-                 metadata={"new_status": new_status, "lines_received": len(payload.lines)})
+                 metadata={"new_status": new_status, "lines_received": len(payload.lines), "expense_minor": purchase_expense_total})
     db.commit()
-    return {"data": {"id": purchase_id, "status": new_status, "fully_received": fully_received}, "meta": {"request_id": request.state.request_id}}
+    return {"data": {"id": purchase_id, "status": new_status, "fully_received": fully_received, "expense_minor": purchase_expense_total}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/{purchase_id}/cancel")

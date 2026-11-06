@@ -53,7 +53,10 @@ def test_appointment_list_applies_doctor_and_service_filters(monkeypatch) -> Non
         branch_id=branch_id,
         doctor_id=doctor_id,
         service_id=service_id,
+        patient_id=None,
         appointment_status="confirmed",
+        date_from=None,
+        date_to=None,
         cursor=None,
         limit=50,
         db=db,
@@ -63,8 +66,8 @@ def test_appointment_list_applies_doctor_and_service_filters(monkeypatch) -> Non
     sql = str(db.execute.call_args.args[0])
     params = db.execute.call_args.args[1]
     assert result["data"] == []
-    assert ":doctor_id IS NULL OR doctor_id = :doctor_id" in sql
-    assert ":service_id IS NULL OR service_id = :service_id" in sql
+    assert ":doctor_id IS NULL OR a.doctor_id = :doctor_id" in sql
+    assert ":service_id IS NULL OR a.service_id = :service_id" in sql
     assert params["doctor_id"] == doctor_id
     assert params["service_id"] == service_id
 

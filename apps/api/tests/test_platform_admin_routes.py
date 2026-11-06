@@ -46,6 +46,10 @@ def test_platform_lifecycle_suspend_revokes_sessions_tokens_and_audits_reason(mo
 
 def test_platform_guard_rejects_non_admin_clinic_session(monkeypatch) -> None:
     db = Mock()
+    # The user row lookup returns no is_platform_admin flag — i.e., the user is
+    # a regular clinic member. Without this, the Mock's auto-generated return
+    # is truthy and the guard silently lets a clinic session through.
+    db.execute.return_value = Mock(scalar_one_or_none=lambda: None)
     monkeypatch.setattr(admin_routes, "_session_or_401", lambda db, token: {"user_id": uuid4(), "clinic_id": uuid4()})
 
     with pytest.raises(Exception) as error:

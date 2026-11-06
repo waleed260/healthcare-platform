@@ -230,6 +230,17 @@ def upgrade() -> None:
     _enable_rls("inventory_transfer_lines")
     op.execute("CREATE INDEX ix_transfer_lines_transfer ON inventory_transfer_lines (clinic_id, transfer_id)")
 
+    # Explicit per-table GRANTs so the static runtime-grants guard in
+    # tests/test_runtime_grants.py can see them; _enable_rls already
+    # issues an equivalent GRANT at runtime, but it uses an f-string
+    # that the static regex cannot resolve.
+    op.execute(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON "
+        "suppliers, warehouses, po_number_sequences, purchase_orders, "
+        "purchase_order_lines, transfer_number_sequences, inventory_transfers, "
+        "inventory_transfer_lines TO healthcare_runtime"
+    )
+
 
 def downgrade() -> None:
     for table in (

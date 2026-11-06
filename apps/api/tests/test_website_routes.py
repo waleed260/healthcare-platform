@@ -25,10 +25,11 @@ def test_auth_me_returns_website_permissions_for_role(monkeypatch, role, effecti
     session = {"user_id": user_id, "clinic_id": clinic_id, "display_name": role, "normalized_email": f"{role}@example.test"}
     monkeypatch.setattr(identity_routes, "_session_or_401", lambda db, token: session)
     db = Mock()
-    db.execute.side_effect = [
-        Mock(scalars=lambda: Mock(all=lambda: effective_permissions)),
-        Mock(scalars=lambda: Mock(all=lambda: [])),
-    ]
+    db.execute.return_value = Mock(mappings=lambda: Mock(one_or_none=lambda: {
+        "slug": "clinic-x",
+        "role_permissions": list(effective_permissions),
+        "support_permissions": [],
+    }))
 
     result = identity_routes.me(_request(), db, "session-token")
 
