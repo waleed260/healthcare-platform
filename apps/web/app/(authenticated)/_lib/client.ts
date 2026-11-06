@@ -1,4 +1,4 @@
-import { cachedFetch, cachedRefData } from "./session-cache";
+import { cachedFetch, cachedRefData, invalidateCache } from "./session-cache";
 
 export type ApiEnvelope<T> = { data?: T; error?: { code?: string; message?: string; fields?: Record<string, string> } };
 
@@ -33,6 +33,7 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
   const isGet = !init?.method || init.method === "GET";
   if (isGet && SESSION_CACHED.has(url)) return cachedFetch<T>(url, 60_000);
   if (isGet && REF_CACHED.has(url)) return cachedRefData<T>(url);
+  if (!isGet) for (const cached of REF_CACHED) invalidateCache(cached);
   const response = await fetch(url, { credentials: "include", ...(isGet ? {} : { cache: "no-store" as const }), ...init });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (!response.ok) {
