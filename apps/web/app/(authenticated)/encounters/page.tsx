@@ -57,35 +57,35 @@ export default function EncountersPage() {
   useEffect(() => {
     if (startHandled.current) return;
     if (searchParams.get("start") !== "1") return;
+    // Wait for the doctor list so the <select> renders the inherited option.
+    if (doctors.length === 0) return;
     startHandled.current = true;
     setShowForm(true);
     const apptId = searchParams.get("appointment_id");
-    const doctorId = searchParams.get("doctor_id");
+    const urlDoctorId = searchParams.get("doctor_id");
     const patientId = searchParams.get("patient_id");
-    const type = searchParams.get("type");
+    const urlType = searchParams.get("type");
     if (apptId) setAppointmentId(apptId);
-    if (doctorId) setSelectedDoctor(doctorId);
-    if (type && encounterTypes.includes(type as typeof encounterTypes[number])) setEncType(type);
+    if (urlDoctorId && doctors.some((d) => d.id === urlDoctorId)) setSelectedDoctor(urlDoctorId);
+    if (urlType && encounterTypes.includes(urlType as typeof encounterTypes[number])) setEncType(urlType);
     if (patientId) {
       void api<Patient>(`/api/v1/patients/${patientId}`).then((p) => {
         if (p) setSelectedPatient(p);
       }).catch(() => {});
     }
-    if (apptId && (!doctorId || !patientId)) {
+    // Always fetch the appointment as source of truth; URL params are hints only.
+    if (apptId) {
       void api<{ doctor_id?: string; patient_id?: string; policy_snapshot?: Record<string, unknown> }>(`/api/v1/appointments/${apptId}`).then((a) => {
-        if (a) {
-          if (!doctorId && a.doctor_id) setSelectedDoctor(a.doctor_id);
-          if (!patientId && a.patient_id) {
-            void api<Patient>(`/api/v1/patients/${a.patient_id}`).then((p) => { if (p) setSelectedPatient(p); }).catch(() => {});
-          }
-          if (!type && a.policy_snapshot?.appointment_type) {
-            const at = String(a.policy_snapshot.appointment_type);
-            if (encounterTypes.includes(at as typeof encounterTypes[number])) setEncType(at);
-          }
+        if (!a) return;
+        if (a.doctor_id && doctors.some((d) => d.id === a.doctor_id)) setSelectedDoctor(a.doctor_id);
+        if (!patientId && a.patient_id) {
+          void api<Patient>(`/api/v1/patients/${a.patient_id}`).then((p) => { if (p) setSelectedPatient(p); }).catch(() => {});
         }
+        const at = a.policy_snapshot?.appointment_type;
+        if (typeof at === "string" && encounterTypes.includes(at as typeof encounterTypes[number])) setEncType(at);
       }).catch(() => {});
     }
-  }, [searchParams]);
+  }, [searchParams, doctors]);
 
   const loadEncounters = useCallback(async () => {
     setLoading(true);
