@@ -134,7 +134,6 @@ export default function EncounterDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("arrival");
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Assessment
   const [complaint, setComplaint] = useState("");
@@ -272,7 +271,6 @@ export default function EncounterDetailPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    void api<{ user_id: string }>("/api/v1/auth/me").then((s) => { if (s?.user_id) setCurrentUserId(s.user_id); }).catch(() => {});
     void api<CatalogService[]>("/api/v1/services?limit=100").then((d) => setCatalogServices((d ?? []).filter((s) => s.status === "active"))).catch(() => setCatalogLoadFailed(true));
     void api<InventoryProduct[]>("/api/v1/inventory/products?limit=100").then((d) => setInventoryProducts((d ?? []).filter((p) => p.status === "active"))).catch(() => setCatalogLoadFailed(true));
   }, []);
