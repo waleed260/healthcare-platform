@@ -436,15 +436,21 @@ def encounter_discharge(
     }).mappings().one()
     if payload.follow_up_date:
         reason = (payload.follow_up_instructions or "Discharge follow-up").strip()[:500] or "Discharge follow-up"
+        tz = db.execute(text("""
+            SELECT COALESCE(b.timezone, c.timezone, 'UTC') AS tz
+            FROM clinics c LEFT JOIN branches b
+              ON b.clinic_id = c.id AND b.id = CAST(:branch_id AS uuid)
+            WHERE c.id = :clinic_id
+        """), {"clinic_id": session["clinic_id"], "branch_id": str(row["branch_id"]) if row["branch_id"] else None}).scalar_one()
         db.execute(text("""
             INSERT INTO follow_up_tasks (clinic_id, patient_id, appointment_id, reason, due_at, priority, status)
             SELECT :clinic_id, :patient_id, :appointment_id, :reason,
-                   (CAST(:follow_up_date AS date) + time '09:00')::timestamptz, 'normal', 'due'
+                   ((CAST(:follow_up_date AS date) + time '09:00') AT TIME ZONE :tz), 'normal', 'due'
             WHERE NOT EXISTS (
                 SELECT 1 FROM follow_up_tasks
                 WHERE clinic_id = :clinic_id AND patient_id = :patient_id
                   AND reason = :reason AND status IN ('due', 'contacted', 'booked')
-                  AND due_at = (CAST(:follow_up_date AS date) + time '09:00')::timestamptz
+                  AND due_at = ((CAST(:follow_up_date AS date) + time '09:00') AT TIME ZONE :tz)
                   AND (appointment_id IS NOT DISTINCT FROM CAST(:appointment_id AS uuid))
             )
         """), {
@@ -453,6 +459,7 @@ def encounter_discharge(
             "appointment_id": str(row["appointment_id"]) if row["appointment_id"] else None,
             "reason": reason,
             "follow_up_date": payload.follow_up_date,
+            "tz": tz,
         })
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.discharge", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"outcome": payload.discharge_outcome, "follow_up_date": payload.follow_up_date.isoformat() if payload.follow_up_date else None})
     db.commit()
