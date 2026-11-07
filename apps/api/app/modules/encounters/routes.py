@@ -356,6 +356,16 @@ def encounter_status_update(
         WHERE clinic_id = :clinic_id AND id = :id
         RETURNING id, status, finalized_at, finalized_by, version, updated_at
     """), {"clinic_id": session["clinic_id"], "id": encounter_id, "status": payload.status, "actor": session["user_id"]}).mappings().one()
+    if current["status"] == "draft" and payload.status == "in_progress":
+        appt = db.execute(text("""
+            SELECT a.id, a.status FROM encounter_forms e
+            JOIN appointments a ON a.clinic_id = e.clinic_id AND a.id = e.appointment_id
+            WHERE e.clinic_id = :clinic_id AND e.id = :id AND a.archived_at IS NULL
+        """), {"clinic_id": session["clinic_id"], "id": encounter_id}).mappings().one_or_none()
+        if appt and appt["status"] == "waiting":
+            db.execute(text("UPDATE queue_entries SET status = 'in_consultation', started_at = COALESCE(started_at, now()), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :appt_id AND status = 'waiting'"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"]})
+            db.execute(text("UPDATE appointments SET status = 'in_consultation', blocks_time = true, status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :appt_id AND status = 'waiting'"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"]})
+            db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id) VALUES (:clinic_id, :appt_id, 'waiting', 'in_consultation', :actor)"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"], "actor": session["user_id"]})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.status", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"from": current["status"], "to": payload.status})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
@@ -424,7 +434,27 @@ def encounter_discharge(
         "referral_instructions": payload.referral_instructions,
         "discharge_vitals": discharge_vitals_json,
     }).mappings().one()
-    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.discharge", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"outcome": payload.discharge_outcome})
+    if payload.follow_up_date:
+        reason = (payload.follow_up_instructions or "Discharge follow-up").strip()[:500] or "Discharge follow-up"
+        db.execute(text("""
+            INSERT INTO follow_up_tasks (clinic_id, patient_id, appointment_id, reason, due_at, priority, status)
+            SELECT :clinic_id, :patient_id, :appointment_id, :reason,
+                   (CAST(:follow_up_date AS date) + time '09:00')::timestamptz, 'normal', 'due'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM follow_up_tasks
+                WHERE clinic_id = :clinic_id AND patient_id = :patient_id
+                  AND reason = :reason AND status IN ('due', 'contacted', 'booked')
+                  AND due_at = (CAST(:follow_up_date AS date) + time '09:00')::timestamptz
+                  AND (appointment_id IS NOT DISTINCT FROM CAST(:appointment_id AS uuid))
+            )
+        """), {
+            "clinic_id": session["clinic_id"],
+            "patient_id": row["patient_id"],
+            "appointment_id": str(row["appointment_id"]) if row["appointment_id"] else None,
+            "reason": reason,
+            "follow_up_date": payload.follow_up_date,
+        })
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.discharge", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"outcome": payload.discharge_outcome, "follow_up_date": payload.follow_up_date.isoformat() if payload.follow_up_date else None})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 

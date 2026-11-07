@@ -12,7 +12,7 @@ const BlockTimeDrawer = dynamic(() => import("../_lib/block-time-drawer"), { ssr
 const FollowUpDrawer = dynamic(() => import("../_lib/follow-up-drawer"), { ssr: false });
 
 type Summary = { today_appointments: number; pending_approvals: number; followups_due: number; waiting_patients: number; no_shows: number };
-type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string };
+type Appointment = { id: string; reference: string; starts_at: string; ends_at: string; status: string; patient_name?: string | null };
 type QueueEntry = { id: string; appointment_id: string; status: string; checked_in_at: string | null; priority: number; full_name: string; reference: string; starts_at: string };
 type FollowUp = { id: string; patient_id: string; reason: string; due_at: string; priority: number; status: string };
 type Session = { permissions?: string[]; clinic_slug?: string | null };
@@ -42,7 +42,7 @@ const IconFlag = () => <Icon><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5
 
 const scheduleCols: Column<Appointment>[] = [
   { key: "time", header: "Time", width: "70px", render: (a) => <time dateTime={a.starts_at}>{time(a.starts_at)}</time> },
-  { key: "reference", header: "Appointment", width: "1fr", sortable: true, sortFn: (a, b) => a.reference.localeCompare(b.reference), render: (a) => <span className="dash-ref"><strong>{a.reference}</strong><small>{time(a.starts_at)}–{time(a.ends_at)}</small></span> },
+  { key: "reference", header: "Appointment", width: "1fr", sortable: true, sortFn: (a, b) => a.reference.localeCompare(b.reference), render: (a) => <span className="dash-ref"><strong>{a.patient_name || a.reference}</strong><small>{a.patient_name ? `${a.reference} · ` : ""}{time(a.starts_at)}–{time(a.ends_at)}</small></span> },
   { key: "status", header: "Status", width: "auto", render: (a) => <span className={statusClass(a.status)}>{a.status.replaceAll("_", " ")}</span> },
 ];
 
@@ -72,10 +72,14 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
+      const d = new Date();
+      const iso = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      const yesterday = new Date(d); yesterday.setDate(d.getDate() - 1);
+      const tomorrow = new Date(d); tomorrow.setDate(d.getDate() + 1);
       const [sessionData, summaryData, appts, requested, q, f] = await Promise.all([
         getData<Session>("/api/v1/auth/me"),
         getData<Summary>("/api/v1/operations/dashboard-summary"),
-        getData<Appointment[]>("/api/v1/appointments?limit=100"),
+        getData<Appointment[]>(`/api/v1/appointments?from=${iso(yesterday)}&to=${iso(tomorrow)}&limit=100`),
         getData<Appointment[]>("/api/v1/appointments?status=requested&limit=10"),
         getData<QueueEntry[]>("/api/v1/operations/queue"),
         getData<FollowUp[]>("/api/v1/operations/follow-ups?status=due&limit=10"),
@@ -108,9 +112,8 @@ export default function DashboardPage() {
   }, []);
 
   const schedule = useMemo(() => {
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    return appointments.filter((a) => a.starts_at.slice(0, 10) === todayStr).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    const today = new Date().toDateString();
+    return appointments.filter((a) => new Date(a.starts_at).toDateString() === today).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }, [appointments]);
   const weekBars = useMemo(() => {
     const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
