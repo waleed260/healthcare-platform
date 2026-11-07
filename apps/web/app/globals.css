@@ -543,13 +543,13 @@
 .patient-edit-form .form-actions{display:flex;gap:10px;justify-content:flex-start;margin-top:4px}
 
 /* ===== Redesigned clinic dashboard (CliniFlow-style overview) ===== */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:26px 0}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:18px 0}
 .kpi-card{display:flex;align-items:center;gap:14px;padding:18px;background:var(--cream);border:1px solid var(--line);border-radius:14px;transition:transform .12s ease,box-shadow .12s ease}
 .kpi-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px -18px rgba(28,41,40,.5)}
 .kpi-ico{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;font-size:20px;flex:0 0 auto}
-.kpi-ico svg{width:20px;height:20px}.kpi-ico-blue{background:#dbe7dd;color:var(--leaf)}.kpi-ico-green{background:#d9ece1;color:#3c6a5a}.kpi-ico-amber{background:#f6e6cf;color:#8a6435}.kpi-ico-rose{background:#f6ddd6;color:#8c3933}
+.kpi-ico svg{width:20px;height:20px}.kpi-ico-blue{background:#dbe7dd;color:var(--leaf)}.kpi-ico-green{background:#d9ece1;color:#3c6a5a}.kpi-ico-amber{background:#f6e6cf;color:#8a6435}.kpi-ico-rose{background:#f6ddd6;color:#8c3933}.kpi-ico-coral{background:#fbe4da;color:#a14937}
 .kpi-card small{display:block;color:var(--muted);font:var(--text-xs) 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
-.kpi-card strong{font:500 30px/1 Fraunces,serif;color:var(--ink)}
+.kpi-card strong{font:500 clamp(34px,4.5vw,52px)/1 Fraunces,serif;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .dash-main-grid{display:grid;grid-template-columns:1.7fr 1fr;gap:16px;margin-bottom:16px;align-items:start}
 .dash-side-col{display:grid;gap:16px}
 .panel-card{background:var(--cream);border:1px solid var(--line);border-radius:16px;padding:20px}
@@ -589,12 +589,29 @@
 .dash-date{margin:6px 0 0;color:var(--muted);font:var(--text-xs) 'DM Mono',monospace}
 .kpi-delta{display:block;margin-top:4px;font:var(--text-xs) 'DM Mono',monospace}
 .kpi-delta-up{color:#25603c}.kpi-delta-down{color:#8c3933}
-.next-up{display:flex;align-items:center;gap:14px;padding:14px 18px;margin-bottom:16px;background:var(--cream);border:1px solid var(--line);border-left:3px solid var(--coral);border-radius:14px}
-.next-up-dot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 5px #fbe4da}
-.next-up .eyebrow{margin:0}
-.next-up-main{min-width:0}
-.next-up-main strong{display:block;margin-top:4px;font:500 18px Fraunces,serif;color:var(--ink)}
-.next-up-count{margin-left:auto;font:var(--text-xs) 'DM Mono',monospace;color:var(--ink);white-space:nowrap}
+
+/* Ink hero — Today's focal point. Dark anchor that mirrors the sidebar. */
+.dash-hero{display:grid;grid-template-columns:1fr auto auto;gap:clamp(18px,3vw,36px);align-items:center;padding:clamp(22px,3vw,34px) clamp(22px,3vw,38px);margin:22px 0 4px;background:#1c2928;color:#f5f4ee;border-radius:18px;box-shadow:0 20px 50px -30px rgba(28,41,40,.55)}
+.dash-hero-body{min-width:0}
+.dash-hero-eyebrow{display:flex;align-items:center;gap:9px;margin:0 0 10px;color:#aecabb;font:var(--text-xs) 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.14em}
+.dash-hero-dot{width:9px;height:9px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 5px rgba(231,123,92,.22)}
+.dash-hero-live .dash-hero-dot{animation:dashHeroPulse 1.8s ease-in-out infinite}
+@keyframes dashHeroPulse{0%,100%{box-shadow:0 0 0 5px rgba(231,123,92,.22)}50%{box-shadow:0 0 0 10px rgba(231,123,92,.05)}}
+@media(prefers-reduced-motion:reduce){.dash-hero-live .dash-hero-dot{animation:none}}
+.dash-hero-name{display:block;font:500 clamp(28px,3.6vw,40px)/1.05 Fraunces,serif;color:#fff;letter-spacing:-.03em;margin:0}
+.dash-hero-meta{margin:10px 0 0;color:#c3d6c9;font:var(--text-xs) 'DM Mono',monospace;letter-spacing:.04em;text-transform:uppercase}
+.dash-hero-meta .pipeline-status{margin-left:4px;background:rgba(245,244,238,.12);color:#f5f4ee}
+.dash-hero-count{display:grid;place-items:center;gap:2px;padding:0 clamp(10px,2vw,22px);border-left:1px solid rgba(245,244,238,.14);border-right:1px solid rgba(245,244,238,.14);min-width:120px}
+.dash-hero-count strong{font:500 clamp(40px,5.5vw,64px)/1 Fraunces,serif;color:#e77b5c;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.dash-hero-count small{color:#aecabb;font:var(--text-xs) 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.12em}
+.dash-hero-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.dash-hero-actions .button-primary{background:#e77b5c;color:#1c2928;border:0}
+.dash-hero-actions .button-primary:hover{background:#f08e6f}
+.dash-hero-link{color:#aecabb;font:var(--text-xs) 'DM Mono',monospace;text-transform:uppercase;letter-spacing:.08em;text-decoration:none}
+.dash-hero-link:hover{color:#f5f4ee}
+.dash-hero-empty{background:#1c2928;opacity:.88}
+.dash-hero-empty .dash-hero-name{color:#c3d6c9}
+@media(max-width:760px){.dash-hero{grid-template-columns:1fr;gap:16px}.dash-hero-count{border:none;padding:0;justify-items:start;place-items:start}.dash-hero-actions{align-items:stretch}}
 .dashboard-overview .dashboard-empty,.dt .dashboard-empty{align-items:center;text-align:center}
 .dashboard-overview .dashboard-empty svg,.dt .dashboard-empty svg{width:26px;height:26px;color:#68a37f;opacity:.8}
 .dashboard-overview .dashboard-empty span,.dt .dashboard-empty span{max-width:340px}
@@ -609,6 +626,7 @@
 @media(max-width:760px){.next-up{flex-wrap:wrap}.next-up-count{margin-left:0;width:100%}}
 /* appointment status badge colors (reuse .pipeline-status base) */
 .status-confirmed{background:#d5e7dc;color:#25603c}.status-requested{background:#f2e3d4;color:#875b3b}.status-arrived{background:#dce8ed;color:#366379}.status-waiting{background:#f0e1bd;color:#80622d}.status-in-consultation{background:#e5e0ef;color:#66507c}.status-completed{background:#e6eadf;color:var(--leaf)}.status-no-show,.status-cancelled{background:#edd8d5;color:#8c3933}
+@media(max-width:1200px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:980px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.dash-main-grid{grid-template-columns:1fr}.dash-bottom-grid{grid-template-columns:1fr}}
 @media(max-width:560px){.kpi-grid{grid-template-columns:1fr}.quick-grid{grid-template-columns:1fr}}
 
@@ -654,7 +672,6 @@
 .dashboard-overview .dash-topline{margin-bottom:22px}
 .kpi-grid{margin:22px 0 18px}
 .panel-card{border-radius:16px}
-.kpi-card strong{font-size:clamp(26px,3vw,32px)}
 
 /* 1 — no text below 12px; map stragglers onto the shared scale */
 .workspace-label{font-size:var(--text-xs);letter-spacing:.1em}
@@ -690,6 +707,8 @@
 .workspace-nav-link,.workspace-nav-link span{color:var(--nav-ink)}
 .workspace-nav-link:hover,.workspace-nav-link.active{color:var(--nav-ink-strong)}
 .workspace-nav-link.active span{color:var(--coral)}
+.workspace-nav-link span svg{width:17px;height:17px;display:block;margin:0 auto;stroke-width:1.8}
+.account-menu-item svg{width:14px;height:14px;flex:0 0 auto;stroke-width:1.8}
 .workspace-context{color:var(--muted)}            /* topbar is a light bar */
 /* status badges → three shared families, not many one-off hexes */
 .pipeline-status{background:#e6eadf;color:var(--leaf)}

@@ -2,51 +2,58 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ComponentType, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, post, redirectToLogin } from "./_lib/client";
 import { invalidateCache } from "./_lib/session-cache";
 import type { SessionInfo } from "./_lib/contracts";
-type NavItem = { href: string; label: string; icon: string; permission: string; adminOnly?: boolean };
+import {
+  IconHome, IconCalendar, IconUser, IconLead, IconQueue, IconFollowUp,
+  IconStethoscope, IconPen, IconBuilding, IconGrid, IconMedical,
+  IconReceipt, IconSigma, IconBox, IconReport, IconInventory,
+  IconGlobe, IconContent, IconAt, IconImage, IconTrend,
+  IconSettings, IconBell, IconLock, IconShield, IconStar,
+} from "./_lib/icons";
+type NavItem = { href: string; label: string; icon: ComponentType; permission: string; adminOnly?: boolean };
 type NavGroup = { key: string; label: string; items: NavItem[] };
 
 const navGroups: NavGroup[] = [
   { key: "home", label: "", items: [
-    { href: "/dashboard", label: "Overview", icon: "◈", permission: "appointment.read" },
+    { href: "/dashboard", label: "Overview", icon: IconHome, permission: "appointment.read" },
   ]},
   { key: "crm", label: "CRM", items: [
-    { href: "/schedule", label: "Schedule", icon: "◷", permission: "appointment.read" },
-    { href: "/patients", label: "Patients", icon: "○", permission: "patient.read" },
-    { href: "/leads", label: "Leads", icon: "↳", permission: "lead.read" },
-    { href: "/queue", label: "Queue", icon: "▣", permission: "queue.read" },
-    { href: "/operations", label: "Follow-ups", icon: "↗", permission: "followup.read" },
+    { href: "/schedule", label: "Schedule", icon: IconCalendar, permission: "appointment.read" },
+    { href: "/patients", label: "Patients", icon: IconUser, permission: "patient.read" },
+    { href: "/leads", label: "Leads", icon: IconLead, permission: "lead.read" },
+    { href: "/queue", label: "Queue", icon: IconQueue, permission: "queue.read" },
+    { href: "/operations", label: "Follow-ups", icon: IconFollowUp, permission: "followup.read" },
   ]},
   { key: "clinical", label: "CLINICAL", items: [
-    { href: "/doctors", label: "Doctors", icon: "⚕", permission: "doctor.read" },
-    { href: "/encounters", label: "Encounters", icon: "✍", permission: "clinical.read" },
-    { href: "/branches", label: "Branches", icon: "⌂", permission: "branch.read" },
-    { href: "/services", label: "Services", icon: "▦", permission: "service.read" },
-    { href: "/clinical", label: "Clinical", icon: "✚", permission: "clinical.read" },
+    { href: "/doctors", label: "Doctors", icon: IconStethoscope, permission: "doctor.read" },
+    { href: "/encounters", label: "Encounters", icon: IconPen, permission: "clinical.read" },
+    { href: "/branches", label: "Branches", icon: IconBuilding, permission: "branch.read" },
+    { href: "/services", label: "Services", icon: IconGrid, permission: "service.read" },
+    { href: "/clinical", label: "Clinical", icon: IconMedical, permission: "clinical.read" },
   ]},
   { key: "business", label: "BUSINESS", items: [
-    { href: "/billing", label: "Billing", icon: "₿", permission: "billing.read" },
-    { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },
-    { href: "/packages", label: "Packages", icon: "❑", permission: "package.read" },
-    { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
-    { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
+    { href: "/billing", label: "Billing", icon: IconReceipt, permission: "billing.read" },
+    { href: "/finance", label: "Finance", icon: IconSigma, permission: "billing.read" },
+    { href: "/packages", label: "Packages", icon: IconBox, permission: "package.read" },
+    { href: "/reports", label: "Reports", icon: IconReport, permission: "report.read" },
+    { href: "/inventory", label: "Inventory", icon: IconInventory, permission: "inventory.read" },
   ]},
   { key: "website", label: "WEBSITE", items: [
-    { href: "/website", label: "Website", icon: "✦", permission: "website.read" },
-    { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
-    { href: "/domains", label: "Domains", icon: "◎", permission: "website.read" },
-    { href: "/media", label: "Media", icon: "▣", permission: "website.read" },
-    { href: "/analytics", label: "Analytics", icon: "◈", permission: "report.read" },
+    { href: "/website", label: "Website", icon: IconGlobe, permission: "website.read" },
+    { href: "/content", label: "Content", icon: IconContent, permission: "website.read" },
+    { href: "/domains", label: "Domains", icon: IconAt, permission: "website.read" },
+    { href: "/media", label: "Media", icon: IconImage, permission: "website.read" },
+    { href: "/analytics", label: "Analytics", icon: IconTrend, permission: "report.read" },
   ]},
   { key: "manage", label: "MANAGEMENT", items: [
-    { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },
-    { href: "/notifications", label: "Alerts", icon: "◔", permission: "notification.read" },
-    { href: "/security", label: "Security", icon: "⚿", permission: "" },
-    { href: "/privacy", label: "Privacy", icon: "◇", permission: "patient.read" },
-    { href: "/admin", label: "Platform", icon: "◆", permission: "audit.read", adminOnly: true },
+    { href: "/manage", label: "Manage", icon: IconSettings, permission: "clinic.update" },
+    { href: "/notifications", label: "Alerts", icon: IconBell, permission: "notification.read" },
+    { href: "/security", label: "Security", icon: IconLock, permission: "" },
+    { href: "/privacy", label: "Privacy", icon: IconShield, permission: "patient.read" },
+    { href: "/admin", label: "Platform", icon: IconStar, permission: "audit.read", adminOnly: true },
   ]},
 ];
 
@@ -140,16 +147,19 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
                   <span className={`nav-group-chevron ${isCollapsed ? "collapsed" : ""}`} aria-hidden="true">›</span>
                 </button>
               )}
-              {(!hasLabel || !isCollapsed) && group.items.map((item) => (
-                <Link
-                  className={`workspace-nav-link ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? "active" : ""}`}
-                  href={item.href}
-                  key={item.href}
-                  aria-current={pathname === item.href ? "page" : undefined}
-                >
-                  <span aria-hidden="true">{item.icon}</span>{item.label}
-                </Link>
-              ))}
+              {(!hasLabel || !isCollapsed) && group.items.map((item) => {
+                const ItemIcon = item.icon;
+                return (
+                  <Link
+                    className={`workspace-nav-link ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? "active" : ""}`}
+                    href={item.href}
+                    key={item.href}
+                    aria-current={pathname === item.href ? "page" : undefined}
+                  >
+                    <span aria-hidden="true"><ItemIcon /></span>{item.label}
+                  </Link>
+                );
+              })}
             </div>
           );
         })}
@@ -174,8 +184,8 @@ export default function WorkspaceShell({ children }: { children: ReactNode }) {
                 {session?.is_platform_admin && <span className="account-menu-badge">Platform admin</span>}
               </div>
               <hr />
-              <Link className="account-menu-item" href="/security" role="menuitem" onClick={() => setAccountOpen(false)}>⚿ Security</Link>
-              <Link className="account-menu-item" href="/privacy" role="menuitem" onClick={() => setAccountOpen(false)}>◇ Privacy</Link>
+              <Link className="account-menu-item" href="/security" role="menuitem" onClick={() => setAccountOpen(false)}><IconLock /> Security</Link>
+              <Link className="account-menu-item" href="/privacy" role="menuitem" onClick={() => setAccountOpen(false)}><IconShield /> Privacy</Link>
               <hr />
               <button className="account-menu-item account-menu-signout" role="menuitem" onClick={signOut}>Sign out</button>
             </div>}
