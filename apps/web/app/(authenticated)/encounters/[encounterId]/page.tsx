@@ -1060,7 +1060,7 @@ export default function EncounterDetailPage() {
 
             {/* Amendment history */}
             {(enc.amendment_history?.length ?? 0) > 0 && (
-              <div className="enc-section surface-card enc-d-section-gap">
+              <div className="enc-section surface-card enc-d-section-gap enc-d-no-print">
                 <div className="surface-card-heading"><div><p className="eyebrow">AUDIT</p><h2>Amendment History</h2></div></div>
                 {enc.amendment_history!.map((a, idx) => (
                   <div key={idx} className="enc-d-amend-row">
@@ -1074,7 +1074,7 @@ export default function EncounterDetailPage() {
 
             {/* Amend form */}
             {(enc.status === "discharged" || enc.status === "finalized") && (
-              <div className="enc-section surface-card enc-d-section-gap">
+              <div className="enc-section surface-card enc-d-section-gap enc-d-no-print">
                 <div className="surface-card-heading"><div><p className="eyebrow">CORRECTION</p><h2>Amend Record</h2></div></div>
                 <div className="form-grid enc-detail-grid-2col">
                   <label>Field to amend

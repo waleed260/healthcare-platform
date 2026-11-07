@@ -1379,9 +1379,20 @@ legend{font-size:var(--text-xs)}
   .enc-d-print-doctor{font-size:10px;margin:1px 0 0}
   .enc-d-print-date{font-size:9px;margin:0}
   .enc-detail-vitals-grid{gap:4px!important;grid-template-columns:repeat(4,1fr)!important;page-break-inside:avoid}
+  .enc-detail-vitals-grid br{display:none}
+  .enc-detail-vitals-grid>div{line-height:1.15}
   .enc-detail-ref-bar{margin:2px 0!important;padding:2px 0!important;page-break-inside:avoid}
   .enc-detail-sign-footer{margin-top:6px!important;padding-top:4px!important;page-break-inside:avoid}
   .enc-d-section-gap{margin-top:4px!important}
+  /* Summary tab: explicitly mark cards that should not print (Amendment history,
+     Amend form) with .enc-d-no-print so we never accidentally hide printable content. */
+  .enc-d-no-print{display:none!important}
+  /* Dense summary rows: inline label+value, no dividers, almost no padding. */
+  .enc-detail-summary-row{padding:1px 0!important;border-bottom:0!important;display:grid;grid-template-columns:110px 1fr;gap:6px;align-items:baseline;page-break-inside:avoid}
+  .enc-detail-summary-row .eyebrow{margin:0!important;font-size:7px!important}
+  .enc-d-finding-text{margin:0!important;font-size:9.5px!important;line-height:1.25}
+  .enc-d-print-section{margin-top:3px!important}
+  .enc-d-eyebrow-tight-sm{margin:2px 0 1px!important;font-size:8px!important}
   a{color:inherit!important;text-decoration:none!important}
   /* Letter-paper fallback: keep margins tight so A4-tuned content still fits */
   @page :first{margin-top:6mm}
