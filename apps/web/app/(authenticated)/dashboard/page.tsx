@@ -2,13 +2,9 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import DataTable, { type Column, RowSkeleton } from "../_lib/data-table";
 import { api } from "../_lib/client";
-import {
-  IconCalendar, IconUsers, IconFile, IconCheck, IconPlus, IconUser,
-  IconPen, IconCard, IconChart, IconFlag, IconAlert,
-} from "../_lib/icons";
 
 const AddAppointmentDrawer = dynamic(() => import("../_lib/add-appointment-drawer"), { ssr: false });
 const AddPatientDrawer = dynamic(() => import("../_lib/add-patient-drawer"), { ssr: false });
@@ -28,6 +24,21 @@ async function getData<T>(url: string): Promise<T | null> {
   try { return await api<T>(url); } catch { return null; }
 }
 const statusClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
+
+/* Inline SVG icon set — replaces emoji glyphs for a consistent, premium look. */
+function Icon({ children }: { children: ReactNode }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
+}
+const IconCalendar = () => <Icon><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 9h18" /></Icon>;
+const IconUsers = () => <Icon><circle cx="9" cy="8" r="3.6" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0" /><path d="M15.5 4.9a3.6 3.6 0 0 1 0 6.2" /><path d="M17.6 14.5a6.5 6.5 0 0 1 4 5.5" /></Icon>;
+const IconFile = () => <Icon><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" /><path d="M9 13h6M9 17h6" /></Icon>;
+const IconCheck = () => <Icon><circle cx="12" cy="12" r="9" /><path d="m8.5 12.3 2.4 2.4 4.8-5.2" /></Icon>;
+const IconPlus = () => <Icon><path d="M12 5v14M5 12h14" /></Icon>;
+const IconUser = () => <Icon><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></Icon>;
+const IconPen = () => <Icon><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></Icon>;
+const IconCard = () => <Icon><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></Icon>;
+const IconChart = () => <Icon><path d="M3 3v18h18" /><path d="M8 17v-6M13 17V7M18 17v-4" /></Icon>;
+const IconFlag = () => <Icon><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1Z" /><path d="M4 22v-7" /></Icon>;
 
 const scheduleCols: Column<Appointment>[] = [
   { key: "time", header: "Time", width: "70px", render: (a) => <time dateTime={a.starts_at}>{time(a.starts_at)}</time> },
@@ -133,36 +144,19 @@ export default function DashboardPage() {
 
   const kpi = (value: number | undefined) => (loading && summary === null ? "…" : value ?? "—");
 
-  const heroView = (() => {
-    if (!nextUp) {
-      return <section className="dash-hero dash-hero-empty" aria-label="Next appointment">
-        <div className="dash-hero-body">
-          <p className="dash-hero-eyebrow">NEXT UP</p>
-          <strong className="dash-hero-name">Nothing scheduled</strong>
-          <p className="dash-hero-meta">The schedule is clear right now.</p>
-        </div>
-      </section>;
-    }
+  const nextUpView = (() => {
+    if (!nextUp) return null;
     const start = new Date(nextUp.starts_at).getTime();
     const end = new Date(nextUp.ends_at).getTime();
     const live = start <= now && end > now;
     const mins = Math.max(0, Math.round((start - now) / 60000));
-    const when = live ? "NOW" : mins < 60 ? `${mins}m` : `${Math.round(mins / 60)}h`;
-    const whenLabel = live ? "live" : mins < 60 ? "minutes" : "hours";
-    return <section className={`dash-hero ${live ? "dash-hero-live" : ""}`} aria-label="Next appointment">
-      <div className="dash-hero-body">
-        <p className="dash-hero-eyebrow"><span className="dash-hero-dot" aria-hidden="true" />{live ? "HAPPENING NOW" : "NEXT UP"}</p>
-        <strong className="dash-hero-name">{nextUp.patient_name || nextUp.reference}</strong>
-        <p className="dash-hero-meta">{time(nextUp.starts_at)}–{time(nextUp.ends_at)}{nextUp.patient_name ? ` · ${nextUp.reference}` : ""} · <span className={statusClass(nextUp.status)}>{nextUp.status.replaceAll("_", " ")}</span></p>
-      </div>
-      <div className="dash-hero-count" aria-label={`Starts in ${when} ${whenLabel}`}>
-        <strong>{when}</strong>
-        <small>{whenLabel}</small>
-      </div>
-      <div className="dash-hero-actions">
-        <Link className="button button-primary" href="/queue">Open queue <span>→</span></Link>
-        <Link className="dash-hero-link" href="/schedule">Full schedule →</Link>
-      </div>
+    const when = live ? "now" : mins < 60 ? `in ${mins} min` : `in ${Math.round(mins / 60)} h`;
+    return <section className="next-up" aria-label="Next appointment">
+      <span className="next-up-dot" aria-hidden="true" />
+      <div className="next-up-main"><p className="eyebrow">{live ? "HAPPENING NOW" : "NEXT UP"}</p><strong>{nextUp.reference} · {time(nextUp.starts_at)}–{time(nextUp.ends_at)}</strong></div>
+      <span className="next-up-count">{when}</span>
+      <span className={statusClass(nextUp.status)}>{nextUp.status.replaceAll("_", " ")}</span>
+      <Link className="text-control" href="/queue">Queue <span>→</span></Link>
     </section>;
   })();
 
@@ -170,15 +164,14 @@ export default function DashboardPage() {
     <div className="dash-topline"><div><h1>Today</h1><p className="dash-date">{todayLabel}</p></div><div className="header-actions">{permissions.includes("appointment.create") && <button className="button button-primary" type="button" onClick={() => setAddApptOpen(true)}>Book appointment <span>+</span></button>}</div></div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" type="button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
-    {heroView}
-
     <div className="kpi-grid" aria-live="polite">
       <Link className="kpi-card kpi-card-blue" href="/schedule"><span className="kpi-ico kpi-ico-blue" aria-hidden="true"><IconCalendar /></span><div><small>Appointments</small><strong>{kpi(summary?.today_appointments)}</strong>{apptDelta !== null && <span className={`kpi-delta ${apptDelta >= 0 ? "kpi-delta-up" : "kpi-delta-down"}`}>{apptDelta >= 0 ? "▲" : "▼"} {Math.abs(apptDelta)} vs week avg</span>}</div></Link>
       <Link className="kpi-card kpi-card-green" href="/queue"><span className="kpi-ico kpi-ico-green" aria-hidden="true"><IconUsers /></span><div><small>Waiting</small><strong>{kpi(summary?.waiting_patients)}</strong></div></Link>
       <Link className="kpi-card kpi-card-amber" href="/schedule?status=requested"><span className="kpi-ico kpi-ico-amber" aria-hidden="true"><IconFile /></span><div><small>Pending</small><strong>{kpi(summary?.pending_approvals)}</strong></div></Link>
       <Link className="kpi-card kpi-card-rose" href="/operations"><span className="kpi-ico kpi-ico-rose" aria-hidden="true"><IconCheck /></span><div><small>Follow-ups</small><strong>{kpi(summary?.followups_due)}</strong></div></Link>
-      <Link className="kpi-card kpi-card-coral" href="/schedule?status=no_show"><span className="kpi-ico kpi-ico-coral" aria-hidden="true"><IconAlert /></span><div><small>No-shows</small><strong>{kpi(summary?.no_shows)}</strong>{summary && summary.today_appointments > 0 && (summary.no_shows ?? 0) > 0 && <span className="kpi-delta kpi-delta-down">{Math.round((summary.no_shows / summary.today_appointments) * 100)}% of today</span>}</div></Link>
     </div>
+
+    {nextUpView}
 
     <div className="dash-main-grid">
       <section className="panel-card" id="schedule"><div className="card-heading"><div><h2>Schedule</h2></div><Link className="text-link" href="/schedule">Full calendar <span>→</span></Link></div>
@@ -200,7 +193,7 @@ export default function DashboardPage() {
 
     <div className="dash-bottom-grid">
       <section className="panel-card"><div className="card-heading"><div><h2>Requests</h2></div><Link className="text-link" href="/schedule?status=requested">View all <span>→</span></Link></div>
-        <DataTable columns={requestCols} rows={requests.slice(0, 5)} rowKey={(a) => a.id} loading={loading} skeletonRows={3} emptyTitle="No pending requests" />
+        <DataTable columns={requestCols} rows={requests.slice(0, 5)} rowKey={(a) => a.id} loading={false} emptyTitle="No pending requests" />
       </section>
       <section className="panel-card"><div className="card-heading"><div><h2>Follow-ups</h2></div><Link className="text-link" href="/operations">View all <span>→</span></Link></div>
         {followups.length === 0 ? <div className="dashboard-empty"><IconCheck /><strong>Nothing due</strong><span>Follow-ups land here the moment a task is assigned.</span></div> : <div className="followup-list">{followups.slice(0, 5).map((f) => <div className="followup-row" key={f.id}><div><strong>{f.reason || "Follow-up"}</strong><small>due {dayShort(f.due_at)} {time(f.due_at)}</small></div><span className={`pipeline-status status-${f.status === "overdue" ? "lost" : "qualified"}`}>{f.status}</span></div>)}</div>}
