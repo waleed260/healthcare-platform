@@ -104,8 +104,8 @@ function toLocalDatetime(iso: string | null): string {
   } catch { return ""; }
 }
 
-type Tab = "arrival" | "patient" | "assessment" | "treatment" | "medications" | "vitals" | "discharge" | "summary";
-const TABS: Tab[] = ["arrival", "patient", "assessment", "treatment", "medications", "vitals", "discharge", "summary"];
+type Tab = "arrival" | "patient" | "assessment" | "treatment" | "medications" | "discharge" | "summary";
+const TABS: Tab[] = ["arrival", "patient", "assessment", "treatment", "medications", "discharge", "summary"];
 
 const AMENDABLE_FIELDS = [
   { value: "chief_complaint", label: "Chief Complaint" },
@@ -502,7 +502,7 @@ export default function EncounterDetailPage() {
   const readonly = enc.status === "discharged" || enc.status === "finalized";
   const isDraft = enc.status === "draft";
   const lockedTabs: Set<Tab> = isDraft
-    ? new Set<Tab>(["assessment", "treatment", "medications", "vitals", "discharge", "summary"])
+    ? new Set<Tab>(["assessment", "treatment", "medications", "discharge", "summary"])
     : new Set<Tab>();
   const visibleTab: Tab = lockedTabs.has(tab) ? "arrival" : tab;
   const arrivalLocked = !isDraft && !readonly;
@@ -879,25 +879,6 @@ export default function EncounterDetailPage() {
           </div>
         )}
 
-        {/* ── Tab F: Vitals ──────────────────────────────────────── */}
-        {visibleTab === "vitals" && (
-          <div className="enc-section surface-card">
-            <div className="surface-card-heading"><div><p className="eyebrow">OBSERVATIONS</p><h2>Vitals</h2></div></div>
-            <div className="enc-detail-vitals-2col">
-              <div>
-                <p className="eyebrow enc-d-eyebrow-tight">ARRIVAL VITALS</p>
-                <VitalsForm vitals={arrivalVitals} onChange={setArrivalVitals} readonly={readonly} />
-                <BMIDisplay vitals={arrivalVitals} label="Arrival" />
-              </div>
-              <div>
-                <p className="eyebrow enc-d-eyebrow-tight">DISCHARGE VITALS</p>
-                <VitalsForm vitals={dischargeVitals} onChange={setDischargeVitals} readonly={readonly} />
-                <BMIDisplay vitals={dischargeVitals} label="Discharge" />
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ── Tab G: Discharge ───────────────────────────────────── */}
         {visibleTab === "discharge" && (
           <div className="enc-section surface-card">
@@ -1164,22 +1145,6 @@ function GCSCalculator({ eye, verbal, motor, onChange, readonly }: { eye: number
           {classification && <p className="enc-d-bmi-cat" style={{ fontWeight: 600, color: classColor }}>{classification}</p>}
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── BMI Display ───────────────────────────────────────────────────── */
-function BMIDisplay({ vitals, label }: { vitals: Vitals; label: string }) {
-  if (!vitals.weight_kg || !vitals.height_cm) return null;
-  const bmi = vitals.weight_kg / Math.pow(vitals.height_cm / 100, 2);
-  const bmiStr = bmi.toFixed(1);
-  const category = bmi < 18.5 ? "Underweight" : bmi < 25 ? "Normal" : bmi < 30 ? "Overweight" : "Obese";
-  const color = category === "Normal" ? "var(--leaf)" : category === "Underweight" ? "#5886b4" : category === "Overweight" ? "#e0a458" : "var(--coral)";
-  return (
-    <div className="enc-detail-bmi">
-      <span className="enc-d-bmi-label">{label} BMI:</span>
-      <span className="enc-d-bmi-value" style={{ color }}>{bmiStr}</span>
-      <span className="enc-d-bmi-cat" style={{ color }}>({category})</span>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { api, apiPage, errorMessage, writeHeaders } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import DataTable, { type Column } from "../_lib/data-table";
+import AddPatientDrawer from "../_lib/add-patient-drawer";
 
 type Encounter = {
   id: string; patient_id: string; patient_name: string; appointment_id: string | null;
@@ -52,6 +53,7 @@ export default function EncountersPage() {
   const [encType, setEncType] = useState<string>("general");
   const [complaint, setComplaint] = useState("");
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
+  const [showAddPatient, setShowAddPatient] = useState(false);
 
   const startHandled = useRef(false);
   useEffect(() => {
@@ -264,6 +266,7 @@ export default function EncountersPage() {
                   {patientSearch.length >= 2 && patientResults.length === 0 && (
                     <span className="enc-no-results">No patients found for &ldquo;{patientSearch}&rdquo;</span>
                   )}
+                  <button className="ghost-button" type="button" onClick={() => setShowAddPatient(true)} style={{ marginTop: 4, textAlign: "left" }}>+ Add new patient (name, phone, email)</button>
                 </>
               )}
             </label>
@@ -306,6 +309,7 @@ export default function EncountersPage() {
           </div>
         )}
       </section>
+      <AddPatientDrawer open={showAddPatient} onClose={() => setShowAddPatient(false)} onCreated={(p) => { setSelectedPatient({ id: p.id, full_name: p.full_name, mrn: null }); setPatientResults([]); setPatientSearch(""); setShowAddPatient(false); }} />
     </main>
   );
 }

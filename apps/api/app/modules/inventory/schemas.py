@@ -145,6 +145,7 @@ class PurchaseOrderCreate(BaseModel):
     warehouse_id: UUID
     notes: str | None = Field(default=None, max_length=2000)
     lines: list[PurchaseOrderLineInput] = Field(min_length=1, max_length=200)
+    auto_receive: bool = True
 
 
 class PurchaseOrderUpdate(BaseModel):

@@ -117,25 +117,51 @@ def purchase_create(
             raise _error("NOT_FOUND", f"Product {line.product_id} not found or inactive.", status.HTTP_400_BAD_REQUEST)
     order_number = _next_po_number(db, session["clinic_id"])
     total_minor = sum(int(line.quantity_ordered * line.unit_cost_minor) for line in payload.lines)
+    initial_status = "received" if payload.auto_receive else "draft"
     po = db.execute(text("""
-        INSERT INTO purchase_orders (clinic_id, order_number, supplier_id, warehouse_id, status, total_minor, currency, notes, ordered_by_user_id)
-        VALUES (:clinic_id, :order_number, :supplier_id, :warehouse_id, 'draft', :total_minor, 'PKR', :notes, :user_id)
+        INSERT INTO purchase_orders (clinic_id, order_number, supplier_id, warehouse_id, status, total_minor, currency, notes, ordered_by_user_id, ordered_at, received_at)
+        VALUES (:clinic_id, :order_number, :supplier_id, :warehouse_id, :status, :total_minor, 'PKR', :notes, :user_id,
+                CASE WHEN :status = 'received' THEN now() ELSE NULL END,
+                CASE WHEN :status = 'received' THEN now() ELSE NULL END)
         RETURNING id, order_number, supplier_id, warehouse_id, status, total_minor, currency, notes, version, created_at
     """), {"clinic_id": session["clinic_id"], "order_number": order_number, "supplier_id": payload.supplier_id,
-           "warehouse_id": payload.warehouse_id, "total_minor": total_minor, "notes": payload.notes,
+           "warehouse_id": payload.warehouse_id, "status": initial_status, "total_minor": total_minor, "notes": payload.notes,
            "user_id": session["user_id"]}).mappings().one()
+    warehouse_row = db.execute(text("SELECT branch_id FROM warehouses WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": payload.warehouse_id}).mappings().one()
+    branch_id = warehouse_row["branch_id"]
     lines_out = []
     for line in payload.lines:
+        received_qty = line.quantity_ordered if payload.auto_receive else 0
         l_row = db.execute(text("""
-            INSERT INTO purchase_order_lines (clinic_id, purchase_order_id, product_id, quantity_ordered, unit_cost_minor)
-            VALUES (:clinic_id, :po_id, :product_id, :quantity_ordered, :unit_cost_minor)
+            INSERT INTO purchase_order_lines (clinic_id, purchase_order_id, product_id, quantity_ordered, quantity_received, unit_cost_minor)
+            VALUES (:clinic_id, :po_id, :product_id, :quantity_ordered, :quantity_received, :unit_cost_minor)
             RETURNING id, product_id, quantity_ordered, quantity_received, unit_cost_minor, currency
         """), {"clinic_id": session["clinic_id"], "po_id": po["id"], "product_id": line.product_id,
-               "quantity_ordered": line.quantity_ordered, "unit_cost_minor": line.unit_cost_minor}).mappings().one()
+               "quantity_ordered": line.quantity_ordered, "quantity_received": received_qty, "unit_cost_minor": line.unit_cost_minor}).mappings().one()
         lines_out.append(dict(l_row))
+        if payload.auto_receive and received_qty > 0:
+            stock = db.execute(text("SELECT id FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = :product_id FOR UPDATE"),
+                               {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": line.product_id}).mappings().one_or_none()
+            if stock is None:
+                db.execute(text("INSERT INTO inventory_stock (clinic_id, branch_id, product_id, warehouse_id, quantity) VALUES (:clinic_id, :branch_id, :product_id, :warehouse_id, :qty)"),
+                           {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": line.product_id, "warehouse_id": payload.warehouse_id, "qty": received_qty})
+            else:
+                db.execute(text("UPDATE inventory_stock SET quantity = quantity + :qty, warehouse_id = COALESCE(:warehouse_id, warehouse_id), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"),
+                           {"clinic_id": session["clinic_id"], "id": stock["id"], "warehouse_id": payload.warehouse_id, "qty": received_qty})
+            db.execute(text("INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, warehouse_id, delta, reason, adjusted_by_user_id) VALUES (:clinic_id, :branch_id, :product_id, :warehouse_id, :delta, :reason, :user_id)"),
+                       {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": line.product_id, "warehouse_id": payload.warehouse_id, "delta": received_qty, "reason": f"Purchase order {po['order_number']}", "user_id": session["user_id"]})
+    if payload.auto_receive and total_minor > 0:
+        db.execute(text("""
+            INSERT INTO expenses (clinic_id, branch_id, category, description, amount_minor, currency, incurred_on, recorded_by_user_id)
+            VALUES (:clinic_id, :branch_id, 'inventory_purchase', :description, :amount_minor, 'PKR',
+                    (now() AT TIME ZONE (SELECT timezone FROM clinics WHERE id = :clinic_id))::date, :user_id)
+        """), {"clinic_id": session["clinic_id"], "branch_id": branch_id,
+               "description": f"Purchase order {order_number}", "amount_minor": total_minor,
+               "user_id": session["user_id"]})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"],
                  action="inventory.purchase.create", entity_type="purchase_order", entity_id=po["id"],
-                 outcome="success", request_id=UUID(request.state.request_id))
+                 outcome="success", request_id=UUID(request.state.request_id),
+                 metadata={"auto_receive": payload.auto_receive, "expense_minor": total_minor if payload.auto_receive else 0})
     db.commit()
     return {"data": {**dict(po), "lines": lines_out}, "meta": {"request_id": request.state.request_id}}
 
