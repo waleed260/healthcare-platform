@@ -41,9 +41,10 @@ export default function DoctorsPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [showAddDoctor, setShowAddDoctor] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [filter, setFilter] = useState<"all" | "active" | "inactive" | "archived">("all");
 
   const canManageDoctor = permissions.includes("doctor.manage");
+  const showArchived = filter === "all" || filter === "archived";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,12 +112,22 @@ export default function DoctorsPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {canManageDoctor && <button className="button button-primary" type="button" onClick={() => setShowAddDoctor(true)}>Add doctor <span>＋</span></button>}
-          <button className="button button-secondary" type="button" onClick={() => setShowArchived((v) => !v)}>
-            {showArchived ? "Hide archived" : "Show archived"} <span>{showArchived ? "←" : "→"}</span>
-          </button>
           <Link className="button button-secondary" href="/manage">
             Manage team <span>→</span>
           </Link>
+        </div>
+      </div>
+      <div className="pipeline-toolbar">
+        <div className="pipeline-tabs" role="tablist">
+          {(["all", "active", "inactive", "archived"] as const).map((s) => {
+            const count = s === "all" ? doctors.length : doctors.filter((d) => d.status === s).length;
+            const label = s.charAt(0).toUpperCase() + s.slice(1);
+            return (
+              <button key={s} className={filter === s ? "active" : ""} onClick={() => setFilter(s)}>
+                {label} <span style={{ color: "var(--muted)", marginLeft: 4 }}>{count}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
       <p className="queue-intro">
@@ -143,7 +154,7 @@ export default function DoctorsPage() {
         </div>
       )}
 
-      {activeDoctors.length > 0 && (
+      {(filter === "all" || filter === "active") && activeDoctors.length > 0 && (
         <div className="doctors-grid">
           {activeDoctors.map((doc) => {
             const docAppts = appointments[doc.id] ?? [];
@@ -253,7 +264,7 @@ export default function DoctorsPage() {
         </div>
       )}
 
-      {inactiveDoctors.length > 0 && (
+      {(filter === "all" || filter === "inactive") && inactiveDoctors.length > 0 && (
         <>
           <p className="eyebrow" style={{ marginTop: 32, marginBottom: 12 }}>INACTIVE</p>
           <div className="doctors-grid">
@@ -277,7 +288,7 @@ export default function DoctorsPage() {
         </>
       )}
 
-      {showArchived && (
+      {(filter === "all" || filter === "archived") && (
         <>
           <p className="eyebrow" style={{ marginTop: 32, marginBottom: 12 }}>ARCHIVED ({archivedDoctors.length})</p>
           {archivedDoctors.length === 0 ? (
