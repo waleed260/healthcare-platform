@@ -27,9 +27,9 @@ router = APIRouter(prefix="/api/v1/patients", tags=["clinical-media"])
 
 def _media_or_404(db: Session, session: dict, patient_id: UUID, media_id: UUID) -> dict:
     row = db.execute(text("""
-        SELECT id, patient_id, treatment_plan_item_id, provider_user_id, captured_on, media_kind, mime_type,
-               size_bytes, scan_status, scan_failure_reason, approval_status, approved_for_website,
-               consent_record_id, approved_by_user_id, approved_at, version, created_at, updated_at
+        SELECT id, patient_id, treatment_plan_item_id, provider_user_id, appointment_id, captured_on, media_kind,
+               title, notes, mime_type, size_bytes, scan_status, scan_failure_reason, approval_status,
+               approved_for_website, consent_record_id, approved_by_user_id, approved_at, version, created_at, updated_at
         FROM patient_media
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :media_id AND archived_at IS NULL
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "media_id": media_id}).mappings().one_or_none()
@@ -46,9 +46,9 @@ def media_list(patient_id: UUID, request: Request, cursor: str | None = Query(de
     if cursor and cursor_values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid or expired.", status.HTTP_400_BAD_REQUEST)
     rows = db.execute(text("""
-        SELECT id, treatment_plan_item_id, provider_user_id, captured_on, media_kind, mime_type, size_bytes,
-               scan_status, scan_failure_reason, approval_status, approved_for_website, consent_record_id,
-               approved_by_user_id, approved_at, version, created_at, updated_at
+        SELECT id, treatment_plan_item_id, provider_user_id, appointment_id, captured_on, media_kind, title, notes,
+               mime_type, size_bytes, scan_status, scan_failure_reason, approval_status, approved_for_website,
+               consent_record_id, approved_by_user_id, approved_at, version, created_at, updated_at
         FROM patient_media
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL
           AND (:after_id IS NULL OR captured_on < :after_captured OR (captured_on = :after_captured AND id < :after_id))
@@ -66,10 +66,17 @@ def media_list(patient_id: UUID, request: Request, cursor: str | None = Query(de
 
 
 @router.post("/{patient_id}/media/upload", status_code=status.HTTP_201_CREATED)
-async def media_upload(patient_id: UUID, request: Request, media_kind: str = "other", captured_on: date | None = None, treatment_plan_item_id: UUID | None = None, provider_user_id: UUID | None = None, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+async def media_upload(patient_id: UUID, request: Request, media_kind: str = "other", captured_on: date | None = None, treatment_plan_item_id: UUID | None = None, provider_user_id: UUID | None = None, appointment_id: UUID | None = None, title: str | None = None, notes: str | None = None, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "patient.media.write", csrf_token)
     _require_patient(db, session, patient_id)
-    payload = PatientMediaCreate(media_kind=media_kind, captured_on=captured_on, treatment_plan_item_id=treatment_plan_item_id, provider_user_id=provider_user_id)
+    payload = PatientMediaCreate(media_kind=media_kind, captured_on=captured_on, treatment_plan_item_id=treatment_plan_item_id, provider_user_id=provider_user_id, appointment_id=appointment_id, title=title, notes=notes)
+    if payload.appointment_id is not None:
+        valid_appt = db.execute(text("""
+            SELECT 1 FROM appointments
+            WHERE clinic_id = :clinic_id AND id = :appointment_id AND patient_id = :patient_id
+        """), {"clinic_id": session["clinic_id"], "appointment_id": payload.appointment_id, "patient_id": patient_id}).scalar_one_or_none()
+        if valid_appt is None:
+            raise _error("NOT_FOUND", "Appointment not found for this patient.", status.HTTP_404_NOT_FOUND)
     if payload.treatment_plan_item_id is not None:
         valid_item = db.execute(text("""
             SELECT 1 FROM treatment_plan_items item
@@ -102,13 +109,13 @@ async def media_upload(patient_id: UUID, request: Request, media_kind: str = "ot
     try:
         put_private_object(storage_key, content)
         row = db.execute(text("""
-            INSERT INTO patient_media (id, clinic_id, patient_id, treatment_plan_item_id, provider_user_id, captured_on,
-                media_kind, storage_key, original_filename, mime_type, size_bytes, content_sha256)
-            VALUES (:id, :clinic_id, :patient_id, :item_id, COALESCE(:provider_user_id, :actor), COALESCE(:captured_on, CURRENT_DATE),
-                :media_kind, :storage_key, :filename, :mime_type, :size_bytes, :sha256)
-            RETURNING id, patient_id, treatment_plan_item_id, provider_user_id, captured_on, media_kind, mime_type,
-                      size_bytes, scan_status, approval_status, approved_for_website, version, created_at
-        """), {"id": media_id, "clinic_id": session["clinic_id"], "patient_id": patient_id, "item_id": payload.treatment_plan_item_id, "provider_user_id": payload.provider_user_id, "actor": session["user_id"], "captured_on": payload.captured_on, "media_kind": payload.media_kind, "storage_key": storage_key, "filename": f"patient-media{extension}", "mime_type": content_type, "size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}).mappings().one()
+            INSERT INTO patient_media (id, clinic_id, patient_id, treatment_plan_item_id, provider_user_id, appointment_id,
+                captured_on, media_kind, title, notes, storage_key, original_filename, mime_type, size_bytes, content_sha256)
+            VALUES (:id, :clinic_id, :patient_id, :item_id, COALESCE(:provider_user_id, :actor), :appointment_id,
+                COALESCE(:captured_on, CURRENT_DATE), :media_kind, :title, :notes, :storage_key, :filename, :mime_type, :size_bytes, :sha256)
+            RETURNING id, patient_id, treatment_plan_item_id, provider_user_id, appointment_id, captured_on, media_kind,
+                      title, notes, mime_type, size_bytes, scan_status, approval_status, approved_for_website, version, created_at
+        """), {"id": media_id, "clinic_id": session["clinic_id"], "patient_id": patient_id, "item_id": payload.treatment_plan_item_id, "provider_user_id": payload.provider_user_id, "appointment_id": payload.appointment_id, "actor": session["user_id"], "captured_on": payload.captured_on, "media_kind": payload.media_kind, "title": payload.title, "notes": payload.notes, "storage_key": storage_key, "filename": f"patient-media{extension}", "mime_type": content_type, "size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}).mappings().one()
         db.execute(text("""
             INSERT INTO background_jobs (clinic_id, job_key, job_type, status)
             VALUES (:clinic_id, :job_key, 'patient_media_scan', 'queued')

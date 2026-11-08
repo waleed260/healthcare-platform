@@ -31,7 +31,9 @@ type Admission = { id: string; branch_id: string; branch_name: string | null; ad
 type Tab = "overview" | "encounters" | "vitals" | "transfers" | "admissions" | "timeline" | "appointments" | "notes" | "documents" | "consents" | "prescriptions" | "invoices" | "treatments" | "packages" | "media";
 
 type PatientEncounter = { id: string; encounter_type: string; status: string; chief_complaint: string | null; diagnosis: string | null; doctor_name: string; created_at: string; finalized_at: string | null };
-type PatientMedia = { id: string; treatment_plan_item_id: string | null; provider_user_id: string | null; captured_on: string; media_kind: string; mime_type: string; size_bytes: number; scan_status: string; scan_failure_reason: string | null; approval_status: string; approved_for_website: boolean; consent_record_id: string | null; approved_by_user_id: string | null; approved_at: string | null; version: number; created_at: string; updated_at: string };
+type PatientMedia = { id: string; treatment_plan_item_id: string | null; provider_user_id: string | null; appointment_id: string | null; captured_on: string; media_kind: string; title: string | null; notes: string | null; mime_type: string; size_bytes: number; scan_status: string; scan_failure_reason: string | null; approval_status: string; approved_for_website: boolean; consent_record_id: string | null; approved_by_user_id: string | null; approved_at: string | null; version: number; created_at: string; updated_at: string };
+
+const MEDIA_KINDS = ["xray", "scan", "lab", "photo", "document", "before", "after", "other"] as const;
 
 function computeAge(dob: string | null): { years: number; months: number; label: string; category: string } | null {
   if (!dob) return null;
@@ -157,6 +159,7 @@ export default function PatientDetailPage() {
   const [media, setMedia] = useState<PatientMedia[]>([]);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaForm, setMediaForm] = useState<{ open: boolean; title: string; kind: string; appointment_id: string; notes: string; file: File | null }>({ open: false, title: "", kind: "xray", appointment_id: "", notes: "", file: null });
   const [viewMedia, setViewMedia] = useState<PatientMedia | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -392,23 +395,29 @@ export default function PatientDetailPage() {
     } catch (reason) { toast.error(errorMessage(reason, "Media could not be loaded.")); }
   }, [patientId, toast]);
 
-  async function uploadMedia(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
+  async function submitMedia(e: FormEvent) {
+    e.preventDefault();
+    const file = mediaForm.file;
+    if (!file) { toast.error("Choose an image file."); return; }
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
       toast.error("Only JPEG, PNG, or WebP images are accepted.");
       return;
     }
+    if (!mediaForm.title.trim()) { toast.error("Title is required so the doctor can recognise the image."); return; }
     setMediaUploading(true);
     try {
-      const resp = await fetch(`/api/v1/patients/${patientId}/media/upload?media_kind=other`, {
+      const params = new URLSearchParams({ media_kind: mediaForm.kind, title: mediaForm.title.trim() });
+      if (mediaForm.appointment_id) params.set("appointment_id", mediaForm.appointment_id);
+      if (mediaForm.notes.trim()) params.set("notes", mediaForm.notes.trim());
+      const resp = await fetch(`/api/v1/patients/${patientId}/media/upload?${params.toString()}`, {
         method: "POST", credentials: "include",
         headers: { ...writeHeaders(), "Content-Type": file.type },
         body: await file.arrayBuffer(),
       });
       if (!resp.ok) { const err = await resp.json().catch(() => null); throw new Error(err?.error?.message ?? "Upload failed."); }
       toast.success("Image uploaded.");
+      setMediaForm({ open: false, title: "", kind: "xray", appointment_id: "", notes: "", file: null });
+      if (!appointmentsLoaded) void loadAppointments();
       await loadMedia();
     } catch (reason) { toast.error(errorMessage(reason, "Image could not be uploaded.")); }
     finally { setMediaUploading(false); }
@@ -1084,41 +1093,70 @@ export default function PatientDetailPage() {
             {activeTab === "media" && (
               <section className="detail-card">
                 <div className="card-heading">
-                  <div><p className="eyebrow">CLINICAL MEDIA</p><h2>Patient images</h2></div>
+                  <div><p className="eyebrow">CLINICAL MEDIA</p><h2>{patient.full_name} — images</h2></div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <span className="directory-count">{media.length} shown</span>
-                    {can("patient.media.write") && (
-                      <label className="button button-primary" style={{ cursor: "pointer" }}>
-                        {mediaUploading ? "Uploading…" : "Upload image"} <span>+</span>
-                        <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={(e) => void uploadMedia(e)} disabled={mediaUploading} />
-                      </label>
+                    {can("patient.media.write") && !mediaForm.open && (
+                      <button type="button" className="button button-primary" onClick={() => { setMediaForm((f) => ({ ...f, open: true })); if (!appointmentsLoaded) void loadAppointments(); }}>
+                        Upload image <span>+</span>
+                      </button>
                     )}
                   </div>
                 </div>
+                {mediaForm.open && (
+                  <form onSubmit={(e) => void submitMedia(e)} className="form-grid" style={{ marginTop: 12, padding: 12, border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)" }}>
+                    <label>Title *<input type="text" value={mediaForm.title} maxLength={200} onChange={(e) => setMediaForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Right-knee lateral X-ray" required /></label>
+                    <label>Kind
+                      <select value={mediaForm.kind} onChange={(e) => setMediaForm((f) => ({ ...f, kind: e.target.value }))}>
+                        {MEDIA_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                    </label>
+                    <label>Linked appointment
+                      <select value={mediaForm.appointment_id} onChange={(e) => setMediaForm((f) => ({ ...f, appointment_id: e.target.value }))}>
+                        <option value="">— None —</option>
+                        {appointments.map((a) => <option key={a.id} value={a.id}>{a.reference} · {formatDate(a.starts_at)}</option>)}
+                      </select>
+                    </label>
+                    <label>File *<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setMediaForm((f) => ({ ...f, file: e.target.files?.[0] ?? null }))} required /></label>
+                    <label style={{ gridColumn: "1 / -1" }}>Notes<textarea value={mediaForm.notes} maxLength={2000} rows={2} onChange={(e) => setMediaForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Findings, side, context the doctor should see" /></label>
+                    <div className="form-actions" style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
+                      <button type="submit" className="button button-primary" disabled={mediaUploading}>{mediaUploading ? "Uploading…" : "Save image"}</button>
+                      <button type="button" className="button button-secondary" disabled={mediaUploading} onClick={() => setMediaForm({ open: false, title: "", kind: "xray", appointment_id: "", notes: "", file: null })}>Cancel</button>
+                    </div>
+                  </form>
+                )}
                 {!mediaLoaded ? (
                   <div className="dashboard-empty" role="status"><strong>Loading media…</strong></div>
                 ) : media.length === 0 ? (
                   <div className="dashboard-empty"><strong>No media</strong><span>Patient images will appear here after upload.</span></div>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16, marginTop: 8 }}>
-                    {media.map((m) => (
-                      <div key={m.id} style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
-                        <img
-                          src={`/api/v1/patients/${patientId}/media/${m.id}/image`}
-                          alt={`${m.media_kind} — ${m.captured_on}`}
-                          style={{ width: "100%", height: 160, objectFit: "cover", display: "block", background: "var(--line)", cursor: "pointer" }}
-                          loading="lazy"
-                          onClick={() => setViewMedia(m)}
-                        />
-                        <div style={{ padding: "8px 10px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span className={`pipeline-status status-${m.scan_status === "clean" ? "qualified" : m.scan_status === "pending" ? "new" : "lost"}`} style={{ fontSize: 10 }}>{m.scan_status}</span>
-                            <span className={`pipeline-status status-${m.approval_status === "approved" ? "qualified" : m.approval_status === "revoked" ? "lost" : "new"}`} style={{ fontSize: 10 }}>{m.approval_status}</span>
-                          </div>
-                          <small style={{ display: "block", color: "var(--muted)", marginTop: 4, fontSize: 10 }}>
-                            {m.media_kind} · {formatDate(m.captured_on)} · {Math.round(m.size_bytes / 1024)} KB
-                          </small>
-                          <button className="text-control" style={{ fontSize: 11, marginTop: 4 }} type="button" onClick={() => setViewMedia(m)}>View</button>
+                  <div style={{ marginTop: 12 }}>
+                    {Array.from(media.reduce((acc, m) => { const k = m.captured_on; if (!acc.has(k)) acc.set(k, []); acc.get(k)!.push(m); return acc; }, new Map<string, PatientMedia[]>()).entries()).map(([day, items]) => (
+                      <div key={day} style={{ marginBottom: 20 }}>
+                        <p className="eyebrow" style={{ marginBottom: 8 }}>{formatDate(day)} · {items.length} IMAGE{items.length !== 1 ? "S" : ""}</p>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 16 }}>
+                          {items.map((m) => (
+                            <div key={m.id} style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
+                              <img
+                                src={`/api/v1/patients/${patientId}/media/${m.id}/image`}
+                                alt={m.title ?? `${m.media_kind} — ${m.captured_on}`}
+                                style={{ width: "100%", height: 180, objectFit: "cover", display: "block", background: "var(--line)", cursor: "pointer" }}
+                                loading="lazy"
+                                onClick={() => setViewMedia(m)}
+                              />
+                              <div style={{ padding: "8px 10px" }}>
+                                <strong style={{ fontSize: 13, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title || m.media_kind}</strong>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                                  <span className="pipeline-status status-new" style={{ fontSize: 10 }}>{m.media_kind}</span>
+                                  <span className={`pipeline-status status-${m.scan_status === "clean" ? "qualified" : m.scan_status === "pending_scan" ? "new" : "lost"}`} style={{ fontSize: 10 }}>{m.scan_status}</span>
+                                </div>
+                                <small style={{ display: "block", color: "var(--muted)", marginTop: 4, fontSize: 10 }}>
+                                  {Math.round(m.size_bytes / 1024)} KB · {m.mime_type.replace("image/", "").toUpperCase()}
+                                </small>
+                                <button className="text-control" style={{ fontSize: 11, marginTop: 4 }} type="button" onClick={() => setViewMedia(m)}>View</button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ))}
@@ -1266,14 +1304,18 @@ export default function PatientDetailPage() {
               <button type="button" onClick={() => setViewMedia(null)} style={{ position: "absolute", top: 16, right: 20, background: "none", border: "none", color: "#fff", fontSize: 28, cursor: "pointer", lineHeight: 1, padding: 8 }} aria-label="Close">✕</button>
               <img
                 src={`/api/v1/patients/${patientId}/media/${viewMedia.id}/image`}
-                alt={`${viewMedia.media_kind} — ${viewMedia.captured_on}`}
-                style={{ maxWidth: "90vw", maxHeight: "80vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}
+                alt={viewMedia.title ?? `${viewMedia.media_kind} — ${viewMedia.captured_on}`}
+                style={{ maxWidth: "90vw", maxHeight: "72vh", objectFit: "contain", borderRadius: 8, boxShadow: "0 8px 40px rgba(0,0,0,0.5)" }}
                 onClick={(e) => e.stopPropagation()}
               />
-              <div style={{ marginTop: 12, textAlign: "center", color: "#fff" }} onClick={(e) => e.stopPropagation()}>
-                <strong style={{ fontSize: 14 }}>{viewMedia.media_kind}</strong>
-                <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.7 }}>
-                  {formatDate(viewMedia.captured_on)} · {Math.round(viewMedia.size_bytes / 1024)} KB · {viewMedia.mime_type.replace("image/", "").toUpperCase()}
+              <div style={{ marginTop: 12, textAlign: "center", color: "#fff", maxWidth: "min(90vw, 640px)" }} onClick={(e) => e.stopPropagation()}>
+                <strong style={{ fontSize: 16, display: "block" }}>{viewMedia.title || viewMedia.media_kind}</strong>
+                <p style={{ margin: "4px 0 0", fontSize: 13, opacity: 0.85 }}>
+                  {patient.full_name} · {viewMedia.media_kind} · {formatDate(viewMedia.captured_on)}
+                </p>
+                {viewMedia.notes && <p style={{ margin: "8px 0 0", fontSize: 12, opacity: 0.8, whiteSpace: "pre-wrap" }}>{viewMedia.notes}</p>}
+                <p style={{ margin: "6px 0 0", fontSize: 11, opacity: 0.6 }}>
+                  {Math.round(viewMedia.size_bytes / 1024)} KB · {viewMedia.mime_type.replace("image/", "").toUpperCase()} · {viewMedia.scan_status}
                 </p>
               </div>
             </div>

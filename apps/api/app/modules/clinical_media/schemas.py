@@ -7,10 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class PatientMediaCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    media_kind: str = Field(default="other", pattern="^(before|after|other)$")
+    media_kind: str = Field(default="other", pattern="^(before|after|other|xray|scan|lab|photo|document)$")
     captured_on: date | None = None
     treatment_plan_item_id: UUID | None = None
     provider_user_id: UUID | None = None
+    appointment_id: UUID | None = None
+    title: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class PatientMediaApproval(BaseModel):
