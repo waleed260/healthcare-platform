@@ -89,6 +89,7 @@ def _setup_clinic_with_users(admin_engine):
 
 def _cleanup(admin_engine, clinic_id, user_ids, role_ids):
     with admin_engine.begin() as conn:
+        conn.execute(text("SET LOCAL session_replication_role = 'replica'"))
         for uid in user_ids:
             conn.execute(text("DELETE FROM recovery_codes WHERE user_id = :uid"), {"uid": uid})
             conn.execute(text("DELETE FROM mfa_methods WHERE user_id = :uid"), {"uid": uid})

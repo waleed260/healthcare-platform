@@ -58,14 +58,18 @@ def _seed_two_clinics(admin_engine):
                 "INSERT INTO user_roles (clinic_id, user_id, role_id) VALUES (:cid, :uid, :rid)"
             ), {"cid": cid, "uid": uid, "rid": role_id})
             conn.execute(text(
-                "INSERT INTO patients (id, clinic_id, full_name, status) VALUES (:id, :cid, :name, 'active')"
-            ), {"id": pid, "cid": cid, "name": f"Patient of {label}"})
+                "INSERT INTO patients (id, clinic_id, patient_number, full_name, status) VALUES (:id, :cid, :pn, :name, 'active')"
+            ), {"id": pid, "cid": cid, "pn": f"TEST-{label}-{str(pid)[:8]}", "name": f"Patient of {label}"})
         clinics[label] = {"clinic_id": cid, "user_id": uid, "email": email, "patient_id": pid}
     return clinics
 
 
 def _cleanup(admin_engine, clinics):
     with admin_engine.begin() as conn:
+        # The last-owner guard trigger protects production from losing an owner
+        # by accident; test teardown is dismantling the whole clinic, so suppress
+        # user-defined triggers for this cleanup transaction (migrator is superuser).
+        conn.execute(text("SET LOCAL session_replication_role = 'replica'"))
         for c in clinics.values():
             conn.execute(text("DELETE FROM staff_invitations WHERE clinic_id = :cid"), {"cid": c["clinic_id"]})
             conn.execute(text("DELETE FROM patients WHERE clinic_id = :cid"), {"cid": c["clinic_id"]})

@@ -53,6 +53,13 @@ _DIRECT_REPOINT = (
     # (Both the GLM and the independent review missed these two.)
     "privacy_requests",
     "export_jobs",
+    # Clinical/operational history also belongs to the surviving patient.
+    "encounter_forms",
+    "internal_tasks",
+    "patient_admissions",
+    "patient_discharges",
+    "patient_transfers",
+    "patient_vitals",
 )
 
 # Many-to-many membership tables: move rows that do not already exist on the

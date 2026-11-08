@@ -5,6 +5,7 @@ from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -69,7 +70,10 @@ def media_list(patient_id: UUID, request: Request, cursor: str | None = Query(de
 async def media_upload(patient_id: UUID, request: Request, media_kind: str = "other", captured_on: date | None = None, treatment_plan_item_id: UUID | None = None, provider_user_id: UUID | None = None, appointment_id: UUID | None = None, title: str | None = None, notes: str | None = None, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "patient.media.write", csrf_token)
     _require_patient(db, session, patient_id)
-    payload = PatientMediaCreate(media_kind=media_kind, captured_on=captured_on, treatment_plan_item_id=treatment_plan_item_id, provider_user_id=provider_user_id, appointment_id=appointment_id, title=title, notes=notes)
+    try:
+        payload = PatientMediaCreate(media_kind=media_kind, captured_on=captured_on, treatment_plan_item_id=treatment_plan_item_id, provider_user_id=provider_user_id, appointment_id=appointment_id, title=title, notes=notes)
+    except ValidationError as exc:
+        raise _error("INVALID_INPUT", "; ".join(e["msg"] for e in exc.errors()), status.HTTP_400_BAD_REQUEST) from exc
     if payload.appointment_id is not None:
         valid_appt = db.execute(text("""
             SELECT 1 FROM appointments

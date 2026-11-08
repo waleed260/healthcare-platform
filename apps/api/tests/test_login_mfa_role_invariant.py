@@ -101,16 +101,27 @@ def test_login_succeeds_after_mfa_enrollment_and_verification():
         finally:
             db.close()
 
-        # Step 2: Enroll MFA
+        # Step 2: Enroll MFA (begin → verify TOTP → enrolled_at populated).
+        # `begin_mfa_enrollment` only seeds the secret; `complete_mfa` is what
+        # sets `enrolled_at`, so subsequent logins only require MFA after this.
+        import pyotp
         db = Session()
         try:
-            session = get_session(db, result.session_token)
             secret, codes = begin_mfa_enrollment(db, user_id)
             db.commit()
         finally:
             db.close()
+        db = Session()
+        try:
+            session = get_session(db, result.session_token)
+            rotation = complete_mfa(db, session, pyotp.TOTP(secret).now())
+            db.commit()
+            new_session = get_session(db, rotation.session_token)
+            assert new_session["mfa_verified"] is True
+        finally:
+            db.close()
 
-        # Step 3: Login again — MFA is now enrolled, should require verification
+        # Step 3: Login again — enrolled_at is set, so MFA must now be required.
         db = Session()
         try:
             result2 = authenticate(db, email, _PASSWORD, "192.0.2.10", "pytest")
@@ -120,19 +131,14 @@ def test_login_succeeds_after_mfa_enrollment_and_verification():
         finally:
             db.close()
 
-        # Step 4: Verify MFA with a valid TOTP code
-        import pyotp
-        totp = pyotp.TOTP(secret)
-        code = totp.now()
+        # Step 4: Verify MFA on the new session.
         db = Session()
         try:
             session = get_session(db, result2.session_token)
-            rotation = complete_mfa(db, session, code)
+            rotation2 = complete_mfa(db, session, pyotp.TOTP(secret).now())
             db.commit()
-            # Verify the new session is MFA-verified
-            new_session = get_session(db, rotation.session_token)
-            assert new_session["mfa_verified"] is True
-            db.commit()
+            new_session2 = get_session(db, rotation2.session_token)
+            assert new_session2["mfa_verified"] is True
         finally:
             db.close()
     finally:
