@@ -41,6 +41,7 @@ export default function DoctorsPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [showAddDoctor, setShowAddDoctor] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const canManageDoctor = permissions.includes("doctor.manage");
 
@@ -50,7 +51,7 @@ export default function DoctorsPage() {
     try {
       const [session, docs] = await Promise.all([
         api<{ permissions?: string[] }>("/api/v1/auth/me"),
-        api<Doctor[]>("/api/v1/doctors?limit=100"),
+        api<Doctor[]>(`/api/v1/doctors?limit=100${showArchived ? "&include_archived=true" : ""}`),
       ]);
       setPermissions(session?.permissions ?? []);
       setDoctors(docs ?? []);
@@ -69,7 +70,7 @@ export default function DoctorsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     void load();
@@ -96,7 +97,8 @@ export default function DoctorsPage() {
   }
 
   const activeDoctors = doctors.filter((d) => d.status === "active");
-  const inactiveDoctors = doctors.filter((d) => d.status !== "active");
+  const inactiveDoctors = doctors.filter((d) => d.status === "inactive");
+  const archivedDoctors = doctors.filter((d) => d.status === "archived");
 
   return (
     <main className="dash-content" aria-busy={loading}>
@@ -109,6 +111,9 @@ export default function DoctorsPage() {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {canManageDoctor && <button className="button button-primary" type="button" onClick={() => setShowAddDoctor(true)}>Add doctor <span>＋</span></button>}
+          <button className="button button-secondary" type="button" onClick={() => setShowArchived((v) => !v)}>
+            {showArchived ? "Hide archived" : "Show archived"} <span>{showArchived ? "←" : "→"}</span>
+          </button>
           <Link className="button button-secondary" href="/manage">
             Manage team <span>→</span>
           </Link>
@@ -269,6 +274,35 @@ export default function DoctorsPage() {
               </article>
             ))}
           </div>
+        </>
+      )}
+
+      {showArchived && (
+        <>
+          <p className="eyebrow" style={{ marginTop: 32, marginBottom: 12 }}>ARCHIVED ({archivedDoctors.length})</p>
+          {archivedDoctors.length === 0 ? (
+            <div className="dashboard-empty"><strong>No archived doctors.</strong></div>
+          ) : (
+            <div className="doctors-grid">
+              {archivedDoctors.map((doc) => (
+                <article className="doctor-card panel-card" key={doc.id} style={{ opacity: 0.5 }}>
+                  <div className="card-heading">
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="doctor-avatar" style={{ background: "var(--muted)" }}>{doc.public_name.charAt(0).toUpperCase()}</span>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: 15 }}>
+                          <Link href={`/doctors/${doc.id}`} style={{ color: "inherit", textDecoration: "none" }}>{doc.public_name}</Link>
+                        </h3>
+                        {doc.specialty && <small style={{ color: "var(--muted)", fontSize: 11 }}>{doc.specialty}</small>}
+                      </div>
+                    </div>
+                    <span className={statusClass(doc.status)} style={{ fontSize: 10 }}>archived</span>
+                  </div>
+                  <small style={{ color: "var(--muted)", fontSize: 11 }}>Open the profile to restore.</small>
+                </article>
+              ))}
+            </div>
+          )}
         </>
       )}
 

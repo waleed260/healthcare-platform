@@ -235,7 +235,7 @@ def list_branch_hours(branch_id: str, request: Request, db: Session = Depends(ge
 
 
 @catalog_router.get("/doctors")
-def list_doctors(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def list_doctors(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), include_archived: bool = Query(default=False), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "doctor.read")
     cursor_values = decode_cursor(cursor, "doctors") if cursor else None
     if cursor and cursor_values is None:
@@ -245,12 +245,13 @@ def list_doctors(request: Request, cursor: str | None = Query(default=None, max_
         after_id = cursor_values["id"] if cursor_values else None
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
-    rows = db.execute(text("""
+    archived_filter = "" if include_archived else "AND archived_at IS NULL"
+    rows = db.execute(text(f"""
         SELECT id, public_name, specialty, registration, license_number, verification_status,
                bio, phone, email, consultation_duration_minutes, booking_status, room_id, notes,
-               status, version, created_at, updated_at
+               status, version, created_at, updated_at, archived_at
         FROM doctor_profiles
-        WHERE clinic_id = :clinic_id AND archived_at IS NULL
+        WHERE clinic_id = :clinic_id {archived_filter}
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
                OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = doctor_profiles.id AND s.user_id = :user_id)
                OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = doctor_profiles.id))
@@ -325,7 +326,7 @@ def doctor_detail(doctor_id: str, request: Request, db: Session = Depends(get_db
                (SELECT COUNT(*) FROM appointments a WHERE a.clinic_id = d.clinic_id AND a.doctor_id = d.id AND a.archived_at IS NULL AND a.status NOT IN ('cancelled', 'completed', 'no_show') AND a.starts_at >= now()) AS upcoming_appointments,
                (SELECT COUNT(DISTINCT a.patient_id) FROM appointments a WHERE a.clinic_id = d.clinic_id AND a.doctor_id = d.id AND a.archived_at IS NULL AND a.patient_id IS NOT NULL) AS total_patients
         FROM doctor_profiles d
-        WHERE d.clinic_id = :clinic_id AND d.id = CAST(:doctor_id AS uuid) AND d.archived_at IS NULL
+        WHERE d.clinic_id = :clinic_id AND d.id = CAST(:doctor_id AS uuid)
           AND (NOT EXISTS (SELECT 1 FROM user_branch_scopes s WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id)
                OR EXISTS (SELECT 1 FROM branch_doctors bd JOIN user_branch_scopes s ON s.clinic_id = bd.clinic_id AND s.branch_id = bd.branch_id WHERE bd.clinic_id = :clinic_id AND bd.doctor_id = d.id AND s.user_id = :user_id)
                OR NOT EXISTS (SELECT 1 FROM branch_doctors bd2 WHERE bd2.clinic_id = :clinic_id AND bd2.doctor_id = d.id))
