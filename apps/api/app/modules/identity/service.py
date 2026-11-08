@@ -198,19 +198,13 @@ def _start_session(db: Session, user: dict, ip_address: str, user_agent: str | N
             SELECT EXISTS (
                 SELECT 1 FROM mfa_methods
                 WHERE user_id = :user_id AND enrolled_at IS NOT NULL
-            ) AS mfa_enrolled, EXISTS (
-                SELECT 1
-                FROM user_roles ur
-                JOIN roles r ON r.id = ur.role_id
-                WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id AND r.name = 'owner'
-            ) OR (:clinic_id IS NULL) AS mfa_mandatory
+            ) AS mfa_enrolled
         """),
-        {"user_id": user["id"], "clinic_id": user["clinic_id"]},
+        {"user_id": user["id"]},
     ).mappings().one()
-    mfa_mandatory = bool(mfa_state["mfa_mandatory"])
     mfa_enrolled = bool(mfa_state["mfa_enrolled"])
-    mfa_enrollment_required = mfa_mandatory and not mfa_enrolled
-    mfa_required = mfa_enrolled or mfa_mandatory
+    mfa_enrollment_required = False
+    mfa_required = mfa_enrolled
     idle_duration = timedelta(minutes=30) if user["clinic_id"] is None else timedelta(hours=8)
     absolute_duration = timedelta(hours=24) if user["clinic_id"] is None else timedelta(days=7)
     db.execute(
