@@ -227,4 +227,4 @@ class ServiceMaterialUpdate(BaseModel):
 class CatalogStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: str = Field(pattern="^(active|archived)$")
+    status: str = Field(pattern="^(active|inactive|archived)$")

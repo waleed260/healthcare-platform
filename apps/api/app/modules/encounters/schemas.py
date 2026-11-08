@@ -49,6 +49,7 @@ class AdministeredTreatment(BaseModel):
     unit_price_minor: int | None = None
     currency: str | None = Field(default=None, max_length=3)
     quantity: int | None = Field(default=None, ge=1)
+    discount_minor: int | None = Field(default=None, ge=0)
 
 
 class AdministeredProcedure(BaseModel):
@@ -60,6 +61,7 @@ class AdministeredProcedure(BaseModel):
     service_id: str | None = None
     unit_price_minor: int | None = None
     currency: str | None = Field(default=None, max_length=3)
+    discount_minor: int | None = Field(default=None, ge=0)
 
 
 class EncounterCreate(BaseModel):

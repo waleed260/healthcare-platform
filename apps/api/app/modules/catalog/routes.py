@@ -141,6 +141,13 @@ def create_branch(payload: BranchCreate, request: Request, db: Session = Depends
             VALUES (:clinic_id, :branch_id, :weekday, 0, :opens_at, :closes_at, :is_closed)
             ON CONFLICT (clinic_id, branch_id, weekday, interval_index) DO NOTHING
         """), {"clinic_id": session["clinic_id"], "branch_id": row["id"], "weekday": weekday, "opens_at": None if is_closed else time(9, 0), "closes_at": None if is_closed else time(17, 0), "is_closed": is_closed})
+    # If the creator is branch-scoped, grant them scope to the new branch so list_branches returns it
+    db.execute(text("""
+        INSERT INTO user_branch_scopes (clinic_id, user_id, branch_id)
+        SELECT :clinic_id, :user_id, :branch_id
+        WHERE EXISTS (SELECT 1 FROM user_branch_scopes WHERE clinic_id = :clinic_id AND user_id = :user_id)
+        ON CONFLICT DO NOTHING
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": row["id"]})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 

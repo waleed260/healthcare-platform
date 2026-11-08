@@ -10,8 +10,8 @@ import { useConfirm } from "../../_lib/confirm";
 /* ── Types ─────────────────────────────────────────────────────────── */
 type Vitals = { blood_pressure?: string; pulse?: number; temperature?: number; respiratory_rate?: number; oxygen_saturation?: number; weight_kg?: number; height_cm?: number; notes?: string };
 type Medication = { name: string; dosage?: string; route?: string; frequency?: string; duration?: string; notes?: string; inventory_product_id?: string; unit_price_minor?: number; currency?: string };
-type AdministeredTreatment = { name: string; dosage?: string; route?: string; administered_at?: string; administered_by?: string; response?: string; notes?: string; service_id?: string; inventory_product_id?: string; unit_price_minor?: number; currency?: string; quantity?: number };
-type AdministeredProcedure = { name: string; performed_at?: string; performer?: string; findings?: string; notes?: string; service_id?: string; unit_price_minor?: number; currency?: string };
+type AdministeredTreatment = { name: string; dosage?: string; route?: string; administered_at?: string; administered_by?: string; response?: string; notes?: string; service_id?: string; inventory_product_id?: string; unit_price_minor?: number; currency?: string; quantity?: number; discount_minor?: number };
+type AdministeredProcedure = { name: string; performed_at?: string; performer?: string; findings?: string; notes?: string; service_id?: string; unit_price_minor?: number; currency?: string; discount_minor?: number };
 type CatalogService = { id: string; name: string; category: string; price_mode: string; amount_minor: number | null; currency: string | null; status: string };
 type InventoryProduct = { id: string; name: string; product_type: string; unit: string; status: string };
 type AmendmentEntry = { field: string; old_value: string | null; new_value: string; reason: string; amended_by: string; amended_at: string };
@@ -289,7 +289,8 @@ export default function EncounterDetailPage() {
     setBusy(true);
     try {
       const currency = treatments.find((t) => t.currency)?.currency ?? adminProcedures.find((p) => p.currency)?.currency ?? "PKR";
-      const res = await api<{ id: string; invoice_number: string; status: string; total_minor: number; currency: string }>(`/api/v1/encounters/${encounterId}/generate-invoice`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ currency, discount_minor: 0 }) });
+      const discountMinor = treatments.reduce((s, t) => s + (t.discount_minor ?? 0), 0) + adminProcedures.reduce((s, p) => s + (p.discount_minor ?? 0), 0);
+      const res = await api<{ id: string; invoice_number: string; status: string; total_minor: number; currency: string }>(`/api/v1/encounters/${encounterId}/generate-invoice`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ currency, discount_minor: discountMinor }) });
       if (res) {
         setInvoiceData({ ...res, paid_minor: 0 });
         setShowInvoicePreview(false);
@@ -342,14 +343,14 @@ export default function EncounterDetailPage() {
       // Administered — filter out incomplete rows and convert empty optional strings to null
       const cleanTreatments = treatments
         .filter((t) => t.name.trim())
-        .map((t) => ({ name: t.name.trim(), dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null, service_id: t.service_id || null, inventory_product_id: t.inventory_product_id || null, unit_price_minor: t.unit_price_minor ?? null, currency: t.currency || null, quantity: t.quantity ?? null }));
+        .map((t) => ({ name: t.name.trim(), dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null, service_id: t.service_id || null, inventory_product_id: t.inventory_product_id || null, unit_price_minor: t.unit_price_minor ?? null, currency: t.currency || null, quantity: t.quantity ?? null, discount_minor: t.discount_minor ?? null }));
       const cleanProcedures = adminProcedures
         .filter((p) => p.name.trim())
-        .map((p) => ({ name: p.name.trim(), performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null, service_id: p.service_id || null, unit_price_minor: p.unit_price_minor ?? null, currency: p.currency || null }));
-      if (JSON.stringify(cleanTreatments) !== JSON.stringify((enc.administered_treatments ?? []).map((t) => ({ name: t.name, dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null, service_id: t.service_id || null, inventory_product_id: t.inventory_product_id || null, unit_price_minor: t.unit_price_minor ?? null, currency: t.currency || null, quantity: t.quantity ?? null })))) {
+        .map((p) => ({ name: p.name.trim(), performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null, service_id: p.service_id || null, unit_price_minor: p.unit_price_minor ?? null, currency: p.currency || null, discount_minor: p.discount_minor ?? null }));
+      if (JSON.stringify(cleanTreatments) !== JSON.stringify((enc.administered_treatments ?? []).map((t) => ({ name: t.name, dosage: t.dosage || null, route: t.route || null, administered_at: t.administered_at || null, administered_by: t.administered_by || null, response: t.response || null, notes: t.notes || null, service_id: t.service_id || null, inventory_product_id: t.inventory_product_id || null, unit_price_minor: t.unit_price_minor ?? null, currency: t.currency || null, quantity: t.quantity ?? null, discount_minor: t.discount_minor ?? null })))) {
         body.administered_treatments = cleanTreatments;
       }
-      if (JSON.stringify(cleanProcedures) !== JSON.stringify((enc.administered_procedures ?? []).map((p) => ({ name: p.name, performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null, service_id: p.service_id || null, unit_price_minor: p.unit_price_minor ?? null, currency: p.currency || null })))) {
+      if (JSON.stringify(cleanProcedures) !== JSON.stringify((enc.administered_procedures ?? []).map((p) => ({ name: p.name, performed_at: p.performed_at || null, performer: p.performer || null, findings: p.findings || null, notes: p.notes || null, service_id: p.service_id || null, unit_price_minor: p.unit_price_minor ?? null, currency: p.currency || null, discount_minor: p.discount_minor ?? null })))) {
         body.administered_procedures = cleanProcedures;
       }
       s("treatment_response", treatmentResponse, enc.treatment_response);
@@ -456,11 +457,11 @@ export default function EncounterDetailPage() {
 
   /* ── Treatment helpers ────────────────────────────────────────── */
   function addTreatment() { setTreatments([...treatments, { name: "", dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }]); }
-  function updateTreatment(idx: number, field: keyof AdministeredTreatment, val: string) { setTreatments(treatments.map((t, i) => i === idx ? { ...t, [field]: field === "quantity" ? Math.max(1, parseInt(val) || 1) : val } : t)); }
+  function updateTreatment(idx: number, field: keyof AdministeredTreatment, val: string) { setTreatments(treatments.map((t, i) => i === idx ? { ...t, [field]: field === "quantity" ? Math.max(1, parseInt(val) || 1) : field === "discount_minor" ? Math.max(0, Math.round((parseFloat(val) || 0) * 100)) : val } : t)); }
   function removeTreatment(idx: number) { setTreatments(treatments.filter((_, i) => i !== idx)); }
 
   function addProcedure() { setAdminProcedures([...adminProcedures, { name: "", performed_at: "", performer: "", findings: "", notes: "" }]); }
-  function updateProcedure(idx: number, field: keyof AdministeredProcedure, val: string) { setAdminProcedures(adminProcedures.map((p, i) => i === idx ? { ...p, [field]: val } : p)); }
+  function updateProcedure(idx: number, field: keyof AdministeredProcedure, val: string) { setAdminProcedures(adminProcedures.map((p, i) => i === idx ? { ...p, [field]: field === "discount_minor" ? Math.max(0, Math.round((parseFloat(val) || 0) * 100)) : val } : p)); }
   function removeProcedure(idx: number) { setAdminProcedures(adminProcedures.filter((_, i) => i !== idx)); }
 
   /* ── Catalog picker helpers ──────────────────────────────────── */
@@ -500,7 +501,10 @@ export default function EncounterDetailPage() {
 
   const readonly = enc.status === "discharged" || enc.status === "finalized";
   const isDraft = enc.status === "draft";
-  const lockedTabs: Set<Tab> = new Set();
+  const lockedTabs: Set<Tab> = isDraft
+    ? new Set<Tab>(["assessment", "treatment", "medications", "vitals", "discharge", "summary"])
+    : new Set<Tab>();
+  const visibleTab: Tab = lockedTabs.has(tab) ? "arrival" : tab;
   const arrivalLocked = !isDraft && !readonly;
 
   /* ── Render ───────────────────────────────────────────────────── */
@@ -551,7 +555,7 @@ export default function EncounterDetailPage() {
       <div className="pipeline-toolbar">
         <div className="pipeline-tabs" role="tablist">
           {TABS.map((t) => (
-            <button key={t} className={tab === t ? "active" : ""} disabled={lockedTabs.has(t)} onClick={() => { if (!lockedTabs.has(t)) setTab(t); }}>{typeLabel(t)}</button>
+            <button key={t} className={visibleTab === t ? "active" : ""} disabled={lockedTabs.has(t)} onClick={() => { if (!lockedTabs.has(t)) setTab(t); }}>{typeLabel(t)}</button>
           ))}
         </div>
       </div>
@@ -601,7 +605,7 @@ export default function EncounterDetailPage() {
       <form onSubmit={(e) => void save(e)}>
 
         {/* ── Tab A: Arrival ─────────────────────────────────────── */}
-        {tab === "arrival" && (
+        {visibleTab === "arrival" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">ARRIVAL</p><h2>Arrival Information</h2></div>{arrivalLocked && <span className="enc-d-locked-hint">Locked after assessment started</span>}</div>
             <div className="form-grid enc-detail-grid-2col">
@@ -630,7 +634,7 @@ export default function EncounterDetailPage() {
         )}
 
         {/* ── Tab B: Patient Summary ─────────────────────────────── */}
-        {tab === "patient" && (
+        {visibleTab === "patient" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">PATIENT</p><h2>Patient Summary</h2></div></div>
             <div className="enc-detail-info-box">
@@ -659,7 +663,7 @@ export default function EncounterDetailPage() {
         )}
 
         {/* ── Tab C: Assessment ──────────────────────────────────── */}
-        {tab === "assessment" && (
+        {visibleTab === "assessment" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">CLINICAL</p><h2>Assessment</h2></div></div>
             <div className="form-grid enc-detail-grid-1col">
@@ -684,14 +688,13 @@ export default function EncounterDetailPage() {
               <label>Clinical assessment<textarea value={clinicalAssessment} onChange={(e) => setClinicalAssessment(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               <label>Treatment plan<textarea value={treatmentPlan} onChange={(e) => setTreatmentPlan(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               <label>Procedures performed<textarea value={procedures} onChange={(e) => setProcedures(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
-              <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
               <label>Internal notes<textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea enc-d-italic" placeholder="Only visible to staff" /></label>
             </div>
           </div>
         )}
 
         {/* ── Tab D: Administered Treatment ──────────────────────── */}
-        {tab === "treatment" && (
+        {visibleTab === "treatment" && (
           <>
             {catalogLoadFailed && <div className="workspace-alert enc-d-alert-tight" role="alert"><strong>Could not load services or inventory.</strong> Check your permissions or refresh.</div>}
             {!catalogLoadFailed && catalogServices.length === 0 && inventoryProducts.length === 0 && !readonly && (
@@ -747,6 +750,7 @@ export default function EncounterDetailPage() {
                   <label className="enc-detail-field-label">Dosage<input value={t.dosage ?? ""} onChange={(e) => updateTreatment(idx, "dosage", e.target.value)} disabled={readonly} placeholder="e.g. 500mg" /></label>
                   <label className="enc-detail-field-label">Route<input value={t.route ?? ""} onChange={(e) => updateTreatment(idx, "route", e.target.value)} disabled={readonly} placeholder="oral/IV" /></label>
                   <label className="enc-detail-field-label">Qty<input type="number" min={1} value={t.quantity ?? 1} onChange={(e) => updateTreatment(idx, "quantity", e.target.value)} disabled={readonly} className="enc-d-qty-input" /></label>
+                  <label className="enc-detail-field-label">Discount<input type="number" min={0} step="0.01" value={t.discount_minor != null ? (t.discount_minor / 100).toString() : ""} onChange={(e) => updateTreatment(idx, "discount_minor", e.target.value)} disabled={readonly} placeholder="0" className="enc-d-qty-input" /></label>
                   <label className="enc-detail-field-label">Given at<input type="datetime-local" value={t.administered_at ?? ""} onChange={(e) => updateTreatment(idx, "administered_at", e.target.value)} disabled={readonly} /></label>
                   <label className="enc-detail-field-label">Given by<input value={t.administered_by ?? ""} onChange={(e) => updateTreatment(idx, "administered_by", e.target.value)} disabled={readonly} /></label>
                   <label className="enc-detail-field-label">Response<input value={t.response ?? ""} onChange={(e) => updateTreatment(idx, "response", e.target.value)} disabled={readonly} /></label>
@@ -786,6 +790,7 @@ export default function EncounterDetailPage() {
                     </div>
                   </label>
                   <label className="enc-detail-field-label">Performed at<input type="datetime-local" value={p.performed_at ?? ""} onChange={(e) => updateProcedure(idx, "performed_at", e.target.value)} disabled={readonly} /></label>
+                  <label className="enc-detail-field-label">Discount<input type="number" min={0} step="0.01" value={p.discount_minor != null ? (p.discount_minor / 100).toString() : ""} onChange={(e) => updateProcedure(idx, "discount_minor", e.target.value)} disabled={readonly} placeholder="0" className="enc-d-qty-input" /></label>
                   <label className="enc-detail-field-label">Performer<input value={p.performer ?? ""} onChange={(e) => updateProcedure(idx, "performer", e.target.value)} disabled={readonly} /></label>
                   <label className="enc-detail-field-label-wide">Findings<input value={p.findings ?? ""} onChange={(e) => updateProcedure(idx, "findings", e.target.value)} disabled={readonly} /></label>
                   {!readonly && <button className="ghost-button enc-detail-remove-btn" type="button" onClick={() => removeProcedure(idx)}>Remove</button>}
@@ -803,15 +808,18 @@ export default function EncounterDetailPage() {
             {(() => {
               const tTotal = treatments.reduce((s, t) => s + (t.unit_price_minor ?? 0) * (t.quantity ?? 1), 0);
               const pTotal = adminProcedures.reduce((s, p) => s + (p.unit_price_minor ?? 0), 0);
+              const discountTotal = treatments.reduce((s, t) => s + (t.discount_minor ?? 0), 0) + adminProcedures.reduce((s, p) => s + (p.discount_minor ?? 0), 0);
               if (tTotal + pTotal <= 0) return null;
               const cur = treatments.find((t) => t.currency)?.currency ?? adminProcedures.find((p) => p.currency)?.currency ?? "PKR";
+              const grand = Math.max(0, tTotal + pTotal - discountTotal);
               return (
                 <div className="enc-section surface-card enc-d-section-gap enc-d-summary-bg">
                   <div className="surface-card-heading"><div><p className="eyebrow">BILLING</p><h2>Charges Summary</h2></div></div>
                   <div className="enc-detail-charges-grid">
                     <div><span className="enc-d-link-muted">Treatments ({treatments.filter((t) => t.unit_price_minor).length})</span><br /><strong>{formatPrice(tTotal, cur)}</strong></div>
                     <div><span className="enc-d-link-muted">Procedures ({adminProcedures.filter((p) => p.unit_price_minor).length})</span><br /><strong>{formatPrice(pTotal, cur)}</strong></div>
-                    <div><span className="enc-d-link-muted">Grand Total</span><br /><strong className="enc-d-grand-total">{formatPrice(tTotal + pTotal, cur)}</strong></div>
+                    {discountTotal > 0 && <div><span className="enc-d-link-muted">Discount</span><br /><strong>− {formatPrice(discountTotal, cur)}</strong></div>}
+                    <div><span className="enc-d-link-muted">Grand Total</span><br /><strong className="enc-d-grand-total">{formatPrice(grand, cur)}</strong></div>
                   </div>
                   {invoiceData ? (
                     <div className="enc-detail-invoice-bar">
@@ -830,7 +838,7 @@ export default function EncounterDetailPage() {
         )}
 
         {/* ── Tab E: Medications ─────────────────────────────────── */}
-        {tab === "medications" && (
+        {visibleTab === "medications" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">PRESCRIPTION</p><h2>Medications ({meds.length})</h2></div>
               {!readonly && <div className="enc-detail-btn-group">
@@ -872,7 +880,7 @@ export default function EncounterDetailPage() {
         )}
 
         {/* ── Tab F: Vitals ──────────────────────────────────────── */}
-        {tab === "vitals" && (
+        {visibleTab === "vitals" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">OBSERVATIONS</p><h2>Vitals</h2></div></div>
             <div className="enc-detail-vitals-2col">
@@ -891,7 +899,7 @@ export default function EncounterDetailPage() {
         )}
 
         {/* ── Tab G: Discharge ───────────────────────────────────── */}
-        {tab === "discharge" && (
+        {visibleTab === "discharge" && (
           <div className="enc-section surface-card">
             <div className="surface-card-heading"><div><p className="eyebrow">DISCHARGE</p><h2>Discharge Summary</h2></div></div>
             <div className="form-grid enc-detail-grid-2col">
@@ -924,6 +932,9 @@ export default function EncounterDetailPage() {
               <label>Follow-up department<input value={followUpDept} onChange={(e) => setFollowUpDept(e.target.value)} disabled={readonly} /></label>
               <label>Follow-up date<input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} disabled={readonly} /></label>
             </div>
+            <div className="form-grid enc-detail-grid-1col-mt">
+              <label>Follow-up instructions<textarea value={followUpInst} onChange={(e) => setFollowUpInst(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
+            </div>
             {dischOutcome === "referral" && (
               <div className="form-grid enc-detail-grid-1col-mt">
                 <label>Referral instructions<textarea value={referralInstructions} onChange={(e) => setReferralInstructions(e.target.value)} rows={2} disabled={readonly} className="enc-detail-textarea" /></label>
@@ -942,7 +953,7 @@ export default function EncounterDetailPage() {
         )}
 
         {/* ── Tab H: Summary / Print ──────────────────────────────── */}
-        {tab === "summary" && (
+        {visibleTab === "summary" && (
           <>
             {/* Print header (hidden on screen, visible when printing) */}
             <div className="enc-section surface-card enc-print-header">
@@ -1104,7 +1115,7 @@ export default function EncounterDetailPage() {
           </div>
         )}
         {/* Discharge tab: also allow saving without completing discharge */}
-        {!readonly && tab === "discharge" && enc.status !== "ready_for_discharge" && (
+        {!readonly && visibleTab === "discharge" && enc.status !== "ready_for_discharge" && (
           <div className="form-actions enc-d-form-gap">
             <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving..." : "Save encounter"}</button>
           </div>

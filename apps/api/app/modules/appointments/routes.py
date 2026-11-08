@@ -497,6 +497,9 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
             patient_id = db.execute(text("INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth) VALUES (:clinic_id, :patient_number, :full_name, :email, :phone, :dob) RETURNING id"), {"clinic_id": clinic_id, "patient_number": f"P-{secrets.token_hex(6).upper()}", "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "dob": payload.date_of_birth}).scalar_one()
     else:
         raise _error("INVALID_INPUT", "Either patient_id or full_name is required.", status.HTTP_400_BAD_REQUEST)
+    active_enc = db.execute(text("SELECT id FROM encounter_forms WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL AND status IN ('draft','in_progress','ready_for_discharge') LIMIT 1"), {"clinic_id": clinic_id, "patient_id": patient_id}).scalar_one_or_none()
+    if active_enc is not None:
+        raise _error("ENCOUNTER_ACTIVE", "This patient has an ongoing consultation. Discharge it before booking a new appointment.", status.HTTP_409_CONFLICT)
     reference = f"BK-{secrets.token_hex(5).upper()}"
     body_hash = hashlib.sha256(json.dumps(payload.model_dump(mode="json"), sort_keys=True, default=str).encode()).hexdigest()
     policy = {"duration_minutes": service["duration_minutes"], "buffer_before_minutes": service["buffer_before_minutes"], "buffer_after_minutes": service["buffer_after_minutes"], "branch_timezone": branch["timezone"]}
