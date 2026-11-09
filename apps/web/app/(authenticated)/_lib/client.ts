@@ -34,7 +34,9 @@ export async function api<T>(url: string, init?: globalThis.RequestInit, fallbac
   if (isGet && SESSION_CACHED.has(url)) return cachedFetch<T>(url, 60_000);
   if (isGet && REF_CACHED.has(url)) return cachedRefData<T>(url);
   if (!isGet) for (const cached of REF_CACHED) invalidateCache(cached);
-  const response = await fetch(url, { credentials: "include", ...(isGet ? {} : { cache: "no-store" as const }), ...init });
+  // cache: "no-store" on every request — the API's Cache-Control: max-age=30
+  // on GETs otherwise serves stale rows to the browser after a mutation.
+  const response = await fetch(url, { credentials: "include", cache: "no-store", ...init });
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (!response.ok) {
     if (response.status === 401) {

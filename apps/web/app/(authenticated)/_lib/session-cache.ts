@@ -14,7 +14,10 @@ export function cachedFetch<T>(url: string, ttlMs = DEFAULT_TTL): Promise<T> {
   const pending = inflight.get(url) as Promise<T> | undefined;
   if (pending) return pending;
 
-  const promise = fetch(url, { credentials: "include" })
+  // cache: "no-store" bypasses the browser HTTP cache; the API returns
+  // Cache-Control: max-age=30 which would otherwise serve stale rows for
+  // ~30s after a mutation despite our in-memory invalidation.
+  const promise = fetch(url, { credentials: "include", cache: "no-store" as const })
     .then(async (res) => {
       if (res.status === 401) {
         redirectToLogin();
