@@ -470,10 +470,13 @@ export default function EncounterDetailPage() {
     setTreatments((prev) => [...prev, svcRow]);
     setPickerOpen(null); setPickerSearch("");
     void api<{ inventory_product_id: string; product_name: string; default_quantity: number; unit: string }[]>(`/api/v1/services/${svc.id}/materials`).then((mats) => {
-      if (!mats?.length) return;
+      if (!mats?.length) {
+        toast.info(`${svc.name} has no inventory materials linked — add some on the Services page so stock is deducted when this service is used.`);
+        return;
+      }
       const newRows: AdministeredTreatment[] = mats.map((m) => ({ name: `${m.product_name} (for ${svc.name})`, inventory_product_id: m.inventory_product_id, quantity: m.default_quantity, dosage: "", route: "", administered_at: "", administered_by: "", response: "", notes: "" }));
       setTreatments((prev) => [...prev, ...newRows]);
-      toast.success(`Added ${mats.length} material${mats.length > 1 ? "s" : ""} for ${svc.name}.`);
+      toast.success(`Added ${mats.length} material${mats.length > 1 ? "s" : ""} for ${svc.name}. Save the encounter to deduct inventory.`);
     }).catch(() => {});
   }
   function addTreatmentFromInventory(prod: InventoryProduct) {

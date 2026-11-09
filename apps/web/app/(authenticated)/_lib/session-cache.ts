@@ -23,11 +23,14 @@ export function cachedFetch<T>(url: string, ttlMs = DEFAULT_TTL): Promise<T> {
       if (!res.ok) throw new Error("Fetch failed");
       const body = (await res.json()) as { data?: T };
       const data = body.data as T;
-      cache.set(url, { data, ts: Date.now() });
+      // Only cache if this fetch is still the current in-flight one — a
+      // mid-flight invalidateCache() drops the entry, and writing here would
+      // re-seed the cache with pre-mutation data.
+      if (inflight.get(url) === promise) cache.set(url, { data, ts: Date.now() });
       return data;
     })
     .finally(() => {
-      inflight.delete(url);
+      if (inflight.get(url) === promise) inflight.delete(url);
     });
 
   inflight.set(url, promise);
@@ -35,8 +38,8 @@ export function cachedFetch<T>(url: string, ttlMs = DEFAULT_TTL): Promise<T> {
 }
 
 export function invalidateCache(url?: string): void {
-  if (url) cache.delete(url);
-  else cache.clear();
+  if (url) { cache.delete(url); inflight.delete(url); }
+  else { cache.clear(); inflight.clear(); }
 }
 
 const REF_TTL = 120_000;

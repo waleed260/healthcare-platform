@@ -125,12 +125,13 @@ def _apply_inventory_deltas(db: Session, clinic_id, user_id, branch_id, old_row:
             stock = db.execute(text(
                 "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = CAST(:pid AS uuid) FOR UPDATE"
             ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid}).mappings().one_or_none()
-            if stock is None and delta < 0:
-                continue
             if stock is None:
+                # No stock row at this branch yet — start at 0 so deductions still
+                # show in the ledger and receipts add real quantity. Stock cannot go
+                # below zero, but the adjustment below records the attempt.
                 db.execute(text(
                     "INSERT INTO inventory_stock (clinic_id, branch_id, product_id, quantity) VALUES (:clinic_id, :branch_id, CAST(:pid AS uuid), :qty)"
-                ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid, "qty": delta})
+                ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid, "qty": max(0, delta)})
             else:
                 new_qty = max(0, stock["quantity"] + delta)
                 db.execute(text(
@@ -434,6 +435,21 @@ def encounter_discharge(
         "referral_instructions": payload.referral_instructions,
         "discharge_vitals": discharge_vitals_json,
     }).mappings().one()
+    if row["appointment_id"]:
+        db.execute(text("""
+            UPDATE queue_entries SET status = 'completed', completed_at = now(), version = version + 1, updated_at = now()
+            WHERE clinic_id = :clinic_id AND appointment_id = :appt_id AND status IN ('waiting', 'in_consultation')
+        """), {"clinic_id": session["clinic_id"], "appt_id": row["appointment_id"]})
+        appt_completed = db.execute(text("""
+            UPDATE appointments SET status = 'completed', blocks_time = false, status_changed_at = now(), version = version + 1, updated_at = now()
+            WHERE clinic_id = :clinic_id AND id = :appt_id AND status = 'in_consultation'
+            RETURNING id
+        """), {"clinic_id": session["clinic_id"], "appt_id": row["appointment_id"]}).scalar_one_or_none()
+        if appt_completed is not None:
+            db.execute(text("""
+                INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id)
+                VALUES (:clinic_id, :appt_id, 'in_consultation', 'completed', :actor)
+            """), {"clinic_id": session["clinic_id"], "appt_id": row["appointment_id"], "actor": session["user_id"]})
     if payload.follow_up_date:
         reason = (payload.follow_up_instructions or "Discharge follow-up").strip()[:500] or "Discharge follow-up"
         tz = db.execute(text("""
