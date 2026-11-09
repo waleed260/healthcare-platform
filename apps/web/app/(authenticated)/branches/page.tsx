@@ -370,6 +370,26 @@ export default function BranchesPage() {
       .finally(() => setBusy(false));
   }
 
+  async function deleteBranch(branch: Branch) {
+    const ok = await confirm({
+      title: "Delete branch permanently",
+      message: `Delete branch "${branch.name}" forever? Hours, rooms, resources, and doctor/service assignments for this branch will be removed with it. This cannot be undone. If the branch has any appointments, encounters, invoices, queue entries, or stocked inventory, the server will refuse and ask you to archive instead.`,
+      danger: true,
+      confirmLabel: "Delete forever",
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api(`/api/v1/branches/${branch.id}`, { method: "DELETE", headers: writeHeaders() });
+      toast.success("Branch deleted.");
+      await load();
+    } catch (reason) {
+      toast.error(errorMessage(reason, "Could not delete branch."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function changeBranchStatus(branch: Branch, nextStatus: "active" | "inactive" | "archived") {
     const verb = nextStatus === "archived" ? "archive" : nextStatus === "inactive" ? "deactivate" : "reactivate";
     const warning = nextStatus === "archived"
@@ -436,9 +456,14 @@ export default function BranchesPage() {
                       style={{ fontSize: 11 }} title="Archive branch">Archive</button>
                   )}
                   {canManageBranch && b.status === "archived" && (
-                    <button type="button" className="ghost-button" disabled={busy}
-                      onClick={(ev) => { ev.stopPropagation(); void changeBranchStatus(b, "active"); }}
-                      style={{ fontSize: 11 }} title="Restore branch">Restore</button>
+                    <>
+                      <button type="button" className="ghost-button" disabled={busy}
+                        onClick={(ev) => { ev.stopPropagation(); void changeBranchStatus(b, "active"); }}
+                        style={{ fontSize: 11 }} title="Restore branch">Restore</button>
+                      <button type="button" className="ghost-button danger-control" disabled={busy}
+                        onClick={(ev) => { ev.stopPropagation(); void deleteBranch(b); }}
+                        style={{ fontSize: 11 }} title="Delete branch permanently">Delete</button>
+                    </>
                   )}
                   <span className={`nav-group-chevron ${isOpen ? "" : "collapsed"}`} style={{ fontSize: 18 }} aria-hidden="true">›</span>
                 </div>

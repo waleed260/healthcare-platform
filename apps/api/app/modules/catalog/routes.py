@@ -191,6 +191,40 @@ def update_branch(branch_id: str, payload: BranchUpdate, request: Request, db: S
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
+@catalog_router.delete("/branches/{branch_id}")
+def branch_delete(branch_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    """Permanently delete a branch. Only allowed when nothing clinical is tied to it.
+
+    Blocks deletion when the branch has any appointments, encounters, invoices,
+    queue entries, or inventory stock, because those carry financial / clinical
+    history that must not disappear. For a branch with such history the user
+    should archive instead. Everything else attached to the branch itself
+    (hours, rooms, resources, doctor/service assignments, user scopes, holidays)
+    is removed in the same transaction.
+    """
+    session = _write_authorized(db, request, session_token, "branch.manage", csrf_token, branch_id=branch_id)
+    exists = db.execute(text("SELECT 1 FROM branches WHERE clinic_id = :clinic_id AND id = :branch_id"), {"clinic_id": session["clinic_id"], "branch_id": branch_id}).scalar_one_or_none()
+    if exists is None:
+        raise _error("NOT_FOUND", "Branch not found.", status.HTTP_404_NOT_FOUND)
+    blockers = db.execute(text("""
+        SELECT
+          (SELECT count(*) FROM appointments     WHERE clinic_id = :c AND branch_id = :b) AS appointments,
+          (SELECT count(*) FROM encounter_forms  WHERE clinic_id = :c AND branch_id = :b) AS encounters,
+          (SELECT count(*) FROM invoices         WHERE clinic_id = :c AND branch_id = :b) AS invoices,
+          (SELECT count(*) FROM queue_entries q JOIN appointments a ON a.clinic_id = q.clinic_id AND a.id = q.appointment_id WHERE q.clinic_id = :c AND a.branch_id = :b) AS queue_entries,
+          (SELECT count(*) FROM inventory_stock  WHERE clinic_id = :c AND branch_id = :b AND quantity > 0) AS stocked_products
+    """), {"c": session["clinic_id"], "b": branch_id}).mappings().one()
+    blocking = {k: int(v) for k, v in blockers.items() if int(v) > 0}
+    if blocking:
+        raise _error("HAS_HISTORY", f"This branch cannot be deleted because it has clinical/financial history: {blocking}. Archive it instead.", status.HTTP_409_CONFLICT)
+    for table in ("branch_hours", "branch_doctors", "branch_services", "rooms", "resources", "user_branch_scopes", "clinic_holidays", "availability_rules", "inventory_stock"):
+        db.execute(text(f"DELETE FROM {table} WHERE clinic_id = :c AND branch_id = :b"), {"c": session["clinic_id"], "b": branch_id})
+    db.execute(text("DELETE FROM branches WHERE clinic_id = :c AND id = :b"), {"c": session["clinic_id"], "b": branch_id})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="branch.delete", entity_type="branch", entity_id=branch_id, outcome="success", request_id=__import__("uuid").UUID(request.state.request_id), metadata={})
+    db.commit()
+    return {"data": {"deleted": True, "id": branch_id}, "meta": {"request_id": request.state.request_id}}
+
+
 @catalog_router.post("/branches/{branch_id}/status")
 def branch_status(branch_id: str, payload: CatalogStatusUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "branch.manage", csrf_token, branch_id=branch_id)
