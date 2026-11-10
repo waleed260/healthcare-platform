@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import Drawer, { useDirty } from "./drawer";
 import { useToast } from "./toast";
 import { api, writeHeaders } from "./client";
+import { useClinicName } from "./clinic-context";
 
 type Option = { id: string; name?: string; public_name?: string };
 type Patient = { id: string; full_name: string; patient_number?: string };
@@ -33,6 +34,7 @@ function dobFromAge(age: number): string {
 
 export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props) {
   const toast = useToast();
+  const clinicName = useClinicName();
   const [form, setForm, dirty, resetDirty] = useDirty({
     doctor_id: "", service_id: "", branch_id: "",
     appointment_type: "day",
@@ -417,6 +419,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
             <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>Reference: {bookingResult.reference}</p>
           </div>
           <div id="token-print-area" style={{ background: "var(--paper, #f9f9f6)", padding: 20, borderRadius: 10, border: "2px dashed var(--line, #e5e5e3)", marginBottom: 16 }}>
+            {clinicName && <div className="clinic-heading" style={{ textAlign: "center", fontSize: 18, fontWeight: 700, letterSpacing: 0.3, color: "var(--leaf, #274c42)", borderBottom: "1px solid var(--line, #e5e5e3)", paddingBottom: 8, marginBottom: 10 }}>{clinicName}</div>}
             <div style={{ textAlign: "center", marginBottom: 12 }}>
               <p className="eyebrow" style={{ margin: "0 0 4px" }}>TOKEN NUMBER</p>
               <div className="token" style={{ fontSize: 48, fontWeight: 700, color: "var(--leaf, #274c42)" }}>{bookingResult.token_number}</div>
@@ -435,7 +438,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
               if (!el) return;
               const w = window.open("", "_blank", "width=400,height=500");
               if (!w) return;
-              w.document.write(`<html><head><title>Token ${bookingResult.token_number}</title><style>@page{size:80mm auto;margin:3mm 2mm}html,body{margin:0;padding:0;background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:system-ui,-apple-system,sans-serif;padding:4px;width:76mm;box-sizing:border-box;word-wrap:break-word}*{box-sizing:border-box}#token-print-area{background:#fff!important;padding:4px!important;border:0!important;margin:0!important;border-radius:0!important;page-break-inside:avoid}dt{color:#333;font-size:10px}dd{margin:0;font-size:12px;font-weight:600}dl{display:grid;gap:3px;margin:0}dl>div{display:flex;justify-content:space-between;gap:6px;page-break-inside:avoid}.token{font-size:34px!important;font-weight:700!important;text-align:center;margin:4px 0!important;line-height:1;page-break-inside:avoid;color:#000!important}.eyebrow{font-size:9px;letter-spacing:1px;text-transform:uppercase;text-align:center;margin:0 0 2px;color:#333}@media print{button{display:none!important}html,body{background:#fff!important;color:#000!important}}@media print and (max-width:60mm){@page{size:58mm auto;margin:2mm}body{width:54mm;padding:2px}.token{font-size:26px!important;margin:3px 0!important}dd{font-size:11px}}</style></head><body>${el.innerHTML}</body></html>`);
+              w.document.write(`<html><head><title>Token ${bookingResult.token_number}</title><style>@page{size:80mm 140mm;margin:3mm 2mm}html,body{margin:0;padding:0;background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:system-ui,-apple-system,sans-serif;padding:4px;width:76mm;box-sizing:border-box;word-wrap:break-word}*{box-sizing:border-box}#token-print-area{background:#fff!important;padding:4px!important;border:0!important;margin:0!important;border-radius:0!important;page-break-inside:avoid}.clinic-heading{text-align:center!important;font-size:14px!important;font-weight:700!important;letter-spacing:.3px;color:#000!important;border-bottom:1px solid #000!important;padding-bottom:4px!important;margin:0 0 6px!important;line-height:1.1;page-break-inside:avoid}dt{color:#333;font-size:10px}dd{margin:0;font-size:12px;font-weight:600}dl{display:grid;gap:3px;margin:0}dl>div{display:flex;justify-content:space-between;gap:6px;page-break-inside:avoid}.token{font-size:34px!important;font-weight:700!important;text-align:center;margin:4px 0!important;line-height:1;page-break-inside:avoid;color:#000!important}.eyebrow{font-size:9px;letter-spacing:1px;text-transform:uppercase;text-align:center;margin:0 0 2px;color:#333}@media print{button{display:none!important}html,body{background:#fff!important;color:#000!important}}@media print and (max-width:60mm){@page{size:58mm 120mm;margin:2mm}body{width:54mm;padding:2px}.token{font-size:26px!important;margin:3px 0!important}dd{font-size:11px}.clinic-heading{font-size:12px!important}}</style></head><body>${el.innerHTML}</body></html>`);
               w.document.close();
               w.print();
             }}>Print Token</button>
