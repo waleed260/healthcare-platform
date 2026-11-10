@@ -53,6 +53,7 @@ export default function EncountersPage() {
   const [encType, setEncType] = useState<string>("general");
   const [complaint, setComplaint] = useState("");
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
+  const [apptBranchId, setApptBranchId] = useState<string | null>(null);
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [lastEncounter, setLastEncounter] = useState<Encounter | null>(null);
 
@@ -78,9 +79,10 @@ export default function EncountersPage() {
     }
     // Always fetch the appointment as source of truth; URL params are hints only.
     if (apptId) {
-      void api<{ doctor_id?: string; patient_id?: string; policy_snapshot?: Record<string, unknown> }>(`/api/v1/appointments/${apptId}`).then((a) => {
+      void api<{ doctor_id?: string; patient_id?: string; branch_id?: string; policy_snapshot?: Record<string, unknown> }>(`/api/v1/appointments/${apptId}`).then((a) => {
         if (!a) return;
         if (a.doctor_id && doctors.some((d) => d.id === a.doctor_id)) setSelectedDoctor(a.doctor_id);
+        if (a.branch_id) setApptBranchId(a.branch_id);
         if (!patientId && a.patient_id) {
           void api<Patient>(`/api/v1/patients/${a.patient_id}`).then((p) => { if (p) setSelectedPatient(p); }).catch(() => {});
         }
@@ -142,9 +144,10 @@ export default function EncountersPage() {
       const body: Record<string, unknown> = { patient_id: selectedPatient.id, doctor_id: selectedDoctor, encounter_type: encType };
       if (complaint.trim()) body.chief_complaint = complaint.trim();
       if (appointmentId) body.appointment_id = appointmentId;
+      if (apptBranchId) body.branch_id = apptBranchId;
       const result = await api<{ id: string }>("/api/v1/encounters", { method: "POST", headers: writeHeaders(), body: JSON.stringify(body) });
       toast.success("Encounter created.");
-      setShowForm(false); setSelectedPatient(null); setPatientSearch(""); setComplaint(""); setAppointmentId(null);
+      setShowForm(false); setSelectedPatient(null); setPatientSearch(""); setComplaint(""); setAppointmentId(null); setApptBranchId(null);
       if (result?.id) { window.location.href = `/encounters/${result.id}`; } else { await loadEncounters(); }
     } catch (reason) { toast.error(errorMessage(reason, "Could not create encounter.")); }
     finally { setBusy(null); }
