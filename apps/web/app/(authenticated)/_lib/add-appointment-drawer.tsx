@@ -332,7 +332,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
               </label>
               <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500, display: "block", marginBottom: 8 }}>Available times</span>
               {loadingSlots && <p style={{ color: "var(--muted)", fontSize: 13 }}>Loading available times…</p>}
-              {!loadingSlots && availableSlots.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>No available times for this date. Try a different day.</p>}
+              {!loadingSlots && availableSlots.length === 0 && <p style={{ color: "var(--muted)", fontSize: 13 }}>No pre-defined slots for this date — pick any time below.</p>}
               {!loadingSlots && availableSlots.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: 6 }}>
                 {availableSlots.map((slot) => {
                   const d = new Date(slot);
@@ -340,6 +340,19 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
                   return <button key={slot} type="button" className={`button ${form.starts_at === iso ? "button-primary" : "button-secondary"}`} style={{ padding: "8px 4px", fontSize: 13 }} onClick={() => setForm((f) => ({ ...f, starts_at: iso }))}>{d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</button>;
                 })}
               </div>}
+              <label style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>Custom time</span>
+                <input
+                  type="time"
+                  value={form.starts_at ? (() => { const d = new Date(form.starts_at); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; })() : ""}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    if (!t) { setForm((f) => ({ ...f, starts_at: "" })); return; }
+                    const d = new Date(`${slotDate}T${t}`);
+                    if (!isNaN(d.getTime())) setForm((f) => ({ ...f, starts_at: d.toISOString() }));
+                  }}
+                />
+              </label>
             </>}
           </>;
         })()}
