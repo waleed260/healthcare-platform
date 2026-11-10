@@ -483,7 +483,7 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
     ends_at = starts_at + timedelta(minutes=service["duration_minutes"])
     occupancy_start = starts_at - timedelta(minutes=service["buffer_before_minutes"])
     occupancy_end = ends_at + timedelta(minutes=service["buffer_after_minutes"])
-    _validate_commit_time(db=db, clinic_id=clinic_id, branch_id=payload.branch_id, doctor_id=doctor_id, service_id=payload.service_id, branch_timezone=branch["timezone"], starts_at=starts_at, ends_at=ends_at, occupancy_start=occupancy_start, occupancy_end=occupancy_end, min_notice_minutes=0)
+    _validate_commit_time(db=db, clinic_id=clinic_id, branch_id=payload.branch_id, doctor_id=doctor_id, service_id=payload.service_id, branch_timezone=branch["timezone"], starts_at=starts_at, ends_at=ends_at, occupancy_start=occupancy_start, occupancy_end=occupancy_end, min_notice_minutes=0, allow_overlap=True)
     if payload.patient_id:
         patient = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": clinic_id, "id": payload.patient_id}).scalar_one_or_none()
         if patient is None:
@@ -517,8 +517,8 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
     """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "seq_date": booking_date}).scalar_one()
     try:
         appointment = db.execute(text("""
-            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, token_number)
-            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :token_number)
+            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, blocks_time, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, token_number)
+            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', false, 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :token_number)
             RETURNING id, reference, status, token_number
         """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": doctor_id, "service_id": payload.service_id, "patient_id": patient_id, "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "reference": reference, "idempotency_key": idempotency_key, "body_hash": body_hash, "policy": json.dumps(policy), "token_number": token_number}).mappings().one()
     except IntegrityError as exc:
@@ -660,7 +660,7 @@ def _clock_value(value: object) -> time | None:
     return None
 
 
-def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doctor_id: UUID, service_id: UUID, branch_timezone: str, starts_at: datetime, ends_at: datetime, occupancy_start: datetime, occupancy_end: datetime, exclude_appointment_id: UUID | None = None, min_notice_minutes: int = 120) -> None:
+def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doctor_id: UUID, service_id: UUID, branch_timezone: str, starts_at: datetime, ends_at: datetime, occupancy_start: datetime, occupancy_end: datetime, exclude_appointment_id: UUID | None = None, min_notice_minutes: int = 120, allow_overlap: bool = False) -> None:
     """Re-evaluate all non-constraint scheduling rules in the booking transaction.
 
     Availability responses are advisory. This check is deliberately repeated immediately
@@ -764,7 +764,7 @@ def _validate_commit_time(*, db: Session, clinic_id: UUID, branch_id: UUID, doct
         raise _booking_unavailable("The doctor is on leave during this time.")
     if blocked:
         raise _booking_unavailable("This time slot has been blocked.")
-    if busy:
+    if busy and not allow_overlap:
         raise _booking_unavailable("The selected time conflicts with an existing appointment.")
 
 
