@@ -489,7 +489,7 @@ def queue_start(queue_id: str, payload: QueueCommand, request: Request, db: Sess
         WHERE clinic_id = :clinic_id AND id = :id
         RETURNING id, status, started_at, version
     """), {"clinic_id": session["clinic_id"], "id": queue_id}).mappings().one()
-    db.execute(text("UPDATE appointments SET status = 'in_consultation', blocks_time = true, status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :appointment_id"), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]})
+    db.execute(text("UPDATE appointments SET status = 'in_consultation', status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :appointment_id"), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]})
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id) VALUES (:clinic_id, :appointment_id, 'waiting', 'in_consultation', :actor)"), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"], "actor": session["user_id"]})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="queue.start", entity_type="queue_entry", entity_id=queue["id"], outcome="success", request_id=UUID(request.state.request_id))
     db.commit()

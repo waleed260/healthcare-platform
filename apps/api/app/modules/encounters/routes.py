@@ -365,7 +365,7 @@ def encounter_status_update(
         """), {"clinic_id": session["clinic_id"], "id": encounter_id}).mappings().one_or_none()
         if appt and appt["status"] == "waiting":
             db.execute(text("UPDATE queue_entries SET status = 'in_consultation', started_at = COALESCE(started_at, now()), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :appt_id AND status = 'waiting'"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"]})
-            db.execute(text("UPDATE appointments SET status = 'in_consultation', blocks_time = true, status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :appt_id AND status = 'waiting'"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"]})
+            db.execute(text("UPDATE appointments SET status = 'in_consultation', status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :appt_id AND status = 'waiting'"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"]})
             db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id) VALUES (:clinic_id, :appt_id, 'waiting', 'in_consultation', :actor)"), {"clinic_id": session["clinic_id"], "appt_id": appt["id"], "actor": session["user_id"]})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.status", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"from": current["status"], "to": payload.status})
     db.commit()
