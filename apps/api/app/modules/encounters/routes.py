@@ -236,8 +236,9 @@ def encounter_create(
     doctor = db.execute(text("SELECT 1 FROM doctor_profiles WHERE clinic_id = :clinic_id AND id = :doctor_id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "doctor_id": payload.doctor_id}).scalar_one_or_none()
     if doctor is None:
         raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
+    appt_branch_id = None
     if payload.appointment_id:
-        appt = db.execute(text("SELECT patient_id, doctor_id, status FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": payload.appointment_id}).mappings().one_or_none()
+        appt = db.execute(text("SELECT patient_id, doctor_id, status, branch_id FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": payload.appointment_id}).mappings().one_or_none()
         if appt is None:
             raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
         if appt["patient_id"] != payload.patient_id:
@@ -245,6 +246,12 @@ def encounter_create(
         existing_enc = db.execute(text("SELECT id FROM encounter_forms WHERE clinic_id = :clinic_id AND appointment_id = :appt_id AND archived_at IS NULL LIMIT 1"), {"clinic_id": session["clinic_id"], "appt_id": payload.appointment_id}).scalar_one_or_none()
         if existing_enc is not None:
             raise _error("DUPLICATE", "An encounter already exists for this appointment.", status.HTTP_409_CONFLICT)
+        appt_branch_id = appt["branch_id"]
+    # branch_id drives inventory deductions — fall back to appointment branch,
+    # then the first active branch, so encounter stock movements never silently drop.
+    resolved_branch_id = payload.branch_id or appt_branch_id
+    if resolved_branch_id is None:
+        resolved_branch_id = db.execute(text("SELECT id FROM branches WHERE clinic_id = :clinic_id AND status = 'active' AND archived_at IS NULL ORDER BY created_at LIMIT 1"), {"clinic_id": session["clinic_id"]}).scalar_one_or_none()
     row = db.execute(text("""
         INSERT INTO encounter_forms (clinic_id, patient_id, appointment_id, doctor_id, branch_id,
                                      encounter_type, chief_complaint, arrival_vitals, created_by,
@@ -266,7 +273,7 @@ def encounter_create(
         "patient_id": payload.patient_id,
         "appointment_id": payload.appointment_id,
         "doctor_id": payload.doctor_id,
-        "branch_id": payload.branch_id,
+        "branch_id": resolved_branch_id,
         "encounter_type": payload.encounter_type,
         "chief_complaint": payload.chief_complaint,
         "arrival_vitals": json.dumps(payload.arrival_vitals.model_dump()) if payload.arrival_vitals else None,
@@ -323,8 +330,10 @@ def encounter_update(
         WHERE clinic_id = :clinic_id AND id = :id
         RETURNING {RETURNING_COLUMNS}
     """), params).mappings().one()
-    if needs_inventory and current.get("branch_id"):
-        _apply_inventory_deltas(db, session["clinic_id"], session["user_id"], current["branch_id"], current, values)
+    if needs_inventory:
+        branch_id = current.get("branch_id") or db.execute(text("SELECT id FROM branches WHERE clinic_id = :clinic_id AND status = 'active' AND archived_at IS NULL ORDER BY created_at LIMIT 1"), {"clinic_id": session["clinic_id"]}).scalar_one_or_none()
+        if branch_id:
+            _apply_inventory_deltas(db, session["clinic_id"], session["user_id"], branch_id, current, values)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.update", entity_type="encounter_form", entity_id=encounter_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(values.keys())})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
