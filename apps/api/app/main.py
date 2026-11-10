@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,10 +50,49 @@ from app.core.observability import configure_logging, initialize_sentry, request
 settings = get_settings()
 configure_logging()
 initialize_sentry(settings)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    import logging
+    import os
+    import time
+    pool_size = settings.db_pool_size
+    for attempt in range(3):
+        conns = []
+        try:
+            for _ in range(pool_size):
+                conns.append(engine.connect())
+            for c in conns:
+                c.execute(text("SELECT 1"))
+            logging.getLogger("healthcare.startup").info("connection_pool_warmed count=%d", pool_size)
+            break
+        except Exception:
+            logging.getLogger("healthcare.startup").warning("pool_warmup_attempt_%d_failed", attempt + 1)
+            if attempt < 2:
+                time.sleep(1 * (attempt + 1))
+        finally:
+            for c in conns:
+                try:
+                    c.close()
+                except Exception:
+                    pass
+    else:
+        logging.getLogger("healthcare.startup").error("pool_warmup_exhausted_retries")
+    if os.environ.get("RUN_WORKER_IN_PROCESS", "").lower() in ("true", "1"):
+        import threading
+        from scripts.scan_worker import main as worker_main
+        t = threading.Thread(target=worker_main, daemon=True, name="embedded-scan-worker")
+        t.start()
+        logging.getLogger("healthcare.startup").info("embedded_scan_worker_started")
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.api_version,
     description="Versioned modular monolith API for the Healthcare Platform.",
+    lifespan=_lifespan,
 )
 app.include_router(v1_router)
 app.include_router(identity_router)
@@ -208,48 +248,6 @@ async def unhandled_error_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred. Please try again.", "fields": None}, "meta": {"request_id": request_id}})
 
 
-
-
-@app.on_event("startup")
-def _warm_pool():
-    """Pre-create pool_size connections so first burst avoids cold-start."""
-    import logging
-    import time
-    pool_size = settings.db_pool_size
-    for attempt in range(3):
-        conns = []
-        try:
-            for _ in range(pool_size):
-                conns.append(engine.connect())
-            for c in conns:
-                c.execute(text("SELECT 1"))
-            logging.getLogger("healthcare.startup").info("connection_pool_warmed count=%d", pool_size)
-            return
-        except Exception:
-            logging.getLogger("healthcare.startup").warning("pool_warmup_attempt_%d_failed", attempt + 1)
-            if attempt < 2:
-                time.sleep(1 * (attempt + 1))
-        finally:
-            for c in conns:
-                try:
-                    c.close()
-                except Exception:
-                    pass
-    logging.getLogger("healthcare.startup").error("pool_warmup_exhausted_retries")
-
-
-@app.on_event("startup")
-def _start_embedded_worker():
-    """Run the scan worker in-process when there's no separate worker service."""
-    import os
-    if os.environ.get("RUN_WORKER_IN_PROCESS", "").lower() not in ("true", "1"):
-        return
-    import logging
-    import threading
-    from scripts.scan_worker import main as worker_main
-    t = threading.Thread(target=worker_main, daemon=True, name="embedded-scan-worker")
-    t.start()
-    logging.getLogger("healthcare.startup").info("embedded_scan_worker_started")
 
 
 @app.get("/health/live", tags=["system"])
