@@ -54,6 +54,7 @@ export default function EncountersPage() {
   const [complaint, setComplaint] = useState("");
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
   const [showAddPatient, setShowAddPatient] = useState(false);
+  const [lastEncounter, setLastEncounter] = useState<Encounter | null>(null);
 
   const startHandled = useRef(false);
   useEffect(() => {
@@ -109,6 +110,19 @@ export default function EncountersPage() {
   useEffect(() => {
     void api<Doctor[]>("/api/v1/doctors?limit=100").then((d) => setDoctors(d ?? [])).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!selectedPatient) { setLastEncounter(null); return; }
+    void apiPage<Encounter>(`/api/v1/encounters?patient_id=${selectedPatient.id}&limit=1`)
+      .then((p) => {
+        const last = p.data[0] ?? null;
+        setLastEncounter(last);
+        if (!last || appointmentId) return;
+        if (!selectedDoctor && doctors.some((d) => d.id === last.doctor_id)) setSelectedDoctor(last.doctor_id);
+        if (encType === "general" && encounterTypes.includes(last.encounter_type as typeof encounterTypes[number])) setEncType(last.encounter_type);
+      })
+      .catch(() => setLastEncounter(null));
+  }, [selectedPatient, doctors, appointmentId, selectedDoctor, encType]);
 
   async function searchPatients(q: string) {
     setPatientSearch(q);
@@ -245,11 +259,21 @@ export default function EncountersPage() {
             <label>
               Patient *
               {selectedPatient ? (
-                <div className="enc-selected-patient">
-                  <strong>{selectedPatient.full_name}</strong>
-                  {selectedPatient.mrn && <span className="enc-mrn">MRN: {selectedPatient.mrn}</span>}
-                  <button className="ghost-button" type="button" onClick={() => { setSelectedPatient(null); setPatientSearch(""); }}>Change</button>
-                </div>
+                <>
+                  <div className="enc-selected-patient">
+                    <strong>{selectedPatient.full_name}</strong>
+                    {selectedPatient.mrn && <span className="enc-mrn">MRN: {selectedPatient.mrn}</span>}
+                    <button className="ghost-button" type="button" onClick={() => { setSelectedPatient(null); setPatientSearch(""); setLastEncounter(null); }}>Change</button>
+                  </div>
+                  {lastEncounter ? (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)", padding: "6px 10px", background: "var(--paper, #f9f9f6)", borderRadius: 6, border: "1px solid var(--line, #e5e5e3)" }}>
+                      Last visit: {fmtDateTime(lastEncounter.created_at)} with <strong>{lastEncounter.doctor_name}</strong> · {typeLabel(lastEncounter.encounter_type)} · {statusLabel(lastEncounter.status)}{lastEncounter.chief_complaint ? ` — ${lastEncounter.chief_complaint}` : ""}
+                      <br /><Link href={`/encounters/${lastEncounter.id}`} className="enc-d-hint-link">Open previous encounter →</Link>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>No previous encounters for this patient.</div>
+                  )}
+                </>
               ) : (
                 <>
                   <input value={patientSearch} onChange={(e) => void searchPatients(e.target.value)} placeholder="Search patient by name…" />

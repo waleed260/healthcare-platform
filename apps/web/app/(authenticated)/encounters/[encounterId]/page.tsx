@@ -846,20 +846,20 @@ export default function EncounterDetailPage() {
             <div className="surface-card-heading"><div><p className="eyebrow">PRESCRIPTION</p><h2>Medications ({meds.length})</h2></div>
               {!readonly && <div className="enc-detail-btn-group">
                 <button className="button button-secondary" type="button" onClick={addMed}>Add medication</button>
-                {inventoryProducts.filter((p) => p.product_type === "medicine").length > 0 && <button className={`button button-secondary${pickerOpen === "med-inv" ? " enc-d-picker-active" : ""}`} type="button" onClick={() => togglePicker("med-inv")}>Add from Inventory</button>}
+                {inventoryProducts.length > 0 && <button className={`button button-secondary${pickerOpen === "med-inv" ? " enc-d-picker-active" : ""}`} type="button" onClick={() => togglePicker("med-inv")}>Add from Inventory</button>}
               </div>}
             </div>
             {pickerOpen === "med-inv" && (
               <div className="enc-detail-picker-wrap">
                 <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="Search medicines by name…" className="enc-d-picker-search" autoFocus />
                 <div className="enc-detail-picker-list">
-                  {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).map((prod) => (
+                  {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((prod) => (
                     <button key={prod.id} type="button" onClick={() => addMedFromInventory(prod)} className="enc-detail-picker-item">
                       <span><strong>{prod.name}</strong></span>
-                      <span className="enc-d-picker-sub">{prod.unit}</span>
+                      <span className="enc-d-picker-sub">{prod.product_type} · {prod.unit}</span>
                     </button>
                   ))}
-                  {inventoryProducts.filter((p) => p.product_type === "medicine" && (!pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase()))).length === 0 && <div className="enc-detail-picker-empty">No medicines match &ldquo;{pickerSearch}&rdquo;</div>}
+                  {inventoryProducts.filter((p) => !pickerSearch || p.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && <div className="enc-detail-picker-empty">No items match &ldquo;{pickerSearch}&rdquo;</div>}
                 </div>
               </div>
             )}
