@@ -69,8 +69,8 @@ def test_discharge_completes_queue_and_appointment() -> None:
             c.execute(text("INSERT INTO doctor_profiles (id, clinic_id, user_id, public_name, consultation_duration_minutes) VALUES (:id, :clinic, :user, 'Dr Who', 30)"), {"id": doctor, "clinic": clinic, "user": doctor_user})
             c.execute(text("INSERT INTO services (id, clinic_id, name, duration_minutes, approval_mode, price_mode, visibility) VALUES (:id, :clinic, 'Consult', 30, 'staff_approval', 'contact', 'public')"), {"id": service, "clinic": clinic})
             c.execute(text("""
-                INSERT INTO appointments (id, clinic_id, branch_id, patient_id, doctor_id, service_id, reference, starts_at, ends_at, status, status_changed_at)
-                VALUES (:id, :clinic, :branch, :patient, :doctor, :service, 'A-1', now(), now() + interval '30 min', 'in_consultation', now())
+                INSERT INTO appointments (id, clinic_id, branch_id, patient_id, doctor_id, service_id, reference, starts_at, ends_at, occupancy_start, occupancy_end, status, status_changed_at, idempotency_key, idempotency_body_hash)
+                VALUES (:id, :clinic, :branch, :patient, :doctor, :service, 'A-1', now(), now() + interval '30 min', now(), now() + interval '30 min', 'in_consultation', now(), gen_random_uuid()::text, md5(random()::text))
             """), {"id": appointment, "clinic": clinic, "branch": branch, "patient": patient, "doctor": doctor, "service": service})
             c.execute(text("""
                 INSERT INTO queue_entries (clinic_id, appointment_id, status, started_at)
@@ -123,8 +123,8 @@ def test_discharge_skips_queue_update_when_queue_is_already_complete() -> None:
             c.execute(text("INSERT INTO doctor_profiles (id, clinic_id, user_id, public_name, consultation_duration_minutes) VALUES (:id, :clinic, :user, 'Dr Who', 30)"), {"id": doctor, "clinic": clinic, "user": doctor_user})
             c.execute(text("INSERT INTO services (id, clinic_id, name, duration_minutes, approval_mode, price_mode, visibility) VALUES (:id, :clinic, 'Consult', 30, 'staff_approval', 'contact', 'public')"), {"id": service, "clinic": clinic})
             c.execute(text("""
-                INSERT INTO appointments (id, clinic_id, branch_id, patient_id, doctor_id, service_id, reference, starts_at, ends_at, status, status_changed_at)
-                VALUES (:id, :clinic, :branch, :patient, :doctor, :service, 'A-1', now(), now() + interval '30 min', 'completed', now())
+                INSERT INTO appointments (id, clinic_id, branch_id, patient_id, doctor_id, service_id, reference, starts_at, ends_at, occupancy_start, occupancy_end, status, status_changed_at, idempotency_key, idempotency_body_hash)
+                VALUES (:id, :clinic, :branch, :patient, :doctor, :service, 'A-1', now(), now() + interval '30 min', now(), now() + interval '30 min', 'completed', now(), gen_random_uuid()::text, md5(random()::text))
             """), {"id": appointment, "clinic": clinic, "branch": branch, "patient": patient, "doctor": doctor, "service": service})
             c.execute(text("""
                 INSERT INTO queue_entries (clinic_id, appointment_id, status, started_at, completed_at)
