@@ -366,7 +366,7 @@ def section_update(website_id: UUID, page_id: UUID, section_id: UUID, payload: W
         UPDATE website_sections s
         SET section_type = :section_type, layout_key = :layout_key, position = :position,
             content = CAST(:content AS jsonb), is_visible = :is_visible,
-            version = version + 1, updated_at = now()
+            version = s.version + 1, updated_at = now()
         FROM website_pages p
         WHERE s.clinic_id = :clinic_id AND s.id = :section_id AND s.page_id = p.id
           AND p.clinic_id = :clinic_id AND p.id = :page_id AND p.website_id = :website_id

@@ -820,7 +820,7 @@ body.wb-editor-active .workspace-layout{grid-template-columns:1fr}
 
 /* ─── right sidebar ─── */
 .wb-right{display:flex;flex-direction:column;background:#fff;border-left:1px solid var(--line);overflow:hidden;min-height:0}
-.wb-right-tabs{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);flex-shrink:0;padding:0 4px}
+.wb-right-tabs{display:flex;flex-wrap:nowrap;gap:0;border-bottom:1px solid var(--line);flex-shrink:0;padding:0 4px;overflow-x:auto;scrollbar-width:thin}.wb-right-tabs::-webkit-scrollbar{height:4px}.wb-right-tabs::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}.wb-left-section>summary.wb-left-header{list-style:none;cursor:pointer}.wb-left-section>summary.wb-left-header::-webkit-details-marker{display:none}.wb-left-section>summary.wb-left-header::after{content:"▾";margin-left:auto;color:var(--muted);font-size:10px;transition:transform .15s}.wb-left-section:not([open])>summary.wb-left-header::after{transform:rotate(-90deg)}
 .wb-rtab{border:0;background:transparent;padding:10px 10px 8px;font:12px/1.2 'DM Sans',sans-serif;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:color .12s,border-color .12s;white-space:nowrap}
 .wb-rtab span{font-size:13px;margin-right:3px}
 .wb-rtab:hover{color:var(--ink)}

@@ -702,11 +702,11 @@ export default function WebsiteEditorPage() {
       <div className="wb-body">
         {/* ─── LEFT SIDEBAR ─── */}
         <aside className="wb-left">
-          <div className="wb-left-section">
-            <div className="wb-left-header">
+          <details className="wb-left-section" open>
+            <summary className="wb-left-header">
               <h3>Pages</h3>
-              <button className="wb-add-btn" onClick={() => void createPageAction()} disabled={controlsDisabled} title="Add page">+</button>
-            </div>
+              <button className="wb-add-btn" onClick={(e) => { e.preventDefault(); void createPageAction(); }} disabled={controlsDisabled} title="Add page">+</button>
+            </summary>
             <div className="wb-page-list">
               {pages.map((p) => (
                 <button key={p.id} className={`wb-page-item${p.id === page?.id ? " is-active" : ""}`} onClick={() => void selectPage(p.id)} disabled={busy !== null}>
@@ -716,13 +716,13 @@ export default function WebsiteEditorPage() {
                 </button>
               ))}
             </div>
-          </div>
+          </details>
 
-          <div className="wb-left-section">
-            <div className="wb-left-header">
+          <details className="wb-left-section" open>
+            <summary className="wb-left-header">
               <h3>Sections{page ? ` · ${page.title}` : ""}</h3>
-              <button className="wb-add-btn" onClick={() => setShowSectionLibrary(true)} disabled={controlsDisabled || !page} title="Add section">+</button>
-            </div>
+              <button className="wb-add-btn" onClick={(e) => { e.preventDefault(); setShowSectionLibrary(true); }} disabled={controlsDisabled || !page} title="Add section">+</button>
+            </summary>
             <div className="wb-section-tree">
               {sortedSections.map((section, index) => (
                 <div
@@ -749,7 +749,7 @@ export default function WebsiteEditorPage() {
               ))}
               {page && sortedSections.length === 0 && <p className="wb-empty">No sections yet. Add one to start building.</p>}
             </div>
-          </div>
+          </details>
         </aside>
 
         {/* ─── CENTER PREVIEW ─── */}
