@@ -125,7 +125,9 @@ def test_lead_activity_rls_relationships_and_immutable_runtime_history():
                 INSERT INTO user_branch_scopes (clinic_id, user_id, branch_id)
                 VALUES (:clinic_a, :user_a, :branch_id)
             """), {**values, "branch_id": branch_id})
-            # No linked appointment establishes a permitted branch for this lead.
+            # Strict branch scope: with no branch_id and no appointment, the
+            # lead has no branch anchor, so a branch-scoped user cannot see
+            # it. Central triage (users with no branch scope rows) still can.
             with pytest.raises(HTTPException) as wrong_branch:
                 _require_lead(connection, session, lead_a)
             assert wrong_branch.value.status_code == 404

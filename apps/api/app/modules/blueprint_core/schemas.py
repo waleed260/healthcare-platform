@@ -23,6 +23,7 @@ class LeadCreate(BaseModel):
     campaign: str | None = Field(default=None, max_length=160)
     specialty_id: UUID | None = None
     requested_service_id: UUID | None = None
+    branch_id: UUID | None = None
     assigned_to_user_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=5000)
 
@@ -32,6 +33,13 @@ class LeadUpdate(BaseModel):
 
     expected_version: int = Field(ge=1)
     status: Literal['new', 'contacted', 'qualified', 'appointment_booked', 'visited', 'lost'] | None = None
+    full_name: str | None = Field(default=None, min_length=1, max_length=160)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=40)
+    campaign: str | None = Field(default=None, max_length=160)
+    specialty_id: UUID | None = None
+    requested_service_id: UUID | None = None
+    branch_id: UUID | None = None
     assigned_to_user_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=5000)
     lost_reason: str | None = Field(default=None, max_length=500)
@@ -42,6 +50,10 @@ class LeadUpdate(BaseModel):
             raise ValueError('at least one lead field must be supplied')
         if 'status' in self.model_fields_set and self.status is None:
             raise ValueError('status cannot be null')
+        if 'full_name' in self.model_fields_set and self.full_name is None:
+            raise ValueError('full_name cannot be null')
+        if self.status == 'lost' and not (self.lost_reason or '').strip():
+            raise ValueError('lost_reason is required when status is lost')
         return self
 
 
