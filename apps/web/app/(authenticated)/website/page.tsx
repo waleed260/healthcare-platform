@@ -455,12 +455,22 @@ export default function WebsiteEditorPage() {
     finally { setBusy(null); }
   }
 
+  const refreshWebsite = useCallback(async () => {
+    if (!website) return;
+    try {
+      const fresh = await api<Website>(`/api/v1/websites/${website.id}`);
+      setWebsite(fresh);
+      setWebsites((current) => current.map((w) => w.id === fresh.id ? fresh : w));
+    } catch { /* stale state will surface on publish */ }
+  }, [website]);
+
   async function saveSection(section: Section, next?: Partial<Section>) {
     if (!website || !page || !canEdit) return;
     const candidate = { ...section, ...next }; setBusy(section.id);
     try {
       const updated = await api<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify({ section_type: candidate.section_type, layout_key: candidate.layout_key, position: candidate.position, content: candidate.content, is_visible: candidate.is_visible, expected_version: section.version }) });
       setSections((current) => current.map((s) => s.id === section.id ? updated : s));
+      await refreshWebsite();
       setNotice("Draft saved."); void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be saved."); }
     finally { setBusy(null); }
@@ -470,7 +480,9 @@ export default function WebsiteEditorPage() {
     if (!website || !page || !canEdit) return; setBusy("add-section"); setShowSectionLibrary(false);
     try {
       const created = await api<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_type: sectionType, layout_key: layoutKey, position: sections.length, content: { ...defaultContent, heading: sectionType.replaceAll("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) }, is_visible: true }) });
-      setSections((current) => [...current, created]); setSelectedSectionId(created.id); setRightTab("content"); void validateDraft(website);
+      setSections((current) => [...current, created]); setSelectedSectionId(created.id); setRightTab("content");
+      await refreshWebsite();
+      void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be added."); }
     finally { setBusy(null); }
   }
@@ -480,7 +492,9 @@ export default function WebsiteEditorPage() {
     try {
       await api(`/api/v1/websites/${website.id}/pages/${page.id}/sections/${section.id}`, { method: "DELETE", headers: writeHeaders(), body: JSON.stringify({ expected_version: section.version }) });
       setSections((current) => current.filter((s) => s.id !== section.id).map((s, i) => ({ ...s, position: i })));
-      if (selectedSectionId === section.id) setSelectedSectionId(null); void validateDraft(website);
+      if (selectedSectionId === section.id) setSelectedSectionId(null);
+      await refreshWebsite();
+      void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be removed."); }
     finally { setBusy(null); }
   }
@@ -489,7 +503,9 @@ export default function WebsiteEditorPage() {
     if (!website || !page || !canEdit) return; setBusy(section.id);
     try {
       const created = await api<Section>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_type: section.section_type, layout_key: section.layout_key, position: sections.length, content: section.content, is_visible: section.is_visible }) });
-      setSections((current) => [...current, created]); void validateDraft(website);
+      setSections((current) => [...current, created]);
+      await refreshWebsite();
+      void validateDraft(website);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The section could not be duplicated."); }
     finally { setBusy(null); }
   }
@@ -500,7 +516,9 @@ export default function WebsiteEditorPage() {
     setSections(next.map((s, position) => ({ ...s, position }))); setBusy("reorder");
     try {
       await api(`/api/v1/website-library/websites/${website.id}/pages/${page.id}/reorder-sections`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ section_ids: next.map((s) => s.id) }) });
-      setSections((await api<Section[]>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`)) ?? []); void validateDraft(website);
+      setSections((await api<Section[]>(`/api/v1/websites/${website.id}/pages/${page.id}/sections`)) ?? []);
+      await refreshWebsite();
+      void validateDraft(website);
     } catch (reason) { setSections(previous); setError(reason instanceof Error ? reason.message : "The sections could not be reordered."); }
     finally { setBusy(null); }
   }
