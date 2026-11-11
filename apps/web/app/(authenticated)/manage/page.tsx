@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, errorMessage, label, money, patch, post, writeHeaders } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
@@ -26,13 +27,19 @@ const TABS = [
   { id: "modules", label: "Specialties & Plan", permission: "clinic.read" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
+const TAB_IDS: readonly Tab[] = TABS.map((t) => t.id);
 
 const SERVICE_CATEGORIES = ["General", "Skin", "Hair", "Dental", "Dermatology", "Laser", "Injectable", "Surgery", "Consultation", "Lab", "Imaging"];
 
 export default function ManagePage() {
   const clinicCurrency = useClinicCurrency();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const initialTab: Tab = (TAB_IDS as readonly string[]).includes(urlTab ?? "") ? (urlTab as Tab) : "services";
+
   const [permissions, setPermissions] = useState<string[]>([]);
-  const [tab, setTab] = useState<Tab>("services");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [services, setServices] = useState<Service[]>([]);
   const [templates, setTemplates] = useState<ServiceTemplate[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -107,6 +114,20 @@ export default function ManagePage() {
   useEffect(() => { void load(); }, [load]);
 
   const visibleTabs = useMemo(() => TABS.filter((item) => permissions.length === 0 || can(item.permission)), [can, permissions.length]);
+
+  const selectTab = useCallback((next: Tab) => {
+    setTab(next);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", next);
+    router.replace(`/manage?${params.toString()}`, { scroll: false });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (permissions.length === 0) return;
+    if (!visibleTabs.some((t) => t.id === tab) && visibleTabs.length > 0) {
+      selectTab(visibleTabs[0].id);
+    }
+  }, [permissions.length, visibleTabs, tab, selectTab]);
 
   async function run(action: () => Promise<unknown>, success: string, fallback: string) {
     setBusy(true);
@@ -294,29 +315,33 @@ export default function ManagePage() {
     void run(() => post("/api/v1/upgrade-requests", { kind: "specialty", target_code: code }), "Request sent to the platform team.", "The request could not be sent.");
   }
 
+  const pendingInvites = invitations.filter((i) => i.status === "pending");
+
   // ── Render ──
   return <main className="workspace-page manage-page">
-    <div className="workspace-page-header"><div><p className="eyebrow">MANAGEMENT</p><h1>Run the clinic, <em>your way.</em></h1><p className="workspace-page-intro">Services, staff and access in one place.</p></div><div className="header-actions"><button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div></div>
+    <div className="workspace-page-header">
+      <div><p className="eyebrow">MANAGEMENT</p><h1>Run the clinic, <em>your way.</em></h1><p className="workspace-page-intro">Services, staff and access in one place.</p></div>
+      <div className="header-actions"><button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button></div>
+    </div>
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
-    <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist">{visibleTabs.map((item) => <button key={item.id} role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div></div>
+    <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist">{visibleTabs.map((item) => <button key={item.id} role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => selectTab(item.id)}>{item.label}</button>)}</div></div>
 
     {/* ═══ SERVICES TAB ═══ */}
     {tab === "services" && <section className="surface-card">
-      <div className="surface-card-heading"><div><p className="eyebrow">SERVICE CATALOG</p><h2>What patients can book.</h2></div>
-        <div className="header-actions" style={{ display: "flex", gap: 8 }}>
+      <div className="surface-card-heading">
+        <div><p className="eyebrow">SERVICE CATALOG</p><h2>What patients can book.</h2></div>
+        <div className="header-actions">
           {can("service.manage") && <button className="button button-secondary" onClick={() => setImportDrawer(true)}>Import from catalog</button>}
           {can("service.manage") && <button className="button button-primary" onClick={() => { setEditService(null); setServiceDrawer(true); }}>Add service <span>＋</span></button>}
         </div>
       </div>
 
-      <div className="pipeline-toolbar" style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", flex: 1 }}>
-          <input type="search" placeholder="Search services…" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} style={{ maxWidth: 240, padding: "6px 12px", border: "1px solid var(--border-subtle, #e5e5e3)", borderRadius: 6, fontSize: "0.85rem", background: "var(--surface-1, #fff)" }} />
-          <div className="pipeline-tabs" role="tablist" style={{ fontSize: "0.78rem" }}>
-            <button role="tab" aria-selected={serviceFilter === "all"} className={serviceFilter === "all" ? "active" : ""} onClick={() => setServiceFilter("all")}>All ({services.length})</button>
-            {categories.map((cat) => <button key={cat} role="tab" aria-selected={serviceFilter === cat} className={serviceFilter === cat ? "active" : ""} onClick={() => setServiceFilter(cat)}>{cat} ({services.filter((s) => (s.category ?? "General") === cat).length})</button>)}
-          </div>
+      <div className="manage-page-filter">
+        <input type="search" className="manage-page-filter-search" placeholder="Search services…" value={serviceSearch} onChange={(e) => setServiceSearch(e.target.value)} />
+        <div className="pipeline-tabs" role="tablist">
+          <button role="tab" aria-selected={serviceFilter === "all"} className={serviceFilter === "all" ? "active" : ""} onClick={() => setServiceFilter("all")}>All ({services.length})</button>
+          {categories.map((cat) => <button key={cat} role="tab" aria-selected={serviceFilter === cat} className={serviceFilter === cat ? "active" : ""} onClick={() => setServiceFilter(cat)}>{cat} ({services.filter((s) => (s.category ?? "General") === cat).length})</button>)}
         </div>
       </div>
 
@@ -327,11 +352,11 @@ export default function ManagePage() {
           <div className="invoice-main">
             <h3>{item.name}</h3>
             <p>{item.category ?? "General"} · {item.duration_minutes} min{item.buffer_before_minutes || item.buffer_after_minutes ? ` (${item.buffer_before_minutes}+${item.buffer_after_minutes} buffer)` : ""} · {item.price_mode === "contact" || item.amount_minor == null ? "Contact for price" : money(item.amount_minor, item.currency ?? clinicCurrency)}</p>
-            {item.short_description && <small style={{ color: "var(--text-muted, #6b7280)" }}>{item.short_description}</small>}
+            {item.short_description && <small className="manage-page-service-desc">{item.short_description}</small>}
           </div>
           <div className="invoice-actions">
             <span className={`pipeline-status status-${item.status === "active" ? "paid" : "void"}`}>{item.status}</span>
-            <span className={`pipeline-status status-${item.visibility === "public" ? "contacted" : "void"}`} style={{ fontSize: "0.7rem" }}>{item.visibility}</span>
+            <span className={`pipeline-status status-${item.visibility === "public" ? "contacted" : "void"} manage-page-visibility`}>{item.visibility}</span>
             {can("service.manage") && <>
               <button className="text-control" disabled={busy} onClick={() => { setEditService(item); setServiceDrawer(true); }}>Edit</button>
               <button className="text-control" disabled={busy} onClick={() => duplicateService(item)}>Duplicate</button>
@@ -345,13 +370,13 @@ export default function ManagePage() {
 
     {/* ═══ STAFF TAB ═══ */}
     {tab === "staff" && <section className="surface-card">
-      <div className="surface-card-heading"><div><p className="eyebrow">TEAM</p><h2>Invite, don't share logins.</h2></div>{can("staff.manage") && <button className="button button-primary" onClick={() => setStaffDrawer(true)}>Invite staff <span>＋</span></button>}</div>
+      <div className="surface-card-heading"><div><p className="eyebrow">TEAM</p><h2>Invite, don&#39;t share logins.</h2></div>{can("staff.manage") && <button className="button button-primary" onClick={() => setStaffDrawer(true)}>Invite staff <span>＋</span></button>}</div>
 
-      {invitations.filter((i) => i.status === "pending").length > 0 && <div style={{ marginBottom: 16 }}>
-        <p className="eyebrow" style={{ margin: "12px 0 6px", fontSize: "0.68rem" }}>PENDING INVITATIONS</p>
+      {pendingInvites.length > 0 && <div className="manage-page-pending-invites">
+        <p className="eyebrow manage-page-invites-head">PENDING INVITATIONS</p>
         <div className="invoice-list">
-          {invitations.filter((i) => i.status === "pending").map((inv) => <article className="invoice-row" key={inv.id}>
-            <div className="invoice-mark" style={{ background: "var(--amber-bg, #fffbeb)", color: "var(--amber, #92400e)" }}>✉</div>
+          {pendingInvites.map((inv) => <article className="invoice-row" key={inv.id}>
+            <div className="invoice-mark manage-page-invite-mark">✉</div>
             <div className="invoice-main">
               <h3>{inv.email}</h3>
               <small>Invited {new Date(inv.created_at).toLocaleDateString()}</small>
@@ -389,17 +414,17 @@ export default function ManagePage() {
       <div className="surface-card-heading"><div><p className="eyebrow">ACCESS CONTROL</p><h2>What each role can do.</h2></div>
         {can("staff.manage") && <button className="button button-primary" onClick={() => { setEditRole(null); setRoleDrawer(true); }}>Create role <span>＋</span></button>}
       </div>
-      <div className="invoice-list">{roles.map((role) => <article className="invoice-row" key={role.id} style={{ cursor: "pointer" }} onClick={() => setRoleDetail(roleDetail?.id === role.id ? null : role)}>
+      <div className="invoice-list">{roles.map((role) => <article className="invoice-row manage-page-role-row" key={role.id} onClick={() => setRoleDetail(roleDetail?.id === role.id ? null : role)}>
         <div className="invoice-mark">{role.name.slice(0, 2).toUpperCase()}</div>
         <div className="invoice-main">
-          <h3>{label(role.name)}{role.is_system ? <span style={{ fontSize: "0.7rem", color: "var(--muted)", marginLeft: 8 }}>System role</span> : <span style={{ fontSize: "0.7rem", color: "var(--leaf)", marginLeft: 8 }}>Custom</span>}</h3>
+          <h3>{label(role.name)}<span className={`manage-page-role-label${role.is_system ? "" : " is-custom"}`}>{role.is_system ? "System role" : "Custom"}</span></h3>
           <p>{role.permissions.length} permissions</p>
-          {roleDetail?.id === role.id && <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--line)" }}>
-            <p className="eyebrow" style={{ fontSize: "0.65rem", marginBottom: 8 }}>PERMISSIONS</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {role.permissions.map((p) => <span key={p.code} className="tag-pill" style={{ fontFamily: "'DM Mono', monospace", fontSize: "0.72rem" }}>{p.code}</span>)}
+          {roleDetail?.id === role.id && <div className="manage-page-role-detail">
+            <p className="eyebrow">PERMISSIONS</p>
+            <div className="manage-page-role-badges">
+              {role.permissions.map((p) => <span key={p.code} className="tag-pill manage-page-role-perm-tag">{p.code}</span>)}
             </div>
-            {can("staff.manage") && <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            {can("staff.manage") && <div className="manage-page-role-actions">
               <button className="button button-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setEditRole(role); setRoleDrawer(true); }}>Edit permissions</button>
               {!role.is_system && <button className="button button-danger" disabled={busy} onClick={(e) => { e.stopPropagation(); void (async () => {
                 const ok = await confirm({ message: `Delete the "${label(role.name)}" role? This cannot be undone.`, danger: true, confirmLabel: "Delete role" });
@@ -420,43 +445,41 @@ export default function ManagePage() {
     {tab === "modules" && <section className="surface-card">
       <div className="surface-card-heading"><div><p className="eyebrow">SPECIALTIES &amp; PLAN</p><h2>Grow without migrating.</h2></div></div>
 
-      {subscription && <div style={{ padding: "16px 20px", marginBottom: 12, background: "var(--surface-2, #f0f0ee)", borderRadius: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <p className="eyebrow" style={{ fontSize: "0.68rem", marginBottom: 4 }}>CURRENT PLAN</p>
-            <strong style={{ fontSize: "1.1rem" }}>{subscription.name}</strong>
-            <span className={`pipeline-status ${subscription.status === "active" ? "status-paid" : subscription.status === "cancelled" ? "status-void" : "status-contacted"}`} style={{ marginLeft: 10 }}>{label(subscription.status)}</span>
-            {subscription.ends_at && <small style={{ display: "block", marginTop: 4, color: "var(--text-muted, #6b7280)" }}>Ends {new Date(subscription.ends_at).toLocaleDateString()}</small>}
-          </div>
-          {subscription.status === "active" && can("admin.plan.manage") && <button className="button button-danger" disabled={busy} onClick={() => void (async () => {
-            const ok = await confirm({ title: "Cancel subscription", message: "Your clinic will lose access to premium features when the current billing period ends. This cannot be undone from the dashboard — contact support to reactivate.", danger: true, confirmLabel: "Cancel plan" });
-            if (!ok) return;
-            setBusy(true);
-            try {
-              await api("/api/v1/governance/subscription", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ plan_code: subscription.code, status: "cancelled" }) });
-              toast.success("Subscription cancelled. Access continues until the end of the current period.");
-              await load();
-            } catch (reason) { toast.error(errorMessage(reason, "The subscription could not be cancelled.")); }
-            finally { setBusy(false); }
-          })()}>Cancel plan</button>}
+      {subscription && <div className="manage-page-plan-card">
+        <div>
+          <p className="eyebrow">CURRENT PLAN</p>
+          <strong>{subscription.name}</strong>
+          <span className={`pipeline-status ${subscription.status === "active" ? "status-paid" : subscription.status === "cancelled" ? "status-void" : "status-contacted"} manage-page-plan-status`}>{label(subscription.status)}</span>
+          {subscription.ends_at && <small className="manage-page-plan-end">Ends {new Date(subscription.ends_at).toLocaleDateString()}</small>}
         </div>
+        {subscription.status === "active" && can("admin.plan.manage") && <button className="button button-danger" disabled={busy} onClick={() => void (async () => {
+          const ok = await confirm({ title: "Cancel subscription", message: "Your clinic will lose access to premium features when the current billing period ends. This cannot be undone from the dashboard — contact support to reactivate.", danger: true, confirmLabel: "Cancel plan" });
+          if (!ok) return;
+          setBusy(true);
+          try {
+            await api("/api/v1/governance/subscription", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ plan_code: subscription.code, status: "cancelled" }) });
+            toast.success("Subscription cancelled. Access continues until the end of the current period.");
+            await load();
+          } catch (reason) { toast.error(errorMessage(reason, "The subscription could not be cancelled.")); }
+          finally { setBusy(false); }
+        })()}>Cancel plan</button>}
       </div>}
 
-      {featureLimits.length > 0 && <div style={{ marginBottom: 20 }}>
-        <p className="eyebrow" style={{ fontSize: "0.68rem", margin: "12px 0 8px" }}>PLAN USAGE</p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+      {featureLimits.length > 0 && <>
+        <p className="eyebrow manage-page-usage-head">PLAN USAGE</p>
+        <div className="manage-page-usage-grid">
           {featureLimits.map((fl) => {
             const pct = fl.limit_value > 0 ? Math.min(100, Math.round((fl.current_usage / fl.limit_value) * 100)) : 0;
-            return <div key={fl.feature} style={{ padding: "10px 14px", background: "var(--surface-2, #f0f0ee)", borderRadius: 8, fontSize: "0.82rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><strong>{label(fl.feature)}</strong><span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem" }}>{fl.current_usage}/{fl.limit_value}</span></div>
-              <div style={{ height: 6, background: "var(--border-subtle, #e5e5e3)", borderRadius: 3, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct}%`, background: pct > 90 ? "var(--red, #b91c1c)" : pct > 70 ? "var(--amber, #92400e)" : "var(--accent, #274c42)", borderRadius: 3, transition: "width 0.3s" }} />
-              </div>
+            const tone = pct > 90 ? "is-danger" : pct > 70 ? "is-warn" : "";
+            return <div key={fl.feature} className="manage-page-usage-card">
+              <div className="manage-page-usage-top"><strong>{label(fl.feature)}</strong><span className="manage-page-usage-count">{fl.current_usage}/{fl.limit_value}</span></div>
+              <div className={`manage-page-usage-bar ${tone}`.trim()}><span style={{ width: `${pct}%` }} /></div>
             </div>;
           })}
         </div>
-      </div>}
+      </>}
 
+      <div className="surface-card-heading manage-subhead"><div><p className="eyebrow">SPECIALTY LIBRARY</p></div></div>
       <div className="invoice-list">
         {specialties.map((item) => <article className="invoice-row" key={item.id}>
           <div className="invoice-mark">{item.code.slice(0, 3).toUpperCase()}</div>
@@ -473,7 +496,7 @@ export default function ManagePage() {
       </div>
 
       {upgrades.length > 0 && <>
-        <div className="surface-card-heading manage-subhead" style={{ marginTop: 20 }}><div><p className="eyebrow">REQUEST HISTORY</p></div></div>
+        <div className="surface-card-heading manage-subhead"><div><p className="eyebrow">REQUEST HISTORY</p></div></div>
         <div className="invoice-list">{upgrades.map((item) => <article className="invoice-row" key={item.id}>
           <div className="invoice-mark">↑</div>
           <div className="invoice-main">
@@ -525,7 +548,7 @@ export default function ManagePage() {
     <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES" opaque>
       <div className="drawer-form">
         {templates.length === 0 && <p className="drawer-note">No templates available in the master catalog, or you&#39;ve imported them all.</p>}
-        {templates.map((t) => <article className="invoice-row" key={t.id} style={{ cursor: "pointer" }} onClick={() => importTemplate(t)}>
+        {templates.map((t) => <article className="invoice-row manage-page-role-row" key={t.id} onClick={() => importTemplate(t)}>
           <div className="invoice-mark">{t.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
             <h3>{t.name}</h3>
@@ -540,8 +563,8 @@ export default function ManagePage() {
     <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION" opaque footer={<><button className="button button-secondary" type="button" onClick={() => setStaffDrawer(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="invite-form" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button></>}>
       <form className="drawer-form" id="invite-form" onSubmit={handleInvite}>
         <label>Email address<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
-        <div style={{ padding: "16px", background: "var(--cream)", borderRadius: 8, marginTop: 4 }}>
-          <p className="drawer-note" style={{ margin: 0 }}>An invitation link will be generated and copied to your clipboard. Roles and branch scopes can be assigned after the staff member accepts.</p>
+        <div className="manage-page-invite-prompt">
+          <p className="drawer-note">An invitation link will be generated and copied to your clipboard. Roles and branch scopes can be assigned after the staff member accepts.</p>
         </div>
       </form>
     </Drawer>
@@ -582,13 +605,13 @@ export default function ManagePage() {
           {currentUserId && staffDetail.id === currentUserId && <p className="drawer-note">You cannot modify your own roles.</p>}
           {(staffDetail.roles ?? []).length === 0
             ? <p className="drawer-note">No roles assigned</p>
-            : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            : <div className="manage-page-staff-tags">
               {(staffDetail.roles ?? []).map((r) => <span key={r.id} className="tag-pill">
                 {label(r.name)}
                 {can("staff.manage") && staffDetail.id !== currentUserId && <button className="tag-pill-remove" disabled={busy} onClick={(e) => { e.stopPropagation(); void removeRole(staffDetail.id, r.id); }} title="Remove role">×</button>}
               </span>)}
             </div>}
-          {can("staff.manage") && staffDetail.id !== currentUserId && <div style={{ marginTop: 8 }}>
+          {can("staff.manage") && staffDetail.id !== currentUserId && <div className="manage-page-staff-add">
             <select className="staff-scope-select" onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add role…</option>
               {roles.filter((r) => !(staffDetail.roles ?? []).some((ur) => ur.id === r.id)).map((r) => <option key={r.id} value={r.id}>{label(r.name)}</option>)}
@@ -601,13 +624,13 @@ export default function ManagePage() {
           <p className="drawer-note">Restrict this user to specific branches. No scopes = access to all branches.</p>
           {(staffDetail.branch_scopes ?? []).length === 0
             ? <p className="drawer-note">All branches (no restrictions)</p>
-            : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            : <div className="manage-page-staff-tags">
               {(staffDetail.branch_scopes ?? []).map((b) => <span key={b.id} className="tag-pill">
                 {b.name}
                 {can("staff.manage") && <button className="tag-pill-remove" disabled={busy} onClick={(e) => { e.stopPropagation(); void removeBranchScope(staffDetail.id, b.id); }} title="Remove scope">×</button>}
               </span>)}
             </div>}
-          {can("staff.manage") && <div style={{ marginTop: 8 }}>
+          {can("staff.manage") && <div className="manage-page-staff-add">
             <select className="staff-scope-select" onChange={(e) => { if (e.target.value) { void assignBranchScope(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add branch scope…</option>
               {branches.filter((b) => !(staffDetail.branch_scopes ?? []).some((bs) => bs.id === b.id)).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -661,19 +684,19 @@ function RoleEditor({ role, allPermissions, onSave }: {
 
   return <form className="drawer-form" id="role-form" onSubmit={(e) => { e.preventDefault(); onSave(name.trim(), Array.from(selected).sort()); }}>
     {!(role?.is_system) && <label>Role name<input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lab Technician" required /></label>}
-    {role?.is_system && <div style={{ padding: "12px 16px", background: "var(--cream)", borderRadius: 8 }}><p className="drawer-note" style={{ margin: 0 }}>System role — name cannot be changed, but you can edit permissions.</p></div>}
+    {role?.is_system && <div className="manage-page-invite-prompt"><p className="drawer-note">System role — name cannot be changed, but you can edit permissions.</p></div>}
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <p className="drawer-form-section-label" style={{ margin: 0, padding: 0, border: "none" }}>PERMISSIONS ({selected.size}/{allPermissions.length})</p>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set(allPermissions.map((p) => p.code)))}>Select all</button>
-          <button type="button" className="ghost-button" style={{ fontSize: "0.72rem" }} onClick={() => setSelected(new Set())}>Clear all</button>
+      <div className="role-editor-head">
+        <p className="drawer-form-section-label">PERMISSIONS ({selected.size}/{allPermissions.length})</p>
+        <div className="manage-page-role-actions">
+          <button type="button" className="ghost-button" onClick={() => setSelected(new Set(allPermissions.map((p) => p.code)))}>Select all</button>
+          <button type="button" className="ghost-button" onClick={() => setSelected(new Set())}>Clear all</button>
         </div>
       </div>
-      <input type="search" placeholder="Filter permissions…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
+      <input type="search" className="role-editor-search" placeholder="Filter permissions…" value={search} onChange={(e) => setSearch(e.target.value)} />
       <div className="role-permissions">
         {filtered.map(([group, perms]) => (
-          <div key={group} style={{ borderBottom: "1px solid var(--line)" }}>
+          <div key={group}>
             <div className="perm-group-header" onClick={() => toggleGroup(perms.map((p) => p.code))}>
               <input type="checkbox" checked={perms.every((p) => selected.has(p.code))} readOnly />
               <strong>{group}</strong>
