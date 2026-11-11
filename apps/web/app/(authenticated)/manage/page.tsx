@@ -548,7 +548,7 @@ export default function ManagePage() {
     <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES" opaque>
       <div className="drawer-form">
         {templates.length === 0 && <p className="drawer-note">No templates available in the master catalog, or you&#39;ve imported them all.</p>}
-        {templates.map((t) => <article className="invoice-row manage-page-role-row" key={t.id} onClick={() => importTemplate(t)}>
+        {templates.map((t) => <article className="invoice-row manage-page-role-row" key={t.id} role="button" tabIndex={0} onClick={() => importTemplate(t)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); importTemplate(t); } }}>
           <div className="invoice-mark">{t.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
             <h3>{t.name}</h3>
