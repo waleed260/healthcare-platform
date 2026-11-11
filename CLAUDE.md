@@ -27,6 +27,8 @@ Each module under `apps/api/app/modules/<name>/` typically has: `routes.py` (Fas
 ### Frontend patterns
 
 - API client: `apps/web/app/(authenticated)/_lib/client.ts` — `api<T>()` and `apiPage<T>()` with auto CSRF refresh and session-expiry redirect.
+<!-- anchor: session-cache — Session startup references this bullet; keep the "Session cache" phrasing or update the pointer in "### Session startup". -->
+- Session cache (`_lib/session-cache.ts`): `api()` keeps a short-TTL in-memory cache for `SESSION_CACHED` endpoints and a 120s cache for `REF_CACHED` list endpoints (`branches?limit=100`, `doctors?limit=100`, `services?limit=100`). Any non-GET through `api()` invalidates all `REF_CACHED` keys and drops their in-flight promises — so after mutating one of those lists, the next GET refetches. When adding a new list page, decide whether to register its URL in `REF_CACHED`; do not re-invent a page-local cache.
 - Shared UI: drawers, toast, confirm dialog, pagination, clinic context all live in `_lib/`.
 - Next.js 16 has breaking changes — read `apps/web/node_modules/next/dist/docs/` before writing frontend code.
 - CSP nonces injected in `middleware.ts`; `ngrok-skip-browser-warning` header auto-added for API proxying.
@@ -38,6 +40,18 @@ Session auth via opaque hashed tokens (not JWT). CSRF double-submit with `X-CSRF
 ### Clinical workflow chain
 
 **Inventory** → **Services** → **Encounters** → **Billing** → **Finance**. Encounters reference services (via `service_id` on treatments/procedures) and inventory products (via `inventory_product_id` on treatments/medications). Billing creates invoices from encounter data. Finance aggregates billing data for cashier summaries and provider revenue.
+
+<!-- anchor: state-machines — Session startup references this heading; keep the "State machines" phrasing or update the pointer in "### Session startup". -->
+### State machines (appointment ↔ queue ↔ encounter)
+
+These three tables move together; any edit to one path must also update the other two, or state will drift and UI will stop matching reality.
+
+- **Check-in** (`POST /operations/queue/check-in`): `appointment: confirmed → waiting`, create `queue_entries` row with `status='waiting'`.
+- **Begin Assessment** (`POST /encounters/{id}/status` with `status=in_progress`, in `encounters/routes.py`): when the encounter has an appointment in `waiting`, mirrors `appointment: waiting → in_consultation` and `queue: waiting → in_consultation`, and inserts an `appointment_history` row.
+- **Discharge** (`POST /encounters/{id}/discharge`): marks any `waiting`/`in_consultation` `queue_entries` row for the appointment as `completed`, and (guarded on `status = 'in_consultation'`) flips the appointment to `completed` with a history row. The queue UPDATE is idempotent; the appointment UPDATE respects the `in_consultation → completed` transition in `appointments/state.py`.
+- **Queue Complete** (`POST /operations/queue/{id}/complete`, alternative path): same end state — queue `completed`, appointment `completed` — when the user clicks Complete from the queue page instead of discharging.
+
+The authoritative transition table lives in `apps/api/app/modules/appointments/state.py` (`waiting → {in_consultation, cancelled, confirmed}`, `in_consultation → {completed}`). Direct SQL `UPDATE appointments SET status = ...` must be guarded by a `WHERE status IN (...)` clause matching that table.
 
 ## Common commands
 
@@ -53,7 +67,7 @@ alembic upgrade head                    # run migrations
 alembic revision -m "description"       # create migration
 ```
 
-Tests marked `@pytest.mark.integration` require a PostgreSQL `healthcare_test` database (see `scripts/dev/setup-local-postgres.sh`). Ruff is configured at 100-char line length, Python 3.12 target.
+Tests marked `@pytest.mark.integration` require a PostgreSQL `healthcare_test` database (see `scripts/dev/setup-local-postgres.sh`) and both `TEST_ADMIN_DATABASE_URL` (migrator role, bypasses RLS for setup) and `TEST_DATABASE_URL` (runtime role, enforces RLS). Without them the tests auto-skip — a passing `pytest` run that shows `s` marks is not proof an integration path was exercised; run with both URLs set to actually cover them. Ruff is configured at 100-char line length, Python 3.12 target.
 
 ### Web (from `apps/web/`)
 
@@ -97,6 +111,9 @@ python3 infra/check_rls_contract.py
 
 Two PostgreSQL roles: `healthcare_migrator` (owns schema, runs Alembic) and `healthcare_runtime` (least-privilege, used by the app). Alembic reads `DATABASE_MIGRATION_URL` for migrations. The runtime connection uses `DATABASE_URL`. Tenant isolation: every tenant-scoped transaction calls `set_tenant_context(db, clinic_id, user_id)` before queries; RLS policies filter on `current_setting('app.clinic_id')`.
 
+<!-- anchor: test-db-bootstrap-quirk — Session startup references this label; keep the "Test DB bootstrap quirk" phrasing or update the pointer in "### Session startup". -->
+**Test DB bootstrap quirk:** if `alembic upgrade head` on a `healthcare_test` database fails with `alembic_version` column-length errors, the fix is `alembic upgrade 0068_patient_vitals` → `ALTER TABLE alembic_version ALTER COLUMN version_num TYPE varchar(64)` → `alembic upgrade head`. The orphan comes from an older schema stamp that outlived its migration; do not drop `alembic_version` or re-stamp from scratch.
+
 ## Deployment
 
 API runs behind a reverse proxy (ngrok static domain or Cloudflare tunnel). Web deploys to Vercel with `API_URL` env var pointing to the API origin. See `infra/TUNNEL.md`.
@@ -125,13 +142,21 @@ These rules govern how Claude Code sessions operate in this repository. They per
 
 At the start of every session:
 
-1. Read this `CLAUDE.md`.
+1. Read this `CLAUDE.md` — three notes are load-bearing: **State machines** (Architecture), **Session cache** (Frontend patterns), and **Test DB bootstrap quirk** (Database). Each is tagged with an `<!-- anchor: ... -->` HTML comment; if you rename one of those headings, update this list in the same edit or the pointer rots.
 2. Read `.claude/WORK_STATE.md` if it exists.
 3. Run `git status` and `git log --oneline -5`.
 4. Identify completed, incomplete, and blocked tasks.
 5. Continue from the exact next unfinished action — do not restart completed work.
 
 Never assume work is done because a prior message claimed completion. Verify against actual file and git state.
+
+### Task completion (never skip)
+
+Every task the user gives must be completed end-to-end, following every instruction in the request. No step may be skipped, deferred, or silently narrowed. If an instruction cannot be executed (permission denial, missing credentials, broken dependency), stop and report the specific blocker — do not partially deliver and declare success, and do not substitute a different approach without surfacing the change to the user first.
+
+### Ponytail mode (always on)
+
+Run every session in ponytail **full** mode. At session start, if the skill is not already active, invoke it. Follow its rules: smallest complete change, reuse what exists, no abstractions/options/config nobody asked for, delete over add, end every reply with one or two lines naming what was skipped and the remaining risk. The user may say "stop ponytail" or "normal mode" to opt out for that session only — do not generalize the opt-out beyond the session it was given in.
 
 ### Implementation priority
 
