@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.tenant import set_tenant_context
 from app.modules.blueprint_core import routes
-from app.modules.blueprint_core.schemas import LeadUpdate
+from app.modules.blueprint_core.schemas import LeadConvert, LeadUpdate
 
 
 pytestmark = pytest.mark.integration
@@ -103,6 +103,14 @@ def test_specialty_scope_filters_list_and_blocks_out_of_scope_assignment(monkeyp
         with pytest.raises(HTTPException) as exc:
             routes.lead_update(in_branch_lead, payload, _request(), session, "session", "csrf")
         assert exc.value.status_code == 403
+
+        # Lost leads cannot be converted (state-machine guard).
+        routes.lead_update(in_branch_lead,
+                           LeadUpdate(expected_version=1, status="lost", lost_reason="budget"),
+                           _request(), session, "session", "csrf")
+        with pytest.raises(HTTPException) as exc:
+            routes.lead_convert(in_branch_lead, LeadConvert(), _request(), session, "session", "csrf")
+        assert exc.value.status_code == 409
     finally:
         session.close()
         with admin.begin() as c:

@@ -349,6 +349,10 @@ def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Sess
         raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
     if lead["converted_to_patient_id"] is not None:
         return {"data": {"lead_id": lead_id, "patient_id": lead["converted_to_patient_id"], "already_converted": True}, "meta": {"request_id": request.state.request_id}}
+    try:
+        validate_lead_transition(lead["status"], "converted")
+    except ValueError as exc:
+        raise _error("INVALID_TRANSITION", str(exc), status.HTTP_409_CONFLICT) from exc
     patient_id = payload.patient_id
     if patient_id is not None:
         valid = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND id = :patient_id AND archived_at IS NULL AND duplicate_of IS NULL"), {"clinic_id": session["clinic_id"], "patient_id": patient_id}).scalar_one_or_none()
