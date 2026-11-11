@@ -414,7 +414,7 @@ export default function ManagePage() {
       <div className="surface-card-heading"><div><p className="eyebrow">ACCESS CONTROL</p><h2>What each role can do.</h2></div>
         {can("staff.manage") && <button className="button button-primary" onClick={() => { setEditRole(null); setRoleDrawer(true); }}>Create role <span>＋</span></button>}
       </div>
-      <div className="invoice-list">{roles.map((role) => <article className="invoice-row manage-page-role-row" key={role.id} onClick={() => setRoleDetail(roleDetail?.id === role.id ? null : role)}>
+      <div className="invoice-list">{roles.map((role) => <article className="invoice-row manage-page-role-row" key={role.id} role="button" tabIndex={0} aria-expanded={roleDetail?.id === role.id} onClick={() => setRoleDetail(roleDetail?.id === role.id ? null : role)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setRoleDetail(roleDetail?.id === role.id ? null : role); } }}>
         <div className="invoice-mark">{role.name.slice(0, 2).toUpperCase()}</div>
         <div className="invoice-main">
           <h3>{label(role.name)}<span className={`manage-page-role-label${role.is_system ? "" : " is-custom"}`}>{role.is_system ? "System role" : "Custom"}</span></h3>
