@@ -264,7 +264,7 @@ def appointment_list(request: Request, branch_id: UUID | None = Query(default=No
 
 @appointment_router.get("/availability")
 def internal_availability(*, request: Request, branch_id: UUID = Query(), service_id: UUID = Query(), from_date: date = Query(), to_date: date = Query(), doctor_id: UUID | None = Query(default=None), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
-    session = _staff_authorized(db, session_token, "appointment.read")
+    session = _staff_authorized(db, session_token, "appointment.read", branch_id=branch_id)
     clinic_id = session["clinic_id"]
     _validate_availability_range(from_date, to_date)
     branch = db.execute(text("SELECT id, timezone FROM branches WHERE clinic_id = :clinic_id AND id = :branch_id AND status = 'active' AND archived_at IS NULL"), {"clinic_id": clinic_id, "branch_id": branch_id}).mappings().one_or_none()
@@ -342,10 +342,12 @@ def appointment_transition(appointment_id: UUID, payload: AppointmentTransitionR
         validate_transition(row["status"], payload.to_status)
     except ValueError as exc:
         raise _error("INVALID_TRANSITION", "This appointment cannot make that transition.", status.HTTP_400_BAD_REQUEST) from exc
+    if payload.to_status in {"in_consultation", "completed"}:
+        raise _error("INVALID_TRANSITION", "Start and complete consultations from the queue so the queue and encounter stay in sync.", status.HTTP_400_BAD_REQUEST)
     blocks_time = payload.to_status not in {"cancelled", "rescheduled", "no_show"}
     reason = ": ".join(value for value in (payload.reason_code, payload.note) if value)
     updated = db.execute(text("UPDATE appointments SET status = :status, blocks_time = :blocks_time, cancellation_reason = :reason, status_changed_at = now(), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id RETURNING id, status, version, status_changed_at"), {"clinic_id": session["clinic_id"], "id": appointment_id, "status": payload.to_status, "blocks_time": blocks_time, "reason": reason or None}).mappings().one()
-    if payload.to_status in {"cancelled", "rescheduled", "no_show"}:
+    if payload.to_status in {"cancelled", "rescheduled", "no_show"} or (row["status"] == "waiting" and payload.to_status == "confirmed"):
         db.execute(text("UPDATE queue_entries SET status = 'cancelled', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :id AND status IN ('waiting', 'in_consultation')"), {"clinic_id": session["clinic_id"], "id": appointment_id})
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id, reason) VALUES (:clinic_id, :id, :from_status, :to_status, :actor, :reason)"), {"clinic_id": session["clinic_id"], "id": appointment_id, "from_status": row["status"], "to_status": payload.to_status, "actor": session["user_id"], "reason": reason or None})
     _audit(db, request, session, f"appointment.{payload.to_status}", appointment_id)
@@ -445,7 +447,7 @@ def appointment_reschedule(appointment_id: UUID, payload: AppointmentRescheduleR
 def create_internal_booking(payload: InternalBookingRequest, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> dict:
     if not idempotency_key or len(idempotency_key) > 128:
         raise _error("INVALID_INPUT", "Idempotency-Key is required.", status.HTTP_400_BAD_REQUEST)
-    session = _staff_authorized(db, session_token, "appointment.create")
+    session = _staff_authorized(db, session_token, "appointment.create", branch_id=payload.branch_id)
     _csrf(request, session, csrf_token)
     clinic_id = session["clinic_id"]
     service = db.execute(text("""
@@ -803,6 +805,9 @@ def create_public_booking(payload: PublicBookingRequest, request: Request, db: S
             raise _error("IDEMPOTENCY_MISMATCH", "This idempotency key was already used with different data.", status.HTTP_409_CONFLICT)
         db.commit()
         return {"data": {"reference": existing["reference"], "status": existing["status"]}, "meta": {"request_id": request.state.request_id}}
+    if not consume_public_management_limit(db, clinic_id=clinic_id, reference="public-booking", ip_address=request.client.host if request.client else "unknown", maximum=10):
+        db.commit()  # keep the bucket increment
+        raise _error("RATE_LIMITED", "Too many booking attempts. Please try again in a minute.", status.HTTP_429_TOO_MANY_REQUESTS)
     service = db.execute(text("""
         SELECT s.id, s.duration_minutes, s.buffer_before_minutes, s.buffer_after_minutes
         FROM services s

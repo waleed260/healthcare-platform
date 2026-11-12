@@ -166,7 +166,9 @@ def availability_rule_update(rule_id: UUID, payload: AvailabilityRuleCreate, req
     existing = db.execute(text("SELECT branch_id FROM availability_rules WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": rule_id}).scalar_one_or_none()
     if existing is None:
         raise _error("NOT_FOUND", "Availability rule not found.", status.HTTP_404_NOT_FOUND)
-    session = _write(db, request, session_token, csrf_token, branch_id=payload.branch_id)
+    session = _write(db, request, session_token, csrf_token, branch_id=existing)
+    if payload.branch_id != existing:
+        _authorized(db, session_token, "schedule.manage", payload.branch_id)
     _ensure_branch_assignment(db, session["clinic_id"], payload.branch_id, doctor_id=payload.doctor_id, service_id=payload.service_id)
     try:
         row = db.execute(text("""

@@ -212,11 +212,14 @@ def branch_delete(branch_id: str, request: Request, db: Session = Depends(get_db
           (SELECT count(*) FROM encounter_forms  WHERE clinic_id = :c AND branch_id = :b) AS encounters,
           (SELECT count(*) FROM invoices         WHERE clinic_id = :c AND branch_id = :b) AS invoices,
           (SELECT count(*) FROM queue_entries q JOIN appointments a ON a.clinic_id = q.clinic_id AND a.id = q.appointment_id WHERE q.clinic_id = :c AND a.branch_id = :b) AS queue_entries,
-          (SELECT count(*) FROM inventory_stock  WHERE clinic_id = :c AND branch_id = :b AND quantity > 0) AS stocked_products
+          (SELECT count(*) FROM inventory_stock  WHERE clinic_id = :c AND branch_id = :b AND quantity > 0) AS stocked_products,
+          (SELECT count(*) FROM user_branch_scopes s WHERE s.clinic_id = :c AND s.branch_id = :b
+             AND NOT EXISTS (SELECT 1 FROM user_branch_scopes o WHERE o.clinic_id = :c AND o.user_id = s.user_id AND o.branch_id <> :b)) AS sole_scope_users
     """), {"c": session["clinic_id"], "b": branch_id}).mappings().one()
     blocking = {k: int(v) for k, v in blockers.items() if int(v) > 0}
     if blocking:
-        raise _error("HAS_HISTORY", f"This branch cannot be deleted because it has clinical/financial history: {blocking}. Archive it instead.", status.HTTP_409_CONFLICT)
+        # sole_scope_users: dropping a user's only branch scope would silently grant them every branch.
+        raise _error("HAS_HISTORY", f"This branch cannot be deleted because it still has history or users scoped only to it: {blocking}. Archive it, or move those users to another branch first.", status.HTTP_409_CONFLICT)
     for table in ("branch_hours", "branch_doctors", "branch_services", "rooms", "resources", "user_branch_scopes", "clinic_holidays", "availability_rules", "inventory_stock"):
         db.execute(text(f"DELETE FROM {table} WHERE clinic_id = :c AND branch_id = :b"), {"c": session["clinic_id"], "b": branch_id})
     db.execute(text("DELETE FROM branches WHERE clinic_id = :c AND id = :b"), {"c": session["clinic_id"], "b": branch_id})

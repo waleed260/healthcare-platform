@@ -262,3 +262,82 @@ def test_orphaned_mfa_row_does_not_prevent_login():
             db.close()
     finally:
         _cleanup(admin_engine, clinic_id, user_id)
+
+
+def test_password_only_session_cannot_replace_enrolled_authenticator():
+    """Security: re-enrolling MFA from a session that has not passed MFA would let a
+    stolen password swap the victim's authenticator. Enrollment must be refused
+    until the session is mfa_verified; a verified session may still re-enroll."""
+    import pyotp
+    from app.modules.identity.service import MfaAlreadyEnrolledError
+
+    admin_url, runtime_url = _database_urls()
+    admin_engine = create_engine(admin_url)
+    runtime_engine = create_engine(runtime_url)
+    Session = sessionmaker(bind=runtime_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    clinic_id, user_id, email = _setup_clinic_and_user(admin_engine)
+    try:
+        db = Session()
+        try:
+            secret, _codes = begin_mfa_enrollment(db, user_id, mfa_verified=False)  # nothing enrolled yet: allowed
+            db.commit()
+            login = authenticate(db, email, _PASSWORD, "192.0.2.20", "pytest")
+            db.commit()
+            session = get_session(db, login.session_token)
+            rotation = complete_mfa(db, session, pyotp.TOTP(secret).now())
+            db.commit()
+        finally:
+            db.close()
+
+        db = Session()
+        try:
+            relogin = authenticate(db, email, _PASSWORD, "192.0.2.20", "pytest")
+            db.commit()
+            assert relogin.mfa_required is True
+            with pytest.raises(MfaAlreadyEnrolledError):
+                begin_mfa_enrollment(db, user_id, mfa_verified=False)
+            db.rollback()
+            # The enrolled secret is untouched and still works.
+            still_enrolled = db.execute(text("SELECT enrolled_at FROM mfa_methods WHERE user_id = :uid"), {"uid": user_id}).scalar_one()
+            assert still_enrolled is not None
+            verified = get_session(db, rotation.session_token)
+            assert verified["mfa_verified"] is True
+            begin_mfa_enrollment(db, user_id, mfa_verified=True)  # verified session may rotate its authenticator
+            db.commit()
+        finally:
+            db.close()
+    finally:
+        _cleanup(admin_engine, clinic_id, user_id)
+
+
+def test_totp_verification_locks_after_repeated_failures():
+    """Security: TOTP codes are 6 digits, so unlimited guesses would brute-force
+    MFA. Five wrong codes lock the MFA step even for the correct code."""
+    import pyotp
+
+    admin_url, runtime_url = _database_urls()
+    admin_engine = create_engine(admin_url)
+    runtime_engine = create_engine(runtime_url)
+    Session = sessionmaker(bind=runtime_engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    clinic_id, user_id, email = _setup_clinic_and_user(admin_engine)
+    try:
+        db = Session()
+        try:
+            secret, _codes = begin_mfa_enrollment(db, user_id)
+            db.commit()
+            login = authenticate(db, email, _PASSWORD, "192.0.2.21", "pytest")
+            db.commit()
+            session = get_session(db, login.session_token)
+            for _ in range(5):
+                with pytest.raises(AuthenticationError):
+                    complete_mfa(db, session, "000000")
+                db.rollback()
+            with pytest.raises(AuthenticationError):
+                complete_mfa(db, session, pyotp.TOTP(secret).now())
+            db.rollback()
+        finally:
+            db.close()
+    finally:
+        with admin_engine.begin() as conn:
+            conn.execute(text("DELETE FROM auth_rate_limit_buckets WHERE bucket_key = :k"), {"k": hash_token(f"mfa:{user_id}")})
+        _cleanup(admin_engine, clinic_id, user_id)

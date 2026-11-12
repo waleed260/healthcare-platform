@@ -344,7 +344,36 @@ def create_manual_reset(db: Session, user_id: UUID) -> str:
     return token
 
 
-def begin_mfa_enrollment(db: Session, user_id: UUID) -> tuple[str, list[str]]:
+class MfaAlreadyEnrolledError(RuntimeError):
+    code = "MFA_ALREADY_ENROLLED"
+
+
+def _mfa_bucket(user_id: UUID) -> str:
+    return hash_token(f"mfa:{user_id}")
+
+
+def _check_mfa_code(db: Session, user_id: UUID, ok: bool) -> None:
+    """Shared brute-force guard for TOTP and recovery codes: 5 failures lock the
+    user's MFA step for 15 minutes (reuses the login lockout bucket table)."""
+    bucket = _mfa_bucket(user_id)
+    if _is_locked(db, bucket):
+        raise AuthenticationError()
+    if not ok:
+        _record_failure(bucket)
+        raise AuthenticationError()
+    _clear_failure(db, bucket)
+
+
+def begin_mfa_enrollment(db: Session, user_id: UUID, *, mfa_verified: bool = True) -> tuple[str, list[str]]:
+    # A password-only session must not be able to replace an enrolled authenticator:
+    # that would turn MFA into a password check. Re-enrollment needs a verified session.
+    if not mfa_verified:
+        enrolled = db.execute(
+            text("SELECT EXISTS (SELECT 1 FROM mfa_methods WHERE user_id = :user_id AND enrolled_at IS NOT NULL)"),
+            {"user_id": user_id},
+        ).scalar_one()
+        if enrolled:
+            raise MfaAlreadyEnrolledError()
     secret = generate_totp_secret()
     codes = generate_recovery_codes()
     db.execute(text("DELETE FROM mfa_methods WHERE user_id = :user_id"), {"user_id": user_id})
@@ -357,22 +386,24 @@ def begin_mfa_enrollment(db: Session, user_id: UUID) -> tuple[str, list[str]]:
 def complete_mfa(db: Session, session: dict, code: str) -> SessionRotation:
     from app.core.security import decrypt_field
 
-    secret = db.execute(text("SELECT secret_ciphertext FROM mfa_methods WHERE user_id = :user_id AND method = 'totp'"), {"user_id": session["user_id"]}).scalar_one_or_none()
-    if not secret or not verify_totp(decrypt_field(secret), code):
+    if _is_locked(db, _mfa_bucket(session["user_id"])):
         raise AuthenticationError()
+    secret = db.execute(text("SELECT secret_ciphertext FROM mfa_methods WHERE user_id = :user_id AND method = 'totp'"), {"user_id": session["user_id"]}).scalar_one_or_none()
+    _check_mfa_code(db, session["user_id"], bool(secret) and verify_totp(decrypt_field(secret), code))
     db.execute(text("UPDATE mfa_methods SET enrolled_at = COALESCE(enrolled_at, :now), last_used_at = :now WHERE user_id = :user_id"), {"now": utc_now(), "user_id": session["user_id"]})
     session["mfa_verified"] = True
     return rotate_session(db, session, mfa_verified=True)
 
 
 def recover_mfa(db: Session, session: dict, code: str) -> SessionRotation:
+    if _is_locked(db, _mfa_bucket(session["user_id"])):
+        raise AuthenticationError()
     row = db.execute(text("""
         SELECT id FROM recovery_codes
         WHERE user_id = :user_id AND code_hash = :code_hash AND used_at IS NULL
         FOR UPDATE
     """), {"user_id": session["user_id"], "code_hash": hash_recovery_code(code)}).mappings().one_or_none()
-    if row is None:
-        raise AuthenticationError()
+    _check_mfa_code(db, session["user_id"], row is not None)
     db.execute(text("UPDATE recovery_codes SET used_at = :now WHERE id = :id"), {"now": utc_now(), "id": row["id"]})
     session["mfa_verified"] = True
     return rotate_session(db, session, mfa_verified=True)

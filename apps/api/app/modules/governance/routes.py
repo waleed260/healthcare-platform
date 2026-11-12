@@ -97,6 +97,8 @@ def subscription_get(request: Request, db: Session = Depends(get_db), session_to
 @router.put("/subscription")
 def subscription_update(payload: SubscriptionUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "admin.plan.manage", csrf_token)
+    if payload.status != "cancelled" and not session.get("is_platform_admin"):
+        raise _error("FORBIDDEN", "Plan activation is handled by the platform team. Submit an upgrade request instead.", status.HTTP_403_FORBIDDEN)
     row = db.execute(text("SELECT id FROM plans WHERE code = :code AND active"), {"code": payload.plan_code}).scalar_one_or_none()
     if row is None:
         raise _error("INVALID_INPUT", "The requested plan is not active.", status.HTTP_400_BAD_REQUEST)

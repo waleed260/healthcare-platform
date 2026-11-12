@@ -517,17 +517,24 @@ def queue_complete(queue_id: str, payload: QueueCommand, request: Request, db: S
         WHERE clinic_id = :clinic_id AND id = :id
         RETURNING id, appointment_id, status, completed_at, version
     """), {"clinic_id": session["clinic_id"], "id": queue_id}).mappings().one()
-    if appointment["status"] in ("in_consultation", "waiting", "arrived"):
-        db.execute(text("""
+    # Drift repair: the queue row was in_consultation but the appointment lagged behind (state.py only
+    # allows in_consultation -> completed), so walk it forward with a history row per step.
+    steps = {"waiting": ["in_consultation", "completed"], "arrived": ["waiting", "in_consultation", "completed"], "in_consultation": ["completed"]}.get(appointment["status"], [])
+    previous = appointment["status"]
+    for target in steps:
+        moved = db.execute(text("""
             UPDATE appointments
-            SET status = 'completed', blocks_time = false, status_changed_at = now(), version = version + 1, updated_at = now()
-            WHERE clinic_id = :clinic_id AND id = :appointment_id AND status IN ('in_consultation', 'waiting', 'arrived')
-        """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"]})
-    db.execute(text("""
-        INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id)
-        SELECT :clinic_id, :appointment_id, 'in_consultation', 'completed', :actor
-        WHERE EXISTS (SELECT 1 FROM appointments WHERE clinic_id = :clinic_id AND id = :appointment_id AND status = 'completed')
-    """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"], "actor": session["user_id"]})
+            SET status = :target, blocks_time = :blocks_time, status_changed_at = now(), version = version + 1, updated_at = now()
+            WHERE clinic_id = :clinic_id AND id = :appointment_id AND status = :previous
+            RETURNING id
+        """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"], "target": target, "previous": previous, "blocks_time": target != "completed"}).scalar_one_or_none()
+        if moved is None:
+            break
+        db.execute(text("""
+            INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id)
+            VALUES (:clinic_id, :appointment_id, :from_status, :to_status, :actor)
+        """), {"clinic_id": session["clinic_id"], "appointment_id": queue["appointment_id"], "from_status": previous, "to_status": target, "actor": session["user_id"]})
+        previous = target
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="queue.complete", entity_type="queue_entry", entity_id=queue["id"], outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(result), "meta": {"request_id": request.state.request_id}}
@@ -555,6 +562,8 @@ def queue_reorder(queue_id: str, payload: QueueReorder, request: Request, db: Se
 def queue_remove(queue_id: str, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     _, queue = _queue_context(db, session_token, queue_id)
     session = _write_authorized(db, request, session_token, "queue.manage", csrf_token, branch_id=queue["branch_id"])
+    if queue["status"] == "in_consultation":
+        raise _error("INVALID_STATE", "This patient is in consultation. Complete the consultation instead of removing the queue entry.", status.HTTP_400_BAD_REQUEST)
     deleted = db.execute(text("""
         DELETE FROM queue_entries
         WHERE clinic_id = :clinic_id AND id = :id
