@@ -10,15 +10,17 @@ function NavList({ items }: { items: NavLink[] }) {
     : <a key={`${item.label}-${item.href}`} href={safeHref(item.href)}>{item.label}</a>)}</>;
 }
 
-export function SiteHeader({ brand, clinicSlug }: { brand: SiteBrand; clinicSlug: string }) {
+export function SiteHeader({ brand, clinicSlug, title }: { brand: SiteBrand; clinicSlug: string; title?: string }) {
   const header = brand.header ?? {};
-  const nav = header.nav?.length ? header.nav : DEFAULT_NAV;
+  const home = `/${encodeURIComponent(clinicSlug)}`;
+  // Default anchors live on the home page; prefix them so they also work from blog/service/doctor pages.
+  const nav = header.nav?.length ? header.nav : DEFAULT_NAV.map((item) => ({ ...item, href: `${home}${item.href}` }));
   const classes = ["public-header", header.sticky === false ? "" : "is-sticky", header.transparent ? "is-transparent" : "", `mobile-${header.mobile_layout ?? "drawer"}`].filter(Boolean).join(" ");
   return <>
     {header.announcement && <div className="site-announcement" role="note">{header.announcement}</div>}
     {header.top_strip && (header.phone || Object.keys(header.social ?? {}).length > 0) && <div className="site-top-strip">{header.phone && <a href={`tel:${header.phone.replace(/[^+\d]/g, "")}`}>{header.phone}</a>}{Object.entries(header.social ?? {}).map(([name, url]) => <a key={name} href={safeHref(url)} rel="noopener noreferrer">{name}</a>)}</div>}
     <header className={classes}>
-      <Link className="wordmark" href="/">care<span>/</span>fully</Link>
+      <Link className="wordmark site-wordmark" href={home}>{brand.seo?.site_name || title || clinicSlug.replaceAll("-", " ")}</Link>
       <nav aria-label="Clinic website"><NavList items={nav} />{header.phone && !header.top_strip && <a href={`tel:${header.phone.replace(/[^+\d]/g, "")}`}>{header.phone}</a>}{header.show_book_cta !== false && <Link className={`button button-primary ${buttonClass(brand)}`} href={`/book/${encodeURIComponent(clinicSlug)}`}>{header.book_cta_label || "Book"} <span>→</span></Link>}</nav>
     </header>
   </>;
