@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_cursor, encode_cursor
@@ -20,6 +21,8 @@ from app.modules.encounters.schemas import (
     EncounterStatusUpdate,
     EncounterUpdate,
 )
+from app.modules.blueprint_core.schemas import InvoiceFromEncounter
+from app.modules.crm.routes import _patient_scope_sql, _require_patient
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 
@@ -125,15 +128,17 @@ def _apply_inventory_deltas(db: Session, clinic_id, user_id, branch_id, old_row:
             stock = db.execute(text(
                 "SELECT id, quantity FROM inventory_stock WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND product_id = CAST(:pid AS uuid) FOR UPDATE"
             ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid}).mappings().one_or_none()
+            on_hand = int(stock["quantity"]) if stock is not None else 0
+            if on_hand + delta < 0:
+                # Clamping to zero while the ledger recorded the full delta let a later
+                # restore create stock from nothing; stock_adjust rejects too.
+                raise _error("INSUFFICIENT_STOCK", f"Only {on_hand} unit(s) of this product are in stock at this branch; {-delta} needed. Receive stock or unlink the inventory product.", status.HTTP_409_CONFLICT, fields={"inventory_product_id": str(pid)})
             if stock is None:
-                # No stock row at this branch yet — start at 0 so deductions still
-                # show in the ledger and receipts add real quantity. Stock cannot go
-                # below zero, but the adjustment below records the attempt.
                 db.execute(text(
                     "INSERT INTO inventory_stock (clinic_id, branch_id, product_id, quantity) VALUES (:clinic_id, :branch_id, CAST(:pid AS uuid), :qty)"
-                ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid, "qty": max(0, delta)})
+                ), {"clinic_id": clinic_id, "branch_id": branch_id, "pid": pid, "qty": delta})
             else:
-                new_qty = max(0, stock["quantity"] + delta)
+                new_qty = on_hand + delta
                 db.execute(text(
                     "UPDATE inventory_stock SET quantity = :qty, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"
                 ), {"clinic_id": clinic_id, "id": stock["id"], "qty": new_qty})
@@ -168,14 +173,16 @@ def encounter_list(
         JOIN patients p ON p.clinic_id = e.clinic_id AND p.id = e.patient_id
         JOIN doctor_profiles d ON d.clinic_id = e.clinic_id AND d.id = e.doctor_id
         WHERE e.clinic_id = :clinic_id AND e.archived_at IS NULL
+          {scope}
           AND (:patient_id IS NULL OR e.patient_id = :patient_id)
           AND (:doctor_id IS NULL OR e.doctor_id = :doctor_id)
           AND (:status IS NULL OR e.status = :status)
           AND (:after_created IS NULL OR (e.created_at, e.id) < (CAST(:after_created AS timestamptz), CAST(:after_id AS uuid)))
         ORDER BY e.created_at DESC, e.id DESC
         LIMIT :page_size
-    """), {
+    """.replace("{scope}", _patient_scope_sql("p"))), {
         "clinic_id": session["clinic_id"],
+        "user_id": session["user_id"],
         "patient_id": patient_id,
         "doctor_id": doctor_id,
         "status": status_filter,
@@ -216,6 +223,7 @@ def encounter_detail(
     """), {"clinic_id": session["clinic_id"], "encounter_id": encounter_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
+    _require_patient(db, session, row["patient_id"])
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -238,7 +246,7 @@ def encounter_create(
         raise _error("NOT_FOUND", "Doctor not found.", status.HTTP_404_NOT_FOUND)
     appt_branch_id = None
     if payload.appointment_id:
-        appt = db.execute(text("SELECT patient_id, doctor_id, status, branch_id FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": payload.appointment_id}).mappings().one_or_none()
+        appt = db.execute(text("SELECT patient_id, doctor_id, status, branch_id FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": payload.appointment_id}).mappings().one_or_none()
         if appt is None:
             raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
         if appt["patient_id"] != payload.patient_id:
@@ -252,38 +260,44 @@ def encounter_create(
     resolved_branch_id = payload.branch_id or appt_branch_id
     if resolved_branch_id is None:
         resolved_branch_id = db.execute(text("SELECT id FROM branches WHERE clinic_id = :clinic_id AND status = 'active' AND archived_at IS NULL ORDER BY created_at LIMIT 1"), {"clinic_id": session["clinic_id"]}).scalar_one_or_none()
-    row = db.execute(text("""
-        INSERT INTO encounter_forms (clinic_id, patient_id, appointment_id, doctor_id, branch_id,
-                                     encounter_type, chief_complaint, arrival_vitals, created_by,
-                                     arrival_mode, arrival_datetime, attendant_name, attendant_phone,
-                                     condition_on_arrival, token_number)
-        VALUES (:clinic_id, :patient_id, :appointment_id, :doctor_id, :branch_id,
-                :encounter_type, :chief_complaint, CAST(:arrival_vitals AS jsonb), :created_by,
-                :arrival_mode, :arrival_datetime, :attendant_name, :attendant_phone,
-                :condition_on_arrival,
-                (SELECT COALESCE(MAX(ef.token_number), 0) + 1
-                 FROM encounter_forms ef
-                 WHERE ef.clinic_id = :clinic_id AND DATE(ef.created_at AT TIME ZONE 'UTC') = CURRENT_DATE))
-        RETURNING id, patient_id, appointment_id, doctor_id, branch_id, encounter_type,
-                  chief_complaint, arrival_vitals, status, version, created_at,
-                  arrival_mode, arrival_datetime, attendant_name, attendant_phone, condition_on_arrival,
-                  token_number
-    """), {
-        "clinic_id": session["clinic_id"],
-        "patient_id": payload.patient_id,
-        "appointment_id": payload.appointment_id,
-        "doctor_id": payload.doctor_id,
-        "branch_id": resolved_branch_id,
-        "encounter_type": payload.encounter_type,
-        "chief_complaint": payload.chief_complaint,
-        "arrival_vitals": json.dumps(payload.arrival_vitals.model_dump()) if payload.arrival_vitals else None,
-        "created_by": session["user_id"],
-        "arrival_mode": payload.arrival_mode,
-        "arrival_datetime": payload.arrival_datetime,
-        "attendant_name": payload.attendant_name,
-        "attendant_phone": payload.attendant_phone,
-        "condition_on_arrival": payload.condition_on_arrival,
-    }).mappings().one()
+    try:
+        row = db.execute(text("""
+            INSERT INTO encounter_forms (clinic_id, patient_id, appointment_id, doctor_id, branch_id,
+                                         encounter_type, chief_complaint, arrival_vitals, created_by,
+                                         arrival_mode, arrival_datetime, attendant_name, attendant_phone,
+                                         condition_on_arrival, token_number)
+            VALUES (:clinic_id, :patient_id, :appointment_id, :doctor_id, :branch_id,
+                    :encounter_type, :chief_complaint, CAST(:arrival_vitals AS jsonb), :created_by,
+                    :arrival_mode, :arrival_datetime, :attendant_name, :attendant_phone,
+                    :condition_on_arrival,
+                    (SELECT COALESCE(MAX(ef.token_number), 0) + 1
+                     FROM encounter_forms ef
+                     WHERE ef.clinic_id = :clinic_id AND DATE(ef.created_at AT TIME ZONE 'UTC') = CURRENT_DATE))
+            RETURNING id, patient_id, appointment_id, doctor_id, branch_id, encounter_type,
+                      chief_complaint, arrival_vitals, status, version, created_at,
+                      arrival_mode, arrival_datetime, attendant_name, attendant_phone, condition_on_arrival,
+                      token_number
+        """), {
+            "clinic_id": session["clinic_id"],
+            "patient_id": payload.patient_id,
+            "appointment_id": payload.appointment_id,
+            "doctor_id": payload.doctor_id,
+            "branch_id": resolved_branch_id,
+            "encounter_type": payload.encounter_type,
+            "chief_complaint": payload.chief_complaint,
+            "arrival_vitals": json.dumps(payload.arrival_vitals.model_dump()) if payload.arrival_vitals else None,
+            "created_by": session["user_id"],
+            "arrival_mode": payload.arrival_mode,
+            "arrival_datetime": payload.arrival_datetime,
+            "attendant_name": payload.attendant_name,
+            "attendant_phone": payload.attendant_phone,
+            "condition_on_arrival": payload.condition_on_arrival,
+        }).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        if "uq_encounter_forms_active_appointment" in str(exc.orig):
+            raise _error("DUPLICATE", "An encounter already exists for this appointment.", status.HTTP_409_CONFLICT) from exc
+        raise
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="encounter.create", entity_type="encounter_form", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
@@ -573,6 +587,7 @@ def encounter_print(
     """), {"clinic_id": session["clinic_id"], "encounter_id": encounter_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
+    _require_patient(db, session, row["patient_id"])
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -586,9 +601,10 @@ def encounter_prescriptions(
     session_token: str | None = Cookie(default=None, alias="healthcare_session"),
 ) -> dict:
     session = _authorized(db, session_token, "clinical.read")
-    enc = db.execute(text("SELECT 1 FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": encounter_id}).scalar_one_or_none()
+    enc = db.execute(text("SELECT patient_id FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "id": encounter_id}).scalar_one_or_none()
     if enc is None:
         raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
+    _require_patient(db, session, enc)
     rows = db.execute(text("""
         SELECT id, patient_id, encounter_id, prescribed_by_user_id, medication_name,
                dosage, frequency, duration, instructions, status, version, prescribed_at, updated_at
@@ -617,6 +633,7 @@ def encounter_by_appointment(
     """), {"clinic_id": session["clinic_id"], "appointment_id": appointment_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "No encounter found for this appointment.", status.HTTP_404_NOT_FOUND)
+    _require_patient(db, session, row["patient_id"])
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -649,6 +666,7 @@ def encounter_invoice(
 def encounter_generate_invoice(
     encounter_id: UUID,
     request: Request,
+    payload: InvoiceFromEncounter | None = None,
     db: Session = Depends(get_db),
     session_token: str | None = Cookie(default=None, alias="healthcare_session"),
     csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
@@ -664,6 +682,7 @@ def encounter_generate_invoice(
         SELECT id, patient_id, doctor_id, status, administered_treatments, administered_procedures
         FROM encounter_forms
         WHERE clinic_id = :clinic_id AND id = :encounter_id AND archived_at IS NULL
+        FOR UPDATE
     """), {"clinic_id": session["clinic_id"], "encounter_id": encounter_id}).mappings().one_or_none()
     if enc is None:
         raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
@@ -693,14 +712,19 @@ def encounter_generate_invoice(
     if not lines:
         raise _error("INVALID_INPUT", "No billable items found on this encounter. Add treatments or procedures with prices first.", status.HTTP_400_BAD_REQUEST)
 
-    currency = "PKR"
+    currency = payload.currency if payload else None
     for t in treatments:
+        if currency:
+            break
         if t.get("currency"):
             currency = t["currency"]
-            break
+    currency = currency or db.execute(text("SELECT default_currency FROM clinics WHERE id = :clinic_id"), {"clinic_id": session["clinic_id"]}).scalar_one_or_none() or "PKR"
 
     subtotal = sum(l["quantity"] * l["unit_price_minor"] for l in lines)
-    total = subtotal
+    discount = payload.discount_minor if payload else 0
+    if discount > subtotal:
+        raise _error("INVALID_INPUT", "Discount cannot exceed the invoice subtotal.", status.HTTP_400_BAD_REQUEST)
+    total = subtotal - discount
 
     from datetime import datetime as _dt, timezone as _tz
     sequence_year = _dt.now(_tz.utc).year
@@ -711,13 +735,13 @@ def encounter_generate_invoice(
         ON CONFLICT (clinic_id, sequence_year) DO UPDATE SET next_value = invoice_number_sequences.next_value + 1
         RETURNING next_value - 1 AS sequence_value
     """), {"clinic_id": session["clinic_id"], "sequence_year": sequence_year}).scalar_one()
-    invoice_number = f"CLINIC-{sequence_year}-{sequence:06d}"
+    invoice_number = f"CLINIC-{sequence_year}-{sequence:06d}"  # uq_invoices_active_encounter backstops the check above
 
     invoice = db.execute(text("""
         INSERT INTO invoices (clinic_id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, notes, created_by_user_id)
-        VALUES (:clinic_id, :patient_id, :encounter_id, :invoice_number, :currency, :subtotal, 0, 0, :total, :notes, :user_id)
+        VALUES (:clinic_id, :patient_id, :encounter_id, :invoice_number, :currency, :subtotal, :discount, 0, :total, :notes, :user_id)
         RETURNING id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, status, issued_at, version
-    """), {"clinic_id": session["clinic_id"], "patient_id": enc["patient_id"], "encounter_id": encounter_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "total": total, "notes": f"Generated from encounter", "user_id": session["user_id"]}).mappings().one()
+    """), {"clinic_id": session["clinic_id"], "patient_id": enc["patient_id"], "encounter_id": encounter_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "discount": discount, "total": total, "notes": (payload.notes if payload and payload.notes else "Generated from encounter"), "user_id": session["user_id"]}).mappings().one()
 
     for line in lines:
         svc_id = line["service_id"]

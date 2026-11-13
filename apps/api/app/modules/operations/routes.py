@@ -600,7 +600,7 @@ def follow_up_list(request: Request, priority_filter: str | None = Query(default
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
     rows = db.execute(text("""
-        SELECT f.id, f.patient_id, f.appointment_id, f.assignee_user_id, f.reason, f.due_at, f.priority,
+        SELECT f.id, f.patient_id, p.full_name AS patient_name, f.appointment_id, f.assignee_user_id, f.reason, f.due_at, f.priority,
                CASE WHEN f.status IN ('due', 'contacted', 'booked') AND f.due_at < now() THEN 'overdue' ELSE f.status END AS status,
                f.outcome_note, f.completed_at, f.version, f.created_at, f.updated_at
         FROM follow_up_tasks f

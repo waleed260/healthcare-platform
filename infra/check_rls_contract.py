@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 
 
+# Hand-listed baseline; every other CREATE TABLE in the offline SQL that carries a
+# clinic_id column is discovered automatically so new tenant tables cannot ship
+# without FORCE + policy.
 REQUIRED_TABLES = {
     "branches", "user_roles", "user_branch_scopes", "branch_hours", "clinic_holidays",
     "doctor_profiles", "services", "doctor_services", "branch_doctors", "branch_services",
@@ -24,11 +27,22 @@ REQUIRED_TABLES = {
     "document_access_events", "doctor_rooms", "access_tokens", "clinic_care_policies",
     "patient_care_team", "tenant_probe_records", "staff_invitations",
 }
+# Authentication tables: login and session lookup run before a tenant is known.
+ALLOWED_WITHOUT_RLS = {"users", "roles"}
+
+
+def tenant_tables(sql: str) -> set[str]:
+    found: set[str] = set()
+    for match in re.finditer(r"CREATE TABLE (\w+) \((.*?)\);", sql, re.DOTALL):
+        if re.search(r"^\s*clinic_id\b", match.group(2), re.MULTILINE):
+            found.add(match.group(1))
+    return found - ALLOWED_WITHOUT_RLS
 
 
 def validate_sql(sql: str) -> list[str]:
     failures: list[str] = []
-    for table in sorted(REQUIRED_TABLES):
+    required = REQUIRED_TABLES | tenant_tables(sql)
+    for table in sorted(required):
         if f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY;" not in sql:
             failures.append(f"{table}: forced RLS statement missing")
         if not re.search(rf"CREATE POLICY [^;]+ ON {re.escape(table)}\b", sql, re.DOTALL):
@@ -52,7 +66,7 @@ def main() -> int:
         print("RLS CONTRACT: FAILED")
         print("\n".join(f"- {failure}" for failure in failures))
         return 1
-    print(f"RLS CONTRACT: PASSED ({len(REQUIRED_TABLES)} forced tables and policies)")
+    print(f"RLS CONTRACT: PASSED ({len(REQUIRED_TABLES | tenant_tables(sql))} forced tables and policies)")
     return 0
 
 

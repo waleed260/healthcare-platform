@@ -184,12 +184,14 @@ def media_image(patient_id: UUID, media_id: UUID, db: Session = Depends(get_db),
     session = _authorized(db, session_token, "patient.media.read")
     _require_patient(db, session, patient_id)
     row = db.execute(text("""
-        SELECT storage_key, mime_type FROM patient_media
+        SELECT storage_key, mime_type, scan_status FROM patient_media
         WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :media_id AND archived_at IS NULL
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "media_id": media_id}).mappings().one_or_none()
     db.commit()
     if row is None:
         raise _error("NOT_FOUND", "Image not found.", status.HTTP_404_NOT_FOUND)
+    if row["scan_status"] != "clean":
+        raise _error("SCAN_PENDING", "This image is not available until its malware scan has passed.", status.HTTP_409_CONFLICT)
     try:
         content = read_private_object(row["storage_key"])
     except Exception as exc:

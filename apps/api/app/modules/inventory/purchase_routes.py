@@ -146,7 +146,7 @@ def purchase_create(
                 db.execute(text("INSERT INTO inventory_stock (clinic_id, branch_id, product_id, warehouse_id, quantity) VALUES (:clinic_id, :branch_id, :product_id, :warehouse_id, :qty)"),
                            {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": line.product_id, "warehouse_id": payload.warehouse_id, "qty": received_qty})
             else:
-                db.execute(text("UPDATE inventory_stock SET quantity = quantity + :qty, warehouse_id = COALESCE(:warehouse_id, warehouse_id), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"),
+                db.execute(text("UPDATE inventory_stock SET quantity = quantity + :qty, warehouse_id = COALESCE(warehouse_id, :warehouse_id), version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"),
                            {"clinic_id": session["clinic_id"], "id": stock["id"], "warehouse_id": payload.warehouse_id, "qty": received_qty})
             db.execute(text("INSERT INTO inventory_adjustments (clinic_id, branch_id, product_id, warehouse_id, delta, reason, adjusted_by_user_id) VALUES (:clinic_id, :branch_id, :product_id, :warehouse_id, :delta, :reason, :user_id)"),
                        {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": line.product_id, "warehouse_id": payload.warehouse_id, "delta": received_qty, "reason": f"Purchase order {po['order_number']}", "user_id": session["user_id"]})
@@ -233,6 +233,7 @@ def purchase_receive(
         FROM purchase_orders po
         JOIN warehouses w ON w.clinic_id = po.clinic_id AND w.id = po.warehouse_id
         WHERE po.clinic_id = :clinic_id AND po.id = :id
+        FOR UPDATE OF po
     """), {"clinic_id": session["clinic_id"], "id": purchase_id}).mappings().one_or_none()
     if po is None:
         raise _error("NOT_FOUND", "Purchase order not found.", status.HTTP_404_NOT_FOUND)
@@ -243,6 +244,8 @@ def purchase_receive(
     branch_id = po["branch_id"]
     warehouse_id = po["warehouse_id"]
     purchase_expense_total = 0
+    if len({line.line_id for line in payload.lines}) != len(payload.lines):
+        raise _error("INVALID_INPUT", "Each purchase order line may appear only once.", status.HTTP_400_BAD_REQUEST)
     for recv_line in payload.lines:
         po_line = db.execute(text(
             "SELECT id, product_id, quantity_ordered, quantity_received, unit_cost_minor FROM purchase_order_lines "
@@ -251,6 +254,8 @@ def purchase_receive(
         if po_line is None:
             raise _error("NOT_FOUND", f"Purchase order line {recv_line.line_id} not found.", status.HTTP_400_BAD_REQUEST)
         new_received = po_line["quantity_received"] + recv_line.quantity_received
+        if new_received > po_line["quantity_ordered"]:
+            raise _error("INVALID_INPUT", f"Line {recv_line.line_id} would exceed the ordered quantity ({po_line['quantity_ordered']}).", status.HTTP_400_BAD_REQUEST)
         db.execute(text("UPDATE purchase_order_lines SET quantity_received = :qty WHERE clinic_id = :clinic_id AND id = :id"),
                    {"clinic_id": session["clinic_id"], "id": recv_line.line_id, "qty": new_received})
         if recv_line.quantity_received > 0:
@@ -264,7 +269,7 @@ def purchase_receive(
                 ), {"clinic_id": session["clinic_id"], "branch_id": branch_id, "product_id": po_line["product_id"], "warehouse_id": warehouse_id, "qty": recv_line.quantity_received})
             else:
                 db.execute(text(
-                    "UPDATE inventory_stock SET quantity = quantity + :qty, warehouse_id = COALESCE(:warehouse_id, warehouse_id), version = version + 1, updated_at = now() "
+                    "UPDATE inventory_stock SET quantity = quantity + :qty, warehouse_id = COALESCE(warehouse_id, :warehouse_id), version = version + 1, updated_at = now() "
                     "WHERE clinic_id = :clinic_id AND id = :id"
                 ), {"clinic_id": session["clinic_id"], "id": stock["id"], "warehouse_id": warehouse_id, "qty": recv_line.quantity_received})
             db.execute(text(
@@ -280,7 +285,7 @@ def purchase_receive(
     new_status = "received" if fully_received else "partially_received"
     db.execute(text(
         "UPDATE purchase_orders SET status = :status, received_at = CASE WHEN :status = 'received' THEN now() ELSE received_at END, "
-        "version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"
+        "version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id AND status IN ('ordered', 'partially_received')"
     ), {"clinic_id": session["clinic_id"], "id": purchase_id, "status": new_status})
     # Finance posting: record this receiving event as an inventory purchase
     # expense so cashier/net/day reports reflect the cost on the received date.

@@ -5,7 +5,7 @@ import Drawer, { useDirty } from "./drawer";
 import { useToast } from "./toast";
 import { api, post } from "./client";
 
-type Option = { id: string; name?: string; full_name?: string; public_name?: string };
+type Option = { id: string; name?: string; full_name?: string; public_name?: string; display_name?: string; normalized_email?: string };
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -132,7 +132,7 @@ export default function FollowUpDrawer({ open, onClose, patientId, appointmentId
           ASSIGN TO
           <select value={form.assignee_user_id} onChange={(e) => setForm((f) => ({ ...f, assignee_user_id: e.target.value }))}>
             <option value="">Unassigned</option>
-            {staff.map((s) => <option key={s.id} value={s.id}>{s.public_name ?? s.name ?? s.full_name}</option>)}
+            {staff.map((s) => <option key={s.id} value={s.id}>{s.display_name ?? s.public_name ?? s.name ?? s.full_name ?? s.normalized_email}</option>)}
           </select>
         </label>
       </form>

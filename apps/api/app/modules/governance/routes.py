@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import time
+import hmac
 import secrets
 from uuid import UUID
 
@@ -288,7 +289,7 @@ def export_signed_access(export_id: UUID, request: Request, db: Session = Depend
         raise _error("EXPORT_UNAVAILABLE", "The export is not ready or has expired.", status.HTTP_409_CONFLICT)
     token = secrets.token_urlsafe(32)
     expires_at = min(export["expires_at"], datetime.now(timezone.utc) + timedelta(seconds=60))
-    db.execute(text("UPDATE export_jobs SET download_token_hash = :token_hash WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": export_id, "token_hash": hash_token(f"export:{export_id}:{session['user_id']}:{token}")})
+    db.execute(text("UPDATE export_jobs SET download_token_hash = :token_hash, download_token_expires_at = :token_expires WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": export_id, "token_hash": hash_token(f"export:{export_id}:{session['user_id']}:{token}"), "token_expires": expires_at})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="export.signed_access", entity_type="export_job", entity_id=export_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"expires_in_seconds": 60})
     db.commit()
     return {"data": {"export_id": export_id, "access_token": token, "expires_at": expires_at}, "meta": {"request_id": request.state.request_id, "token_returned_once": True}}
@@ -297,10 +298,15 @@ def export_signed_access(export_id: UUID, request: Request, db: Session = Depend
 @router.get("/exports/{export_id}/download")
 def export_download(export_id: UUID, request: Request, access_token: str | None = Header(default=None, alias="X-Export-Access-Token"), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> Response:
     session = _authorized(db, session_token, "patient.export")
-    export = db.execute(text("SELECT storage_key, download_token_hash, expires_at FROM export_jobs WHERE clinic_id = :clinic_id AND id = :id AND status = 'completed'"), {"clinic_id": session["clinic_id"], "id": export_id}).mappings().one_or_none()
+    export = db.execute(text("SELECT storage_key, download_token_hash, download_token_expires_at, expires_at FROM export_jobs WHERE clinic_id = :clinic_id AND id = :id AND status = 'completed' FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": export_id}).mappings().one_or_none()
     expected_hash = hash_token(f"export:{export_id}:{session['user_id']}:{access_token}") if access_token else ""
-    if export is None or not access_token or not export["download_token_hash"] or export["expires_at"] is None or export["expires_at"].timestamp() <= time.time() or expected_hash != export["download_token_hash"].strip():
+    token_expiry = export["download_token_expires_at"] if export is not None else None
+    if (export is None or not access_token or not export["download_token_hash"] or export["expires_at"] is None or export["expires_at"].timestamp() <= time.time()
+            or token_expiry is None or token_expiry.timestamp() <= time.time()
+            or not hmac.compare_digest(expected_hash, export["download_token_hash"].strip())):
         raise _error("EXPORT_UNAVAILABLE", "The export access token is invalid or expired.", status.HTTP_404_NOT_FOUND)
+    # Single use: the 60-second token is spent by this download.
+    db.execute(text("UPDATE export_jobs SET download_token_hash = NULL, download_token_expires_at = NULL WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": export_id})
     try:
         content = read_private_object(export["storage_key"])
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
