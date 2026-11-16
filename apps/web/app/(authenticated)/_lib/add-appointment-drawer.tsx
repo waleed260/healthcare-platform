@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Drawer, { useDirty } from "./drawer";
 import { useToast } from "./toast";
 import { api, writeHeaders } from "./client";
@@ -19,6 +19,8 @@ type Props = {
   onClose: () => void;
   clinicSlug?: string;
   onCreated?: () => void;
+  // Seed the patient step from a lead so staff don't re-key name/phone.
+  initialPatient?: { patient_id?: string; full_name?: string; email?: string; phone?: string };
 };
 
 function todayStr(): string {
@@ -32,7 +34,7 @@ function dobFromAge(age: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props) {
+export default function AddAppointmentDrawer({ open, onClose, onCreated, initialPatient }: Props) {
   const toast = useToast();
   const clinicName = useClinicName();
   const [form, setForm, dirty, resetDirty] = useDirty({
@@ -155,6 +157,22 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated }: Props
   }, [setForm, resetDirty]);
 
   useEffect(() => { if (!open) reset(); }, [open, reset]);
+
+  // Seed the patient step once per open when launched from a lead (reset() runs first on close).
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!open) { seeded.current = false; return; }
+    if (seeded.current || !initialPatient) return;
+    seeded.current = true;
+    setForm((f) => ({
+      ...f,
+      patient_mode: initialPatient.patient_id ? "existing" : "new",
+      patient_id: initialPatient.patient_id ?? "",
+      full_name: initialPatient.full_name ?? "",
+      email: initialPatient.email ?? "",
+      phone: initialPatient.phone ?? "",
+    }));
+  }, [open, initialPatient, setForm]);
 
   const filteredPatients = patients.filter((p) =>
     !patientSearch || p.full_name.toLowerCase().includes(patientSearch.toLowerCase())
