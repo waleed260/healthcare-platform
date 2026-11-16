@@ -136,17 +136,20 @@ def lead_list(request: Request, status_filter: str | None = Query(default=None, 
     if cursor and values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
     values = values or {}
+    archived = status_filter == "archived"
+    status_value = None if archived else status_filter
     rows = db.execute(text(f"""
         SELECT l.id, l.full_name, l.normalized_email, l.normalized_phone, l.source, l.campaign,
                l.status, l.specialty_id, l.requested_service_id, l.assigned_to_user_id,
                l.branch_id, l.appointment_id, l.converted_to_patient_id, l.lost_reason, l.created_at, l.updated_at, l.version
         FROM leads l
-        WHERE l.clinic_id = :clinic_id AND l.archived_at IS NULL
+        WHERE l.clinic_id = :clinic_id
+          AND (CASE WHEN :archived THEN l.archived_at IS NOT NULL ELSE l.archived_at IS NULL END)
           AND (:status IS NULL OR l.status = :status)
           AND {_LEAD_SCOPE_SQL}
           AND (CAST(:after_created_at AS timestamptz) IS NULL OR l.created_at < CAST(:after_created_at AS timestamptz) OR (l.created_at = CAST(:after_created_at AS timestamptz) AND l.id < CAST(:after_id AS uuid)))
         ORDER BY l.created_at DESC, l.id DESC LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "status": status_filter, "after_created_at": values.get("created_at"), "after_id": values.get("id"), "page_size": limit + 1}).mappings().all()
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "status": status_value, "archived": archived, "after_created_at": values.get("created_at"), "after_id": values.get("id"), "page_size": limit + 1}).mappings().all()
     has_next = len(rows) > limit
     rows = rows[:limit]
     next_cursor = encode_cursor("leads", {"created_at": rows[-1]["created_at"].isoformat(), "id": str(rows[-1]["id"])}) if has_next and rows else None
@@ -420,6 +423,24 @@ def lead_archive(lead_id: UUID, request: Request, db: Session = Depends(get_db),
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.archive", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={})
     db.commit()
     return {"data": {"id": lead_id, "archived": True}, "meta": {"request_id": request.state.request_id}}
+
+
+@lead_router.post("/{lead_id}/unarchive")
+def lead_unarchive(lead_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    # _require_lead only sees active rows, so re-run the same object scope against the archived row.
+    lead = db.execute(text(f"""
+        SELECT l.id FROM leads l
+        WHERE l.clinic_id = :clinic_id AND l.id = :lead_id AND l.archived_at IS NOT NULL
+          AND {_LEAD_SCOPE_SQL}
+        FOR UPDATE OF l
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "lead_id": lead_id}).scalar_one_or_none()
+    if lead is None:
+        raise _error("NOT_FOUND", "Archived lead not found.", status.HTTP_404_NOT_FOUND)
+    db.execute(text("UPDATE leads SET archived_at = NULL, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :lead_id"), {"clinic_id": session["clinic_id"], "lead_id": lead_id})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.unarchive", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={})
+    db.commit()
+    return {"data": {"id": lead_id, "archived": False}, "meta": {"request_id": request.state.request_id}}
 
 
 @billing_router.get("")
