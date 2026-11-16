@@ -509,6 +509,8 @@ def media_create(payload: WebsiteMediaCreate, request: Request, db: Session = De
 async def media_upload(request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"), original_filename: str | None = Header(default=None, alias="X-Original-Filename"), alt_text: str | None = Header(default=None, alias="X-Alt-Text"), content_type: str | None = Header(default=None, alias="Content-Type")) -> dict:
     session = _authorized(db, session_token, "website.edit")
     _csrf(request, session, csrf_token)
+    from urllib.parse import unquote
+    original_filename, alt_text = unquote(original_filename or ""), unquote(alt_text or "")  # web client percent-encodes non-Latin-1
     filename = (original_filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     mime_type = (content_type or "").split(";", 1)[0].strip().casefold()
     allowed = {"image/jpeg": (".jpg", ".jpeg"), "image/png": (".png",), "image/webp": (".webp",)}

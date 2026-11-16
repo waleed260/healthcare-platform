@@ -85,7 +85,7 @@ export default function MediaPage() {
     try {
       await api("/api/v1/websites/media/upload", {
         method: "POST",
-        headers: { ...writeHeaders(), "Content-Type": mime, "X-Original-Filename": file.name, "X-Alt-Text": alt },
+        headers: { ...writeHeaders(), "Content-Type": mime, "X-Original-Filename": encodeURIComponent(file.name), "X-Alt-Text": encodeURIComponent(alt) },
         body: file,
       });
       toast.success("Image uploaded. It will be scanned before use.");

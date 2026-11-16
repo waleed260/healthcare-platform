@@ -210,7 +210,9 @@ async def security_middleware(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     path = request.url.path
     if request.method == "GET" and response.status_code == 200 and "Cache-Control" not in response.headers:
-        if path.startswith("/api/v1/public/"):
+        if path.startswith("/api/v1/public/") and ("/preview" in path or "/results" in path):
+            response.headers["Cache-Control"] = "private, no-store"
+        elif path.startswith("/api/v1/public/"):
             response.headers["Cache-Control"] = "public, max-age=120, s-maxage=300, stale-while-revalidate=600"
             response.headers["Vary"] = "Accept-Encoding"
             response.headers["CDN-Cache-Control"] = "public, max-age=300"

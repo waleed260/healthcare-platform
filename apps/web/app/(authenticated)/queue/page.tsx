@@ -75,7 +75,9 @@ export default function QueuePage() {
   async function loadTodayConfirmed() {
     setLoadingAppointments(true);
     try {
-      const data = await api<TodayAppointment[]>("/api/v1/appointments?status=confirmed&limit=50");
+      const day = 24 * 60 * 60 * 1000;
+      const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+      const data = await api<TodayAppointment[]>(`/api/v1/appointments?status=confirmed&from=${iso(Date.now() - day)}&to=${iso(Date.now() + day)}&limit=100`);
       const today = (data ?? []).filter((a) => isToday(a.starts_at));
       setTodayAppointments(today);
     } catch {

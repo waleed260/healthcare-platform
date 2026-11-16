@@ -88,7 +88,7 @@ export default function ClinicalPage() {
   const cancelItem = async (plan: Plan, item: PlanItem) => {
     const yes = await confirm({ message: `Cancel "${item.title}"? This marks the step as skipped.`, danger: true });
     if (!yes) return;
-    void run(() => patch(`/api/v1/treatment-plans/${plan.id}/items/${item.id}`, { expected_version: item.version, status: "cancelled" }), "Item cancelled.");
+    void run(() => patch(`/api/v1/treatment-plans/${plan.id}/items/${item.id}`, { expected_version: item.version, status: "skipped" }), "Item skipped.");
   };
 
   const addRx = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const body = { medication_name: text(event, "medication"), dosage: text(event, "dosage") || null, frequency: text(event, "frequency") || null, duration: text(event, "duration") || null }; void run(async () => { await post(`/api/v1/patients/${patientId}/prescriptions`, body); target.reset(); }, "Prescription recorded."); };

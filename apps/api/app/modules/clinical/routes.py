@@ -12,6 +12,7 @@ from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.clinical.schemas import PrescriptionCreate, PrescriptionStatusUpdate, TreatmentPlanCreate, TreatmentPlanItemCreate, TreatmentPlanItemUpdate, TreatmentPlanUpdate
+from app.modules.crm.routes import _patient_scope_sql, _require_patient
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 
@@ -52,9 +53,10 @@ def plan_list(patient_id: UUID | None = None, cursor: str | None = Query(default
         FROM treatment_plans
         WHERE clinic_id = :clinic_id AND archived_at IS NULL
           AND (:patient_id IS NULL OR patient_id = :patient_id)
+          AND EXISTS (SELECT 1 FROM patients p WHERE p.clinic_id = treatment_plans.clinic_id AND p.id = treatment_plans.patient_id {scope})
           AND (:after_created_at IS NULL OR (created_at, id) < (CAST(:after_created_at AS timestamptz), CAST(:after_id AS uuid)))
         ORDER BY created_at DESC, id DESC LIMIT :page_size
-    """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "after_created_at": cursor_values.get("created_at") if cursor_values else None, "after_id": cursor_values.get("id") if cursor_values else None, "page_size": limit + 1}).mappings().all()
+    """.replace("{scope}", _patient_scope_sql("p"))), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "patient_id": patient_id, "after_created_at": cursor_values.get("created_at") if cursor_values else None, "after_id": cursor_values.get("id") if cursor_values else None, "page_size": limit + 1}).mappings().all()
     next_cursor = None
     if len(rows) > limit:
         last = rows[limit - 1]
@@ -132,6 +134,7 @@ def item_update(plan_id: UUID, item_id: UUID, payload: TreatmentPlanItemUpdate, 
 @prescription_router.get("/{patient_id}/prescriptions")
 def prescription_list(patient_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "clinical.read")
+    _require_patient(db, session, patient_id)
     rows = db.execute(text("""
         SELECT id, patient_id, appointment_id, encounter_id, prescribed_by_user_id, medication_name, dosage, frequency,
                duration, instructions, status, version, prescribed_at, updated_at

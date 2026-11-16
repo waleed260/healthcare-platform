@@ -37,6 +37,7 @@ export default function BillingPage() {
   const [showForm, setShowForm] = useState(false);
   const [patientId, setPatientId] = useState("");
   const [currency, setCurrency] = useState(clinicCurrency);
+  useEffect(() => { setCurrency(clinicCurrency); }, [clinicCurrency]);
   const [discountMinor, setDiscountMinor] = useState(0);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineInput[]>([emptyLine()]);

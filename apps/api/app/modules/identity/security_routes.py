@@ -14,7 +14,7 @@ from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.schemas import MfaVerifyRequest
-from app.modules.identity.service import SessionError, verify_csrf
+from app.modules.identity.service import AuthenticationError, SessionError, _check_mfa_code, verify_csrf
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -48,8 +48,10 @@ def _audit(db: Session, session: dict, request: Request, action: str) -> None:
 
 def _verified_secret(db: Session, session: dict, code: str) -> None:
     secret = db.execute(text("SELECT secret_ciphertext FROM mfa_methods WHERE user_id = :user_id AND enrolled_at IS NOT NULL AND method = 'totp'"), {"user_id": session["user_id"]}).scalar_one_or_none()
-    if not secret or not verify_totp(decrypt_field(secret), code):
-        raise _error("MFA_INVALID", "The MFA code is invalid.", status.HTTP_401_UNAUTHORIZED)
+    try:
+        _check_mfa_code(db, session["user_id"], bool(secret) and verify_totp(decrypt_field(secret), code))
+    except AuthenticationError as exc:
+        raise _error("MFA_INVALID", "The MFA code is invalid.", status.HTTP_401_UNAUTHORIZED) from exc
 
 
 @router.get("/security")

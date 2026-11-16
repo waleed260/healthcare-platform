@@ -302,11 +302,10 @@ export default function EncounterDetailPage() {
   }
 
   /* ── Save (PATCH) ─────────────────────────────────────────────── */
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    if (!enc) return;
-    setBusy(true);
-    try {
+  /* Diff of the form against the loaded encounter; only changed fields are sent. */
+  function buildSaveBody(): Record<string, unknown> {
+    if (!enc) return {};
+    {
       const body: Record<string, unknown> = { expected_version: enc.version };
       const s = (field: string, local: string, remote: string | null) => { if (local !== (remote ?? "")) body[field] = local || null; };
       // Assessment
@@ -373,9 +372,30 @@ export default function EncounterDetailPage() {
       if (JSON.stringify(cleanMeds) !== JSON.stringify((enc.medications ?? []).map((m) => ({ name: m.name, dosage: m.dosage || null, route: m.route || null, frequency: m.frequency || null, duration: m.duration || null, notes: m.notes || null, inventory_product_id: m.inventory_product_id || null, unit_price_minor: m.unit_price_minor ?? null, currency: m.currency || null })))) {
         body.medications = cleanMeds;
       }
-      body.arrival_vitals = Object.values(arrivalVitals).some((v) => v != null && v !== "") ? arrivalVitals : null;
-      body.discharge_vitals = Object.values(dischargeVitals).some((v) => v != null && v !== "") ? dischargeVitals : null;
+      const av = Object.values(arrivalVitals).some((v) => v != null && v !== "") ? arrivalVitals : null;
+      const dv = Object.values(dischargeVitals).some((v) => v != null && v !== "") ? dischargeVitals : null;
+      if (JSON.stringify(av) !== JSON.stringify(enc.arrival_vitals ?? null)) body.arrival_vitals = av;
+      if (JSON.stringify(dv) !== JSON.stringify(enc.discharge_vitals ?? null)) body.discharge_vitals = dv;
+      return body;
+    }
+  }
+  const hasUnsavedChanges = () => Object.keys(buildSaveBody()).length > 1;
 
+  /* Status changes reload the form from the server, so flush edits first or they are lost
+     (and a discharged encounter can no longer be patched). Returns the version to use. */
+  async function flushUnsaved(): Promise<number | null> {
+    if (!enc) return null;
+    if (!hasUnsavedChanges() || !["draft", "in_progress", "ready_for_discharge"].includes(enc.status)) return enc.version;
+    const saved = await api<{ version: number }>(`/api/v1/encounters/${encounterId}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify(buildSaveBody()) });
+    return saved?.version ?? enc.version;
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!enc) return;
+    setBusy(true);
+    try {
+      const body = buildSaveBody();
       await api(`/api/v1/encounters/${encounterId}`, { method: "PATCH", headers: writeHeaders(), body: JSON.stringify(body) });
       toast.success("Encounter saved.");
       await load();
@@ -393,7 +413,8 @@ export default function EncounterDetailPage() {
     }
     setBusy(true);
     try {
-      await api(`/api/v1/encounters/${encounterId}/status`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: enc.version, status: newStatus }) });
+      const version = await flushUnsaved();
+      await api(`/api/v1/encounters/${encounterId}/status`, { method: "POST", headers: writeHeaders(), body: JSON.stringify({ expected_version: version ?? enc.version, status: newStatus }) });
       toast.success(`Status updated to ${statusLabel[newStatus] ?? newStatus}.`);
       await load();
     } catch (reason) {
@@ -410,7 +431,7 @@ export default function EncounterDetailPage() {
     setBusy(true);
     try {
       const body: Record<string, unknown> = {
-        expected_version: enc.version,
+        expected_version: (await flushUnsaved()) ?? enc.version,
         discharge_outcome: dischOutcome,
         discharge_condition: dischCondition || null,
         discharge_destination: dischDestination || null,

@@ -74,12 +74,13 @@ export default function DashboardPage() {
     try {
       const d = new Date();
       const iso = (x: Date) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
-      const yesterday = new Date(d); yesterday.setDate(d.getDate() - 1);
-      const tomorrow = new Date(d); tomorrow.setDate(d.getDate() + 1);
+      // Whole Mon–Sun week (±1 day: the API filters on UTC days) so the weekly chart has every day.
+      const weekStart = new Date(d); weekStart.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 1);
+      const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 8);
       const [sessionData, summaryData, appts, requested, q, f] = await Promise.all([
         getData<Session>("/api/v1/auth/me"),
         getData<Summary>("/api/v1/operations/dashboard-summary"),
-        getData<Appointment[]>(`/api/v1/appointments?from=${iso(yesterday)}&to=${iso(tomorrow)}&limit=100`),
+        getData<Appointment[]>(`/api/v1/appointments?from=${iso(weekStart)}&to=${iso(weekEnd)}&limit=100`),
         getData<Appointment[]>("/api/v1/appointments?status=requested&limit=10"),
         getData<QueueEntry[]>("/api/v1/operations/queue"),
         getData<FollowUp[]>("/api/v1/operations/follow-ups?status=due&limit=10"),
@@ -88,6 +89,7 @@ export default function DashboardPage() {
         setPermissions(sessionData.permissions ?? []);
         if (sessionData.clinic_slug) setClinicSlug(sessionData.clinic_slug);
       }
+      if ([summaryData, appts, requested, q, f].some((part) => part === null)) setError("Some sections could not be loaded. Showing what we have — try again in a moment.");
       setSummary(summaryData);
       setAppointments(appts ?? []);
       setRequests(requested ?? []);
@@ -123,7 +125,7 @@ export default function DashboardPage() {
     const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
     const thisWeek = appointments.filter((a) => { const d = new Date(a.starts_at); return d >= weekStart && d < weekEnd; });
     const counts = new Map<string, number>(labels.map((l) => [l, 0]));
-    for (const a of thisWeek) { const d = dayShort(a.starts_at); if (counts.has(d)) counts.set(d, (counts.get(d) ?? 0) + 1); }
+    for (const a of thisWeek) { const l = labels[(new Date(a.starts_at).getDay() + 6) % 7]; counts.set(l, (counts.get(l) ?? 0) + 1); }
     const values = labels.map((l) => counts.get(l) ?? 0);
     const max = Math.max(1, ...values);
     return labels.map((l, i) => ({ label: l, value: values[i], pct: Math.round((values[i] / max) * 100), today: i === dayOfWeek }));

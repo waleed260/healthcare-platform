@@ -9,6 +9,10 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.authorization.permissions import PERMISSIONS
+
+# Platform-level admin.* permissions are granted by platform administrators only; a clinic's
+# staff.manage holder could otherwise grant itself plan/support powers.
+CLINIC_ASSIGNABLE_PERMISSIONS = frozenset(p for p in PERMISSIONS if not p.startswith("admin."))
 from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, create_manual_reset, create_staff_invitation, verify_csrf
@@ -67,9 +71,9 @@ def permission_list(request: Request, db: Session = Depends(get_db), session_tok
 @router.post("/roles", status_code=status.HTTP_201_CREATED)
 def role_create(payload: RoleCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
-    invalid = [p for p in payload.permissions if p not in PERMISSIONS]
+    invalid = [p for p in payload.permissions if p not in CLINIC_ASSIGNABLE_PERMISSIONS]
     if invalid:
-        raise _error("INVALID_INPUT", f"Unknown permissions: {', '.join(invalid)}", status.HTTP_400_BAD_REQUEST)
+        raise _error("INVALID_INPUT", f"Unknown or non-assignable permissions: {', '.join(invalid)}", status.HTTP_400_BAD_REQUEST)
     try:
         role_id = db.execute(text("""
             INSERT INTO roles (clinic_id, name, is_system) VALUES (:clinic_id, :name, false) RETURNING id
@@ -100,9 +104,9 @@ def role_update(role_id: UUID, payload: RoleUpdate, request: Request, db: Sessio
             db.rollback()
             raise _error("CONFLICT", "A role with that name already exists.", status.HTTP_409_CONFLICT) from exc
     if payload.permissions is not None:
-        invalid = [p for p in payload.permissions if p not in PERMISSIONS]
+        invalid = [p for p in payload.permissions if p not in CLINIC_ASSIGNABLE_PERMISSIONS]
         if invalid:
-            raise _error("INVALID_INPUT", f"Unknown permissions: {', '.join(invalid)}", status.HTTP_400_BAD_REQUEST)
+            raise _error("INVALID_INPUT", f"Unknown or non-assignable permissions: {', '.join(invalid)}", status.HTTP_400_BAD_REQUEST)
         db.execute(text("DELETE FROM role_permissions WHERE role_id = :role_id"), {"role_id": role_id})
         for code in payload.permissions:
             db.execute(text("INSERT INTO role_permissions (role_id, permission_code) VALUES (:role_id, :code)"), {"role_id": role_id, "code": code})
@@ -349,6 +353,10 @@ def user_role_add(user_id: UUID, payload: RoleAssignment, request: Request, db: 
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
     if user_id == session["user_id"]:
         raise _error("FORBIDDEN", "You cannot modify your own roles.", status.HTTP_403_FORBIDDEN)
+    if db.execute(text("SELECT 1 FROM roles WHERE id = :role_id AND clinic_id IS NULL AND name = 'owner'"), {"role_id": payload.role_id}).scalar_one_or_none() is not None:
+        actor_is_owner = db.execute(text("SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.clinic_id = :clinic_id AND ur.user_id = :actor AND r.name = 'owner' AND r.clinic_id IS NULL"), {"clinic_id": session["clinic_id"], "actor": session["user_id"]}).scalar_one_or_none() is not None
+        if not actor_is_owner:
+            raise _error("FORBIDDEN", "Only an owner can assign the owner role.", status.HTTP_403_FORBIDDEN)
     try:
         inserted = db.execute(text("""
             INSERT INTO user_roles (clinic_id, user_id, role_id, assigned_by)

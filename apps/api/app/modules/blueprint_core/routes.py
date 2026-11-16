@@ -474,11 +474,17 @@ def invoice_create(payload: InvoiceCreate, request: Request, db: Session = Depen
         enc_exists = db.execute(text("SELECT 1 FROM encounter_forms WHERE clinic_id = :clinic_id AND id = :eid AND archived_at IS NULL"), {"clinic_id": session["clinic_id"], "eid": payload.encounter_id}).scalar_one_or_none()
         if enc_exists is None:
             raise _error("NOT_FOUND", "Encounter not found.", status.HTTP_404_NOT_FOUND)
-    invoice = db.execute(text("""
-        INSERT INTO invoices (clinic_id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, notes, created_by_user_id)
-        VALUES (:clinic_id, :patient_id, :encounter_id, :invoice_number, :currency, :subtotal, :discount, :tax, :total, :notes, :user_id)
-        RETURNING id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, status, issued_at, version
-    """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "encounter_id": payload.encounter_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "discount": payload.discount_minor, "tax": tax, "total": total, "notes": payload.notes, "user_id": session["user_id"]}).mappings().one()
+    try:
+        invoice = db.execute(text("""
+            INSERT INTO invoices (clinic_id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, notes, created_by_user_id)
+            VALUES (:clinic_id, :patient_id, :encounter_id, :invoice_number, :currency, :subtotal, :discount, :tax, :total, :notes, :user_id)
+            RETURNING id, patient_id, encounter_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, status, issued_at, version
+        """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "encounter_id": payload.encounter_id, "invoice_number": invoice_number, "currency": currency, "subtotal": subtotal, "discount": payload.discount_minor, "tax": tax, "total": total, "notes": payload.notes, "user_id": session["user_id"]}).mappings().one()
+    except IntegrityError as exc:
+        db.rollback()
+        if "uq_invoices_active_encounter" in str(exc.orig):
+            raise _error("DUPLICATE", "An invoice already exists for this encounter. Void it before issuing another.", status.HTTP_409_CONFLICT) from exc
+        raise
     for line in payload.lines:
         db.execute(text("""
             INSERT INTO invoice_lines (clinic_id, invoice_id, service_id, provider_id, description, quantity, unit_price_minor, tax_minor, line_total_minor)
@@ -543,6 +549,13 @@ def invoice_receipt(invoice_id: UUID, request: Request, db: Session = Depends(ge
 @billing_router.post("/{invoice_id}/void")
 def invoice_void(invoice_id: UUID, payload: InvoiceVoid, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "billing.manage", csrf_token)
+    unrefunded = db.execute(text("""
+        SELECT COALESCE((SELECT SUM(amount_minor) FROM payments WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id), 0)
+             - COALESCE((SELECT SUM(amount_minor) FROM refunds WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id), 0)
+    """), {"clinic_id": session["clinic_id"], "invoice_id": invoice_id}).scalar_one()
+    if int(unrefunded or 0) > 0:
+        # Voiding a paid invoice would make the received money disappear from every finance report.
+        raise _error("INVALID_STATE", "This invoice has payments that are not refunded. Refund them before voiding.", status.HTTP_409_CONFLICT)
     row = db.execute(text("""
         UPDATE invoices SET status = 'void', void_reason = :reason, voided_at = now(), voided_by_user_id = :user_id,
                updated_at = now(), version = version + 1

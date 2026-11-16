@@ -56,15 +56,17 @@ export default function PackagesPage() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  async function run(action: () => Promise<unknown>, success: string, fallback: string) {
+  async function run(action: () => Promise<unknown>, success: string, fallback: string): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
       await action();
       toast.success(success);
       await load();
+      return true;
     } catch (reason) {
       toast.error(errorMessage(reason, fallback));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -88,7 +90,7 @@ export default function PackagesPage() {
         validity_days: Number(field(form, "validity_days")),
       }),
       "Package created.", "The package could not be created."
-    ).then(() => setCreateDrawer(false));
+    ).then((ok) => { if (ok) setCreateDrawer(false); });
   }
 
   // ── Add service to package ──
@@ -102,7 +104,7 @@ export default function PackagesPage() {
         sessions_count: Number(field(form, "sessions_count")),
       }),
       "Service added to package.", "The service could not be added."
-    ).then(() => setServiceDrawer(null));
+    ).then((ok) => { if (ok) setServiceDrawer(null); });
   }
 
   // ── Sell package to patient ──
@@ -115,7 +117,7 @@ export default function PackagesPage() {
         patient_id: field(form, "patient_id"),
       }),
       "Package sold to patient.", "The purchase could not be completed."
-    ).then(() => setSellDrawer(null));
+    ).then((ok) => { if (ok) setSellDrawer(null); });
   }
 
   // ── Load patient packages ──

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, errorMessage, post } from "../_lib/client";
+import { api, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useClinicCurrency } from "../_lib/clinic-context";
 
@@ -21,7 +21,6 @@ export default function ReportsPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -46,16 +45,30 @@ export default function ReportsPage() {
   }, [days, branchId]);
   useEffect(() => { void load(); }, [load]);
 
-  async function exportReport(format: string) {
-    setExporting(true);
-    try {
-      await post("/api/v1/governance/exports", { export_type: "reporting_summary", format });
-      toast.success(`${format.toUpperCase()} export queued. Check the exports list for download.`);
-    } catch (reason) {
-      toast.error(errorMessage(reason, "The export could not be started."));
-    } finally {
-      setExporting(false);
+  // The backend export queue only knows patient-access and audit exports, so the
+  // summary is written to CSV from the data already on screen.
+  function exportReport() {
+    if (!report) return;
+    const rows: string[][] = [["section", "key", "count", "amount_minor"]];
+    report.appointments.forEach((a) => rows.push(["appointments", a.status, String(a.count), ""]));
+    rows.push(["patients", "created", String(report.patients_created), ""]);
+    report.leads.forEach((l) => rows.push(["leads", l.status, String(l.count), ""]));
+    if (report.financial) {
+      rows.push(["financial", "invoices", String(report.financial.invoices), String(report.financial.invoiced_minor)]);
+      rows.push(["financial", "paid", "", String(report.financial.paid_minor)]);
+      rows.push(["financial", "outstanding", "", String(report.financial.outstanding_minor)]);
+      report.financial.payment_methods.forEach((m) => rows.push(["payment_method", m.method, String(m.payments), String(m.paid_minor)]));
+      report.financial.aging.forEach((b) => rows.push(["aging", b.bucket, String(b.invoices), String(b.outstanding_minor)]));
     }
+    Object.entries(report.package_utilization).forEach(([k, v]) => rows.push(["packages", k, String(v), ""]));
+    Object.entries(report.operational).forEach(([k, v]) => rows.push(["operational", k, String(v), ""]));
+    const csv = rows.map((r) => r.map((c) => `"${c.replaceAll('"', '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `report-${report.period_days}d-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.success("CSV downloaded.");
   }
 
   const can = (p: string) => permissions.includes(p);
@@ -84,7 +97,7 @@ export default function ReportsPage() {
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </label>}
-        {can("patient.export") && <button className="button button-secondary" disabled={exporting} onClick={() => void exportReport("csv")}>{exporting ? "Exporting…" : "Export CSV"}</button>}
+        {can("patient.export") && <button className="button button-secondary" disabled={!report} onClick={exportReport}>Export CSV</button>}
         <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
       </div>
     </div>

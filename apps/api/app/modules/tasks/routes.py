@@ -63,7 +63,7 @@ def task_list(
                p.full_name AS patient_name
         FROM internal_tasks t
         LEFT JOIN access_tokens at2 ON at2.clinic_id = t.clinic_id AND at2.user_id = t.assignee_user_id AND at2.revoked_at IS NULL
-        LEFT JOIN users u ON u.id = t.assignee_user_id
+        LEFT JOIN users u ON u.id = t.assignee_user_id AND u.clinic_id = t.clinic_id
         LEFT JOIN patients p ON p.clinic_id = t.clinic_id AND p.id = t.patient_id AND p.archived_at IS NULL
         WHERE t.clinic_id = :clinic_id AND t.archived_at IS NULL
           AND (:status IS NULL OR t.status = :status)
@@ -91,6 +91,19 @@ def task_list(
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
+_TASK_LINK_TABLES = {"assignee_user_id": "users", "patient_id": "patients", "lead_id": "leads", "appointment_id": "appointments"}
+
+
+def _validate_task_links(db: Session, clinic_id: UUID, values: dict) -> None:
+    """internal_tasks has no foreign keys, so reject ids that are not this clinic's rows."""
+    for field, table in _TASK_LINK_TABLES.items():
+        value = values.get(field)
+        if value is None:
+            continue
+        if db.execute(text(f"SELECT 1 FROM {table} WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": clinic_id, "id": value}).scalar_one_or_none() is None:
+            raise _error("INVALID_INPUT", f"{field} does not reference a record in this clinic.", status.HTTP_400_BAD_REQUEST, fields={field: "not found"})
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def task_create(
     payload: TaskCreate,
@@ -100,6 +113,7 @@ def task_create(
     csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict:
     session = _write_authorized(db, request, session_token, "appointment.read", csrf_token)
+    _validate_task_links(db, session["clinic_id"], payload.model_dump(include={"assignee_user_id", "patient_id", "lead_id", "appointment_id"}))
     row = db.execute(text("""
         INSERT INTO internal_tasks (clinic_id, title, description, task_type, priority, assignee_user_id, patient_id, lead_id, appointment_id, due_at, created_by)
         VALUES (:clinic_id, :title, :description, :task_type, :priority, :assignee_user_id, :patient_id, :lead_id, :appointment_id, :due_at, :created_by)
@@ -138,6 +152,7 @@ def task_update(
     if current != payload.expected_version:
         raise _error("VERSION_CONFLICT", "The task changed before update.", status.HTTP_409_CONFLICT)
     values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
+    _validate_task_links(db, session["clinic_id"], values)
     updates = []
     params: dict = {"clinic_id": session["clinic_id"], "id": task_id}
     for field, val in values.items():

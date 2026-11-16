@@ -1,5 +1,13 @@
 import Link from "next/link";
 import LandingMotion from "./landing-motion";
+import LandingNav from "./landing-nav";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "care/fully — Website, booking, queue and CRM for independent clinics",
+  description: "One calm workspace for a clinic's public site, bookings, queue, patient records, follow-ups and billing.",
+  openGraph: { title: "care/fully — carefully run clinics", description: "Website, booking, queue, CRM and follow-ups in one workspace for independent clinics.", type: "website" },
+};
 
 const features = [
   {
@@ -45,10 +53,10 @@ const securityItems = [
   { icon: "file", title: "Private files", desc: "Documents remain behind scoped access with scan status verification." },
 ];
 
-const testimonials = [
-  { quote: "We went from three spreadsheets and a WhatsApp group to one screen. The morning is calmer now.", name: "Dr. Amira Hassan", role: "Family Medicine", clinic: "Noor Clinic" },
-  { quote: "My staff used to call patients one by one for follow-ups. Now it's a task list that actually gets done.", name: "Dr. Ravi Menon", role: "General Practice", clinic: "Greenleaf Medical" },
-  { quote: "The booking page alone saved us two hours a day on the phone. Patients love choosing their own time.", name: "Dr. Sara Vidal", role: "Dermatology", clinic: "Vidal Skin Centre" },
+const outcomes = [
+  { title: "One screen for the morning", body: "Today's schedule, the live queue and due follow-ups sit on one overview, so the front desk stops juggling spreadsheets and chat threads." },
+  { title: "Follow-ups that get done", body: "Discharging a patient with a review date creates the follow-up task itself. Nobody has to remember to call." },
+  { title: "Booking without the phone", body: "Patients pick a real slot on the clinic's own site; requests land in the schedule for staff to confirm." },
 ];
 
 const faqs = [
@@ -64,15 +72,15 @@ const faqs = [
 
 const footerLinks = {
   product: [
-    { label: "Website Builder", href: "#website" },
-    { label: "Booking", href: "#website" },
-    { label: "Queue & Schedule", href: "#operations" },
-    { label: "CRM", href: "#followups" },
-    { label: "Follow-ups", href: "#followups" },
+    { label: "Website Builder", href: "#product" },
+    { label: "Booking", href: "#how-it-works" },
+    { label: "Queue & Schedule", href: "#product" },
+    { label: "CRM", href: "#product" },
+    { label: "Follow-ups", href: "#product" },
   ],
   company: [
     { label: "Contact", href: "mailto:hello@carefully.health" },
-    { label: "Privacy", href: "/privacy" },
+    { label: "Privacy", href: "/privacy-policy" },
   ],
 };
 
@@ -187,21 +195,7 @@ export default function HomePage() {
       <div className="lp-scroll-progress" aria-hidden="true" />
 
       {/* Nav */}
-      <nav className="lp-nav shell" aria-label="Primary navigation">
-        <Link className="wordmark" href="/">care<span>/</span>fully</Link>
-        <input type="checkbox" id="lp-menu-toggle" className="lp-menu-checkbox" aria-hidden="true" />
-        <label htmlFor="lp-menu-toggle" className="lp-hamburger" aria-label="Toggle navigation menu">
-          <span /><span /><span />
-        </label>
-        <div className="lp-nav-links">
-          <a href="#product">Product</a>
-          <a href="#how-it-works">How it works</a>
-          <a href="#security">Security</a>
-          <a href="#pricing">Pricing</a>
-          <Link className="lp-nav-signin" href="/login">Sign in</Link>
-          <Link className="lp-nav-cta" href="#pricing">Request a demo <span>→</span></Link>
-        </div>
-      </nav>
+      <LandingNav />
 
       {/* Hero */}
       <section className="lp-hero shell" aria-labelledby="hero-title">
@@ -311,20 +305,14 @@ export default function HomePage() {
       <section className="lp-testimonials" aria-labelledby="testimonials-title">
         <div className="shell">
           <div className="lp-section-header" data-reveal>
-            <p className="lp-eyebrow">From clinics like yours</p>
+            <p className="lp-eyebrow">Built for the clinic day</p>
             <h2 id="testimonials-title">The day feels<br /><em>different now.</em></h2>
           </div>
           <div className="lp-testimonial-grid" data-reveal>
-            {testimonials.map((t) => (
-              <article key={t.name} className="lp-testimonial-card lp-stagger">
-                <blockquote>&ldquo;{t.quote}&rdquo;</blockquote>
-                <footer>
-                  <div className="lp-testimonial-avatar">{t.name.split(" ").map((n) => n[0]).join("")}</div>
-                  <div>
-                    <strong>{t.name}</strong>
-                    <small>{t.role} · {t.clinic}</small>
-                  </div>
-                </footer>
+            {outcomes.map((o) => (
+              <article key={o.title} className="lp-testimonial-card lp-stagger">
+                <blockquote>{o.body}</blockquote>
+                <footer><div><strong>{o.title}</strong></div></footer>
               </article>
             ))}
           </div>
@@ -344,7 +332,7 @@ export default function HomePage() {
             <span>✓ No credit card required</span>
           </div>
           <div className="lp-pricing-actions">
-            <Link className="lp-btn lp-btn-primary" href="/login">Request a demo <span>→</span></Link>
+            <a className="lp-btn lp-btn-primary" href="mailto:hello@carefully.health?subject=Demo%20request">Request a demo <span>→</span></a>
             <Link className="lp-btn-text" href="/login">Or sign in to your workspace <span>→</span></Link>
           </div>
         </div>
@@ -377,7 +365,7 @@ export default function HomePage() {
             ))}
           </div>
           <div className="lp-final-actions">
-            <Link className="lp-btn lp-btn-light" href="/login">Request a demo <span>→</span></Link>
+            <a className="lp-btn lp-btn-light" href="mailto:hello@carefully.health?subject=Demo%20request">Request a demo <span>→</span></a>
             <Link className="lp-btn-text-light" href="/login">Sign in to your workspace <span>→</span></Link>
           </div>
           <p className="lp-final-note">No credit card required · Set up in under a day</p>
@@ -402,7 +390,7 @@ export default function HomePage() {
         </div>
         <div className="shell lp-footer-bottom">
           <span>&copy; {new Date().getFullYear()} care/fully. All rights reserved.</span>
-          <Link href="/privacy">Privacy Policy</Link>
+          <Link href="/privacy-policy">Privacy Policy</Link>
         </div>
       </footer>
     </main>

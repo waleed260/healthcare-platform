@@ -17,6 +17,7 @@ from app.modules.identity.service import (
     SessionError,
     TokenError,
     authenticate,
+    MfaAlreadyEnrolledError,
     begin_mfa_enrollment,
     complete_mfa,
     consume_manual_reset,
@@ -220,7 +221,11 @@ def mfa_enroll(request: Request, db: Session = Depends(get_db), session_token: s
         verify_csrf(session, csrf_token)
     except SessionError as exc:
         raise _error("CSRF_INVALID", "The CSRF token is invalid.", status.HTTP_403_FORBIDDEN) from exc
-    secret, codes = begin_mfa_enrollment(db, session["user_id"])
+    try:
+        secret, codes = begin_mfa_enrollment(db, session["user_id"], mfa_verified=bool(session.get("mfa_verified")))
+    except MfaAlreadyEnrolledError as exc:
+        db.rollback()
+        raise _error(exc.code, "Verify your existing authenticator (or use a recovery code) before enrolling a new one.", status.HTTP_409_CONFLICT) from exc
     if session["clinic_id"] is not None:
         set_tenant_context(db, session["clinic_id"], session["user_id"])
         record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="auth.mfa_enroll", entity_type="mfa_method", entity_id=None, outcome="success", request_id=UUID(request.state.request_id))
