@@ -22,6 +22,7 @@ export default function ReportsPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [section, setSection] = useState<"care" | "demand" | "cash" | "ops">("care");
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -114,50 +115,53 @@ export default function ReportsPage() {
         <div className="report-hero-card report-hero-warm"><span className="eyebrow">LEADS</span><strong>{leadTotal}</strong><p>enquiries entering the pipeline</p></div>
       </div>
 
-      <div className="report-grid">
-        <section className="surface-card report-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">CARE FLOW</p><h2>Appointments by state</h2></div><span className="muted-mono">{report.period_days} DAYS</span></div>
-          <div className="report-bars">
-            {report.appointments.length === 0 && <div className="dashboard-empty"><strong>No appointment activity</strong><span>There is no activity in this reporting window.</span></div>}
-            {report.appointments.map((item) => <div className="report-bar-row" key={item.status}><span>{label(item.status)}</span><div><i style={{ width: `${Math.max((item.count / maxAppointment) * 100, item.count ? 4 : 0)}%` }} /></div><b>{item.count}</b></div>)}
-          </div>
-          <div className="report-card-links"><Link className="text-link" href="/schedule">Open Schedule <span>↗</span></Link></div>
-        </section>
+      <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist" aria-label="Report sections">
+        <button role="tab" aria-selected={section === "care"} className={section === "care" ? "active" : ""} onClick={() => setSection("care")}>Care Flow</button>
+        <button role="tab" aria-selected={section === "demand"} className={section === "demand" ? "active" : ""} onClick={() => setSection("demand")}>Demand</button>
+        <button role="tab" aria-selected={section === "cash"} className={section === "cash" ? "active" : ""} onClick={() => setSection("cash")}>Cash Position</button>
+        <button role="tab" aria-selected={section === "ops"} className={section === "ops" ? "active" : ""} onClick={() => setSection("ops")}>Operational Health</button>
+      </div></div>
 
-        <section className="surface-card report-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">DEMAND</p><h2>Lead pipeline</h2></div><span className="muted-mono">{leadTotal} TOTAL</span></div>
-          <div className="report-list">
-            {report.leads.length === 0 && <div className="dashboard-empty"><strong>No lead activity</strong><span>New enquiries will appear here as they arrive.</span></div>}
-            {report.leads.map((item) => <div className="report-list-row" key={item.status}><span className={`pipeline-status status-${item.status}`}>{label(item.status)}</span><strong>{item.count}</strong></div>)}
-          </div>
-          <div className="report-card-links"><Link className="text-link" href="/queue">Open Queue <span>↗</span></Link></div>
-        </section>
-      </div>
+      {section === "care" && <section className="surface-card report-card">
+        <div className="surface-card-heading"><div><p className="eyebrow">CARE FLOW</p><h2>Appointments by state</h2></div><span className="muted-mono">{report.period_days} DAYS</span></div>
+        <div className="report-bars">
+          {report.appointments.length === 0 && <div className="dashboard-empty"><strong>No appointment activity</strong><span>There is no activity in this reporting window.</span></div>}
+          {report.appointments.map((item) => <div className="report-bar-row" key={item.status}><span>{label(item.status)}</span><div><i style={{ width: `${Math.max((item.count / maxAppointment) * 100, item.count ? 4 : 0)}%` }} /></div><b>{item.count}</b></div>)}
+        </div>
+        <div className="report-card-links"><Link className="text-link" href="/schedule">Open Schedule <span>↗</span></Link></div>
+      </section>}
 
-      <div className="report-grid">
-        <section className="surface-card report-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONAL HEALTH</p><h2>Where attention is due</h2></div></div>
-          <div className="report-health-grid">
-            <div><strong>{report.operational.waiting_patients}</strong><span>waiting patients</span></div>
-            <div><strong>{report.operational.followups_due}</strong><span>follow-ups due</span></div>
-            <div><strong>{report.operational.no_shows}</strong><span>no-shows</span></div>
-            <div><strong>{report.operational.low_inventory}</strong><span>low-stock items</span></div>
-          </div>
-          <div className="report-card-links"><Link className="text-link" href="/operations">Follow-ups <span>↗</span></Link><Link className="text-link" href="/leads">Leads <span>↗</span></Link><Link className="text-link" href="/inventory">Inventory <span>↗</span></Link></div>
-        </section>
+      {section === "demand" && <section className="surface-card report-card">
+        <div className="surface-card-heading"><div><p className="eyebrow">DEMAND</p><h2>Lead pipeline</h2></div><span className="muted-mono">{leadTotal} TOTAL</span></div>
+        <div className="report-list">
+          {report.leads.length === 0 && <div className="dashboard-empty"><strong>No lead activity</strong><span>New enquiries will appear here as they arrive.</span></div>}
+          {report.leads.map((item) => <div className="report-list-row" key={item.status}><span className={`pipeline-status status-${item.status}`}>{label(item.status)}</span><strong>{item.count}</strong></div>)}
+        </div>
+        <div className="report-card-links"><Link className="text-link" href="/queue">Open Queue <span>↗</span></Link></div>
+      </section>}
 
-        <section className="surface-card report-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">CASH POSITION</p><h2>Collected and open</h2></div><span className="muted-mono">AUTHORIZED VIEW</span></div>
-          {report.financial ? <div className="report-finance">
-            <div><span>Paid</span><strong>{money(report.financial.paid_minor, clinicCurrency)}</strong></div>
-            <div><span>Outstanding</span><strong>{money(report.financial.outstanding_minor, clinicCurrency)}</strong></div>
-            <small>{report.financial.invoices} invoices issued in this window.</small>
-            <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor, clinicCurrency)}</span>)}</div>
-            <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor, clinicCurrency)}</span>)}</div>
-          </div> : <div className="dashboard-empty"><strong>Financial data restricted</strong><span>Your role does not include billing.read.</span></div>}
-          <div className="report-card-links"><Link className="text-link" href="/billing">Open Billing <span>↗</span></Link><Link className="text-link" href="/finance">Open Finance <span>↗</span></Link></div>
-        </section>
-      </div>
+      {section === "cash" && <section className="surface-card report-card">
+        <div className="surface-card-heading"><div><p className="eyebrow">CASH POSITION</p><h2>Collected and open</h2></div><span className="muted-mono">AUTHORIZED VIEW</span></div>
+        {report.financial ? <div className="report-finance">
+          <div><span>Paid</span><strong>{money(report.financial.paid_minor, clinicCurrency)}</strong></div>
+          <div><span>Outstanding</span><strong>{money(report.financial.outstanding_minor, clinicCurrency)}</strong></div>
+          <small>{report.financial.invoices} invoices issued in this window.</small>
+          <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor, clinicCurrency)}</span>)}</div>
+          <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor, clinicCurrency)}</span>)}</div>
+        </div> : <div className="dashboard-empty"><strong>Financial data restricted</strong><span>Your role does not include billing.read.</span></div>}
+        <div className="report-card-links"><Link className="text-link" href="/billing">Open Billing <span>↗</span></Link><Link className="text-link" href="/finance">Open Finance <span>↗</span></Link></div>
+      </section>}
+
+      {section === "ops" && <section className="surface-card report-card">
+        <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONAL HEALTH</p><h2>Where attention is due</h2></div></div>
+        <div className="report-health-grid">
+          <div><strong>{report.operational.waiting_patients}</strong><span>waiting patients</span></div>
+          <div><strong>{report.operational.followups_due}</strong><span>follow-ups due</span></div>
+          <div><strong>{report.operational.no_shows}</strong><span>no-shows</span></div>
+          <div><strong>{report.operational.low_inventory}</strong><span>low-stock items</span></div>
+        </div>
+        <div className="report-card-links"><Link className="text-link" href="/operations">Follow-ups <span>↗</span></Link><Link className="text-link" href="/leads">Leads <span>↗</span></Link><Link className="text-link" href="/inventory">Inventory <span>↗</span></Link></div>
+      </section>}
 
       <section className="surface-card report-card report-package-card">
         <div className="surface-card-heading"><div><p className="eyebrow">TREATMENT PACKAGES</p><h2>Sessions in motion</h2></div><span className="muted-mono">{report.package_utilization.packages} PACKAGES</span></div>
