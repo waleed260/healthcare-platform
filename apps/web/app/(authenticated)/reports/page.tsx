@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
@@ -120,6 +121,7 @@ export default function ReportsPage() {
             {report.appointments.length === 0 && <div className="dashboard-empty"><strong>No appointment activity</strong><span>There is no activity in this reporting window.</span></div>}
             {report.appointments.map((item) => <div className="report-bar-row" key={item.status}><span>{label(item.status)}</span><div><i style={{ width: `${Math.max((item.count / maxAppointment) * 100, item.count ? 4 : 0)}%` }} /></div><b>{item.count}</b></div>)}
           </div>
+          <div className="report-card-links"><Link className="text-link" href="/schedule">Open Schedule <span>↗</span></Link></div>
         </section>
 
         <section className="surface-card report-card">
@@ -128,6 +130,7 @@ export default function ReportsPage() {
             {report.leads.length === 0 && <div className="dashboard-empty"><strong>No lead activity</strong><span>New enquiries will appear here as they arrive.</span></div>}
             {report.leads.map((item) => <div className="report-list-row" key={item.status}><span className={`pipeline-status status-${item.status}`}>{label(item.status)}</span><strong>{item.count}</strong></div>)}
           </div>
+          <div className="report-card-links"><Link className="text-link" href="/queue">Open Queue <span>↗</span></Link></div>
         </section>
       </div>
 
@@ -140,6 +143,7 @@ export default function ReportsPage() {
             <div><strong>{report.operational.no_shows}</strong><span>no-shows</span></div>
             <div><strong>{report.operational.low_inventory}</strong><span>low-stock items</span></div>
           </div>
+          <div className="report-card-links"><Link className="text-link" href="/operations">Follow-ups <span>↗</span></Link><Link className="text-link" href="/leads">Leads <span>↗</span></Link><Link className="text-link" href="/inventory">Inventory <span>↗</span></Link></div>
         </section>
 
         <section className="surface-card report-card">
@@ -151,6 +155,7 @@ export default function ReportsPage() {
             <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor, clinicCurrency)}</span>)}</div>
             <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor, clinicCurrency)}</span>)}</div>
           </div> : <div className="dashboard-empty"><strong>Financial data restricted</strong><span>Your role does not include billing.read.</span></div>}
+          <div className="report-card-links"><Link className="text-link" href="/billing">Open Billing <span>↗</span></Link><Link className="text-link" href="/finance">Open Finance <span>↗</span></Link></div>
         </section>
       </div>
 
