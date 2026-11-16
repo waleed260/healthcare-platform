@@ -4,7 +4,7 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class SpecialtyEnable(BaseModel):
@@ -18,7 +18,7 @@ class LeadCreate(BaseModel):
 
     full_name: str = Field(min_length=1, max_length=160)
     email: str | None = Field(default=None, max_length=320)
-    phone: str | None = Field(default=None, max_length=40)
+    phone: str = Field(min_length=1, max_length=40)
     source: str = Field(min_length=1, max_length=80)
     campaign: str | None = Field(default=None, max_length=160)
     specialty_id: UUID | None = None
@@ -26,6 +26,13 @@ class LeadCreate(BaseModel):
     branch_id: UUID | None = None
     assigned_to_user_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=5000)
+
+    @field_validator("phone")
+    @classmethod
+    def phone_has_digits(cls, value: str) -> str:
+        if sum(character.isdigit() for character in value) < 7:
+            raise ValueError("phone must include at least 7 digits")
+        return value
 
 
 class LeadUpdate(BaseModel):

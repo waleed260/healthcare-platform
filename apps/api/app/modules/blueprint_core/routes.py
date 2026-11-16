@@ -190,7 +190,7 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
     _require_lead(db, session, lead_id)
     lead = db.execute(text("""
-        SELECT status, converted_to_patient_id, version FROM leads
+        SELECT status, converted_to_patient_id, version, full_name, normalized_email, normalized_phone FROM leads
         WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL
         FOR UPDATE
     """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().one_or_none()
@@ -238,15 +238,26 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
         values["normalized_phone"] = _normalize_phone(values.pop("phone"))
     if "full_name" in values and values["full_name"] is not None:
         values["full_name"] = values["full_name"].strip()
+    # Reaching "visited" auto-creates (or links) the patient so staff never re-key the record.
+    auto_convert = payload.status == "visited" and lead["converted_to_patient_id"] is None
+    if auto_convert:
+        values["converted_to_patient_id"] = _resolve_or_create_patient(
+            db, session["clinic_id"],
+            (values.get("full_name") or lead["full_name"]).strip(),
+            values.get("normalized_email", lead["normalized_email"]),
+            values.get("normalized_phone", lead["normalized_phone"]),
+        )
     assignments = ", ".join(f"{field} = :{field}" for field in values)
     row = db.execute(text(f"""
         UPDATE leads SET {assignments}, version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL AND version = :expected_version
-        RETURNING id, full_name, status, assigned_to_user_id, notes, lost_reason, version, updated_at
+        RETURNING id, full_name, status, assigned_to_user_id, notes, lost_reason, converted_to_patient_id, version, updated_at
     """), {"clinic_id": session["clinic_id"], "lead_id": lead_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
     if row is None:
         raise _error("VERSION_CONFLICT", "The lead changed before this update or is unavailable.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.update", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(values)})
+    if auto_convert:
+        record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.convert", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_id": str(values["converted_to_patient_id"]), "auto": True})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
@@ -268,6 +279,29 @@ def _require_lead(db: Session, session: dict, lead_id: UUID) -> None:
     }).scalar_one_or_none()
     if lead is None:
         raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
+
+
+def _resolve_or_create_patient(db: Session, clinic_id, full_name: str, email: str | None, phone: str | None, date_of_birth=None) -> UUID:
+    """Return the single non-duplicate patient matching the lead's email/phone, or create one.
+
+    Shared by the manual ``/convert`` endpoint and the automatic conversion that fires when a
+    lead moves to ``visited``. Raises ``DUPLICATE_REVIEW_REQUIRED`` when more than one candidate
+    matches, so a human picks the right record instead of silently merging strangers."""
+    candidates = db.execute(text("""
+        SELECT id FROM patients
+        WHERE clinic_id = :clinic_id AND archived_at IS NULL AND duplicate_of IS NULL
+          AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone))
+        ORDER BY created_at LIMIT 2
+    """), {"clinic_id": clinic_id, "email": email, "phone": phone}).scalars().all()
+    if len(candidates) > 1:
+        raise _error("DUPLICATE_REVIEW_REQUIRED", "Review duplicate patient candidates before conversion.", status.HTTP_409_CONFLICT)
+    if candidates:
+        return candidates[0]
+    return db.execute(text("""
+        INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth)
+        VALUES (:clinic_id, 'PENDING-' || substr(gen_random_uuid()::text, 1, 12), :full_name, :email, :phone, :date_of_birth)
+        RETURNING id
+    """), {"clinic_id": clinic_id, "full_name": full_name, "email": email, "phone": phone, "date_of_birth": date_of_birth}).scalar_one()
 
 
 @lead_router.get("/{lead_id}/activities")
@@ -362,19 +396,7 @@ def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Sess
         full_name = (payload.full_name or lead["full_name"]).strip()
         email = _normalize_email(payload.email) or lead["normalized_email"]
         phone = _normalize_phone(payload.phone) or lead["normalized_phone"]
-        candidates = db.execute(text("""
-            SELECT id FROM patients
-            WHERE clinic_id = :clinic_id AND archived_at IS NULL AND duplicate_of IS NULL
-              AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone))
-            ORDER BY created_at LIMIT 2
-        """), {"clinic_id": session["clinic_id"], "email": email, "phone": phone}).scalars().all()
-        if len(candidates) > 1:
-            raise _error("DUPLICATE_REVIEW_REQUIRED", "Review duplicate patient candidates before conversion.", status.HTTP_409_CONFLICT)
-        patient_id = candidates[0] if candidates else db.execute(text("""
-            INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth)
-            VALUES (:clinic_id, 'PENDING-' || substr(gen_random_uuid()::text, 1, 12), :full_name, :email, :phone, :date_of_birth)
-            RETURNING id
-        """), {"clinic_id": session["clinic_id"], "full_name": full_name, "email": email, "phone": phone, "date_of_birth": payload.date_of_birth}).scalar_one()
+        patient_id = _resolve_or_create_patient(db, session["clinic_id"], full_name, email, phone, payload.date_of_birth)
     row = db.execute(text("""
         UPDATE leads SET converted_to_patient_id = :patient_id, status = 'converted', version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :lead_id AND converted_to_patient_id IS NULL
