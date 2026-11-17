@@ -32,7 +32,6 @@ const navGroups: NavGroup[] = [
     { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },
     { href: "/packages", label: "Packages", icon: "❑", permission: "package.read" },
     { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
-    { href: "/analytics", label: "Analytics", icon: "◈", permission: "report.read" },
     { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
   ]},
   { key: "website", label: "WEBSITE", items: [

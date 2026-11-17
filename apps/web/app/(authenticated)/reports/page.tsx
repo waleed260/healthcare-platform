@@ -11,8 +11,16 @@ type Kpis = { appointments: Pair; appointments_completed: Pair; no_shows: Pair; 
 type Report = { period_days: number; appointments: { status: string; count: number }[]; patients_created: number; leads: { status: string; count: number }[]; kpis: Kpis; financial: { invoices: number; invoiced_minor: number; outstanding_minor: number; outstanding_all_minor: number; paid_minor: number; payment_methods: { method: string; payments: number; paid_minor: number }[]; aging: { bucket: string; invoices: number; outstanding_minor: number }[] } | null; package_utilization: { packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number }; operational: { waiting_patients: number; followups_due: number; no_shows: number; low_inventory: number } };
 type Branch = { id: string; name: string };
 type Session = { permissions?: string[] };
+type DailyStat = { date: string; appointments: number; new_patients: number; revenue_minor: number; no_shows: number };
+type ChannelStat = { channel: string; leads: number; converted: number };
+type FunnelStep = { stage: string; count: number };
+type TopService = { name: string; count: number; revenue_minor: number };
 
 const label = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const shortDate = (iso: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(iso));
+const channelColors = ["#274c42", "#3d7a6a", "#5ba894", "#8cc5b3", "#b84f38", "#d4795e"];
+// The chart endpoints take 7d/30d/90d/365d; map the report window onto that.
+const rangeForDays = (value: string) => (value === "7" ? "7d" : value === "90" ? "90d" : value === "365" ? "365d" : "30d");
 const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
 const rate = (num: number, den: number) => (den > 0 ? num / den : 0);
 const pctFmt = (value: number) => `${Math.round(value * 100)}%`;
@@ -38,7 +46,11 @@ export default function ReportsPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<"care" | "demand" | "cash" | "ops">("care");
+  const [section, setSection] = useState<"trends" | "care" | "demand" | "cash" | "ops">("trends");
+  const [daily, setDaily] = useState<DailyStat[]>([]);
+  const [channels, setChannels] = useState<ChannelStat[]>([]);
+  const [funnel, setFunnel] = useState<FunnelStep[]>([]);
+  const [topServices, setTopServices] = useState<TopService[]>([]);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -55,6 +67,17 @@ export default function ReportsPage() {
       setReport(reportData);
       setPermissions(sessionData.permissions ?? []);
       setBranches(branchData ?? []);
+      // Trend charts are clinic-wide (the chart endpoints take no branch) and must not fail the
+      // summary, so they load separately and tolerate partial failure.
+      const range = rangeForDays(days);
+      const charts = await Promise.allSettled([
+        api<DailyStat[]>(`/api/v1/operations/analytics/daily?range=${range}`),
+        api<ChannelStat[]>(`/api/v1/operations/analytics/channels?range=${range}`),
+        api<FunnelStep[]>(`/api/v1/operations/analytics/funnel?range=${range}`),
+        api<TopService[]>(`/api/v1/operations/analytics/top-services?range=${range}`),
+      ]);
+      const val = <T,>(r: PromiseSettledResult<T | null>, fb: T): T => (r.status === "fulfilled" ? (r.value ?? fb) : fb);
+      setDaily(val(charts[0], [])); setChannels(val(charts[1], [])); setFunnel(val(charts[2], [])); setTopServices(val(charts[3], []));
     } catch (reason) {
       setError(errorMessage(reason, "The report could not be loaded."));
     } finally {
@@ -95,6 +118,9 @@ export default function ReportsPage() {
   const appointmentTotal = useMemo(() => report?.appointments.reduce((total, item) => total + item.count, 0) ?? 0, [report]);
   const leadTotal = useMemo(() => report?.leads.reduce((total, item) => total + item.count, 0) ?? 0, [report]);
   const maxAppointment = Math.max(...(report?.appointments.map((item) => item.count) ?? [1]), 1);
+  const chartMax = useMemo(() => Math.max(1, ...daily.map((d) => d.appointments)), [daily]);
+  const funnelMax = useMemo(() => Math.max(1, ...funnel.map((f) => f.count)), [funnel]);
+  const totalLeads = useMemo(() => channels.reduce((sum, c) => sum + c.leads, 0), [channels]);
   const kpiView = useMemo(() => {
     if (!report) return null;
     const k = report.kpis;
@@ -118,7 +144,7 @@ export default function ReportsPage() {
       <div>
         <p className="eyebrow">BUSINESS</p>
         <h1>See the clinic <em>clearly.</em></h1>
-        <p className="workspace-page-intro">Demand, care, cash, and the operational edges that need attention. For day-by-day trends and charts, open <Link className="text-link" href="/analytics">Analytics ↗</Link></p>
+        <p className="workspace-page-intro">Trends, demand, care, cash, and the operational edges that need attention — one view.</p>
       </div>
       <div className="header-actions">
         <label className="report-period">Window
@@ -159,14 +185,52 @@ export default function ReportsPage() {
         {kpiView.revPerPatient && <div className="analytics-card"><p className="eyebrow">REVENUE / PATIENT</p><strong>{kpiView.revPerPatient.value}</strong><small className={trendCls(kpiView.revPerPatient.d.up)}>{kpiView.revPerPatient.d.label}</small></div>}
       </div>}
 
-      {branchId && <p className="report-branch-note">New patients, cash position, packages, waiting patients and follow-ups are clinic-wide — those records carry no branch, so the branch filter does not change them.</p>}
+      {branchId && <p className="report-branch-note">New patients, cash position, packages, waiting patients, follow-ups and the trend charts are clinic-wide — those records carry no branch, so the branch filter does not change them.</p>}
 
       <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist" aria-label="Report sections">
+        <button role="tab" aria-selected={section === "trends"} className={section === "trends" ? "active" : ""} onClick={() => setSection("trends")}>Trends</button>
         <button role="tab" aria-selected={section === "care"} className={section === "care" ? "active" : ""} onClick={() => setSection("care")}>Care Flow</button>
         <button role="tab" aria-selected={section === "demand"} className={section === "demand" ? "active" : ""} onClick={() => setSection("demand")}>Demand</button>
         <button role="tab" aria-selected={section === "cash"} className={section === "cash" ? "active" : ""} onClick={() => setSection("cash")}>Cash Position</button>
         <button role="tab" aria-selected={section === "ops"} className={section === "ops" ? "active" : ""} onClick={() => setSection("ops")}>Operational Health</button>
       </div></div>
+
+      {section === "trends" && <>
+        <section className="surface-card report-card">
+          <div className="surface-card-heading"><div><p className="eyebrow">TRENDS</p><h2>Daily appointments</h2></div><span className="muted-mono">{report.period_days} DAYS</span></div>
+          {daily.length === 0
+            ? <div className="dashboard-empty"><strong>{loading ? "Loading chart data…" : "No data for this period"}</strong></div>
+            : <div className="bar-chart" role="img" aria-label="Daily appointments chart">
+              {daily.map((d, i) => <div key={d.date} className="chart-bar" style={{ height: `${Math.max(4, (d.appointments / chartMax) * 100)}%` }}>
+                <span className="chart-bar-value">{d.appointments}</span>
+                {(i === 0 || i === daily.length - 1 || i % Math.max(1, Math.floor(daily.length / 7)) === 0) && <span className="chart-bar-label">{shortDate(d.date)}</span>}
+              </div>)}
+            </div>}
+        </section>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <section className="surface-card report-card">
+            <div className="surface-card-heading"><div><p className="eyebrow">DEMAND</p><h2>Conversion funnel</h2></div></div>
+            {funnel.length === 0
+              ? <div className="dashboard-empty"><strong>{loading ? "Loading…" : "No funnel data"}</strong></div>
+              : <div className="funnel-chart">{funnel.map((step) => <div className="funnel-step" key={step.stage}><span className="funnel-label">{label(step.stage)}</span><div className="funnel-bar" style={{ width: `${Math.max(8, (step.count / funnelMax) * 100)}%` }}><span>{step.count}</span></div></div>)}</div>}
+          </section>
+          <section className="surface-card report-card">
+            <div className="surface-card-heading"><div><p className="eyebrow">ACQUISITION</p><h2>Lead channels</h2></div></div>
+            {channels.length === 0
+              ? <div className="dashboard-empty"><strong>{loading ? "Loading…" : "No channel data"}</strong></div>
+              : <>
+                <div className="donut-chart"><svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>{(() => { let offset = 0; return channels.map((ch, i) => { const pct = totalLeads > 0 ? (ch.leads / totalLeads) * 100 : 0; const el = <circle key={ch.channel} cx="18" cy="18" r="15.5" fill="none" stroke={channelColors[i % channelColors.length]} strokeWidth="5" strokeDasharray={`${pct} ${100 - pct}`} strokeDashoffset={-offset} />; offset += pct; return el; }); })()}</svg><div className="donut-center"><strong>{totalLeads}</strong><small>leads</small></div></div>
+                <div className="donut-legend">{channels.map((ch, i) => <span key={ch.channel}><i style={{ background: channelColors[i % channelColors.length] }} />{ch.channel} ({ch.leads})</span>)}</div>
+              </>}
+          </section>
+        </div>
+        <section className="surface-card report-card">
+          <div className="surface-card-heading"><div><p className="eyebrow">PERFORMANCE</p><h2>Top services</h2></div><span className="muted-mono">{topServices.length} SERVICE{topServices.length !== 1 ? "S" : ""}</span></div>
+          {topServices.length === 0
+            ? <div className="dashboard-empty"><strong>{loading ? "Loading…" : "No service data"}</strong></div>
+            : <div className="invoice-list">{topServices.map((s, i) => <article className="invoice-row" key={s.name}><div className="invoice-mark" style={{ fontSize: "0.85rem", fontWeight: 600 }}>#{i + 1}</div><div className="invoice-main"><h3>{s.name}</h3><p>{s.count} appointment{s.count !== 1 ? "s" : ""} · {money(s.revenue_minor, clinicCurrency)} revenue</p></div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 80, height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}><div style={{ width: `${Math.max(5, (s.count / Math.max(1, topServices[0]?.count ?? 1)) * 100)}%`, height: "100%", background: "linear-gradient(90deg,#274c42,#3d7a6a)", borderRadius: 3 }} /></div></div></article>)}</div>}
+        </section>
+      </>}
 
       {section === "care" && <section className="surface-card report-card">
         <div className="surface-card-heading"><div><p className="eyebrow">CARE FLOW</p><h2>Appointments by state</h2></div><span className="muted-mono">{report.period_days} DAYS</span></div>

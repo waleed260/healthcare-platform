@@ -343,10 +343,10 @@ def reporting_summary(request: Request, days: int = Query(default=30, ge=1, le=3
 
 
 def _parse_range(value: str) -> int:
-    mapping = {"7d": 7, "30d": 30, "90d": 90}
+    mapping = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}
     days = mapping.get(value)
     if days is None:
-        raise _error("INVALID_INPUT", "Range must be 7d, 30d, or 90d.", status.HTTP_400_BAD_REQUEST)
+        raise _error("INVALID_INPUT", "Range must be 7d, 30d, 90d, or 365d.", status.HTTP_400_BAD_REQUEST)
     return days
 
 
