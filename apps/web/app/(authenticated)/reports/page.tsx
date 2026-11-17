@@ -6,12 +6,28 @@ import { api, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useClinicCurrency } from "../_lib/clinic-context";
 
-type Report = { period_days: number; appointments: { status: string; count: number }[]; patients_created: number; leads: { status: string; count: number }[]; financial: { invoices: number; invoiced_minor: number; outstanding_minor: number; paid_minor: number; payment_methods: { method: string; payments: number; paid_minor: number }[]; aging: { bucket: string; invoices: number; outstanding_minor: number }[] } | null; package_utilization: { packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number }; operational: { waiting_patients: number; followups_due: number; no_shows: number; low_inventory: number } };
+type Pair = { current: number; prior: number };
+type Kpis = { appointments: Pair; appointments_completed: Pair; no_shows: Pair; new_patients: Pair; leads: Pair; conversions: Pair; paid_minor?: Pair; invoiced_minor?: Pair; patients_billed?: Pair };
+type Report = { period_days: number; appointments: { status: string; count: number }[]; patients_created: number; leads: { status: string; count: number }[]; kpis: Kpis; financial: { invoices: number; invoiced_minor: number; outstanding_minor: number; outstanding_all_minor: number; paid_minor: number; payment_methods: { method: string; payments: number; paid_minor: number }[]; aging: { bucket: string; invoices: number; outstanding_minor: number }[] } | null; package_utilization: { packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number }; operational: { waiting_patients: number; followups_due: number; no_shows: number; low_inventory: number } };
 type Branch = { id: string; name: string };
 type Session = { permissions?: string[] };
 
 const label = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
+const rate = (num: number, den: number) => (den > 0 ? num / den : 0);
+const pctFmt = (value: number) => `${Math.round(value * 100)}%`;
+// Count/amount KPIs compare as a % change; rate KPIs compare in percentage points.
+const delta = (current: number, prior: number): { label: string; up: boolean } => {
+  if (prior === 0) return { label: current > 0 ? "new" : "—", up: current >= 0 };
+  const change = Math.round(((current - prior) / prior) * 100);
+  return { label: `${change >= 0 ? "+" : ""}${change}% vs prior`, up: change >= 0 };
+};
+const pointDelta = (current: number, prior: number): { label: string; up: boolean } => {
+  const points = Math.round((current - prior) * 100);
+  return { label: `${points >= 0 ? "+" : ""}${points} pts vs prior`, up: points >= 0 };
+};
+// Reuse the Analytics card trend colours; for "lower is better" KPIs an increase is a down-trend.
+const trendCls = (up: boolean, goodWhenUp = true) => (up === goodWhenUp ? "trend-up" : "trend-down");
 
 export default function ReportsPage() {
   const clinicCurrency = useClinicCurrency();
@@ -55,10 +71,12 @@ export default function ReportsPage() {
     report.appointments.forEach((a) => rows.push(["appointments", a.status, String(a.count), ""]));
     rows.push(["patients", "created", String(report.patients_created), ""]);
     report.leads.forEach((l) => rows.push(["leads", l.status, String(l.count), ""]));
+    Object.entries(report.kpis).forEach(([key, pair]) => pair && rows.push(["kpi", key, String(pair.current), String(pair.prior)]));
     if (report.financial) {
       rows.push(["financial", "invoices", String(report.financial.invoices), String(report.financial.invoiced_minor)]);
       rows.push(["financial", "paid", "", String(report.financial.paid_minor)]);
-      rows.push(["financial", "outstanding", "", String(report.financial.outstanding_minor)]);
+      rows.push(["financial", "outstanding_window", "", String(report.financial.outstanding_minor)]);
+      rows.push(["financial", "outstanding_all_open", "", String(report.financial.outstanding_all_minor)]);
       report.financial.payment_methods.forEach((m) => rows.push(["payment_method", m.method, String(m.payments), String(m.paid_minor)]));
       report.financial.aging.forEach((b) => rows.push(["aging", b.bucket, String(b.invoices), String(b.outstanding_minor)]));
     }
@@ -77,12 +95,30 @@ export default function ReportsPage() {
   const appointmentTotal = useMemo(() => report?.appointments.reduce((total, item) => total + item.count, 0) ?? 0, [report]);
   const leadTotal = useMemo(() => report?.leads.reduce((total, item) => total + item.count, 0) ?? 0, [report]);
   const maxAppointment = Math.max(...(report?.appointments.map((item) => item.count) ?? [1]), 1);
+  const kpiView = useMemo(() => {
+    if (!report) return null;
+    const k = report.kpis;
+    const fin = k.paid_minor && k.invoiced_minor && k.patients_billed ? { paid: k.paid_minor, invoiced: k.invoiced_minor, billed: k.patients_billed } : null;
+    const perPatient = (paid: number, patients: number) => (patients > 0 ? paid / patients : 0);
+    return {
+      hero: {
+        appointments: delta(k.appointments.current, k.appointments.prior),
+        newPatients: delta(k.new_patients.current, k.new_patients.prior),
+        leads: delta(k.leads.current, k.leads.prior),
+      },
+      conversion: { value: pctFmt(rate(k.conversions.current, k.leads.current)), d: pointDelta(rate(k.conversions.current, k.leads.current), rate(k.conversions.prior, k.leads.prior)) },
+      showUp: { value: pctFmt(rate(k.appointments_completed.current, k.appointments.current)), d: pointDelta(rate(k.appointments_completed.current, k.appointments.current), rate(k.appointments_completed.prior, k.appointments.prior)) },
+      noShow: { value: pctFmt(rate(k.no_shows.current, k.appointments.current)), d: pointDelta(rate(k.no_shows.current, k.appointments.current), rate(k.no_shows.prior, k.appointments.prior)) },
+      collection: fin ? { value: pctFmt(rate(fin.paid.current, fin.invoiced.current)), d: pointDelta(rate(fin.paid.current, fin.invoiced.current), rate(fin.paid.prior, fin.invoiced.prior)) } : null,
+      revPerPatient: fin ? { value: money(Math.round(perPatient(fin.paid.current, fin.billed.current)), clinicCurrency), d: delta(perPatient(fin.paid.current, fin.billed.current), perPatient(fin.paid.prior, fin.billed.prior)) } : null,
+    };
+  }, [report, clinicCurrency]);
   return <main className="workspace-page reports-page">
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">BUSINESS</p>
         <h1>See the clinic <em>clearly.</em></h1>
-        <p className="workspace-page-intro">Demand, care, cash, and the operational edges that need attention.</p>
+        <p className="workspace-page-intro">Demand, care, cash, and the operational edges that need attention. For day-by-day trends and charts, open <Link className="text-link" href="/analytics">Analytics ↗</Link></p>
       </div>
       <div className="header-actions">
         <label className="report-period">Window
@@ -110,10 +146,20 @@ export default function ReportsPage() {
 
     {report && <>
       <div className="report-hero-grid">
-        <div className="report-hero-card report-hero-dark"><span className="eyebrow">APPOINTMENTS</span><strong>{appointmentTotal}</strong><p>appointments in the last {report.period_days} days</p></div>
-        <div className="report-hero-card"><span className="eyebrow">NEW PATIENTS</span><strong>{report.patients_created}</strong><p>new patient records created</p></div>
-        <div className="report-hero-card report-hero-warm"><span className="eyebrow">LEADS</span><strong>{leadTotal}</strong><p>enquiries entering the pipeline</p></div>
+        <div className="report-hero-card report-hero-dark"><span className="eyebrow">APPOINTMENTS</span><strong>{appointmentTotal}</strong><p>appointments in the last {report.period_days} days{kpiView && <> · <span className={trendCls(kpiView.hero.appointments.up)}>{kpiView.hero.appointments.label}</span></>}</p></div>
+        <div className="report-hero-card"><span className="eyebrow">NEW PATIENTS</span><strong>{report.patients_created}</strong><p>new patient records created{kpiView && <> · <span className={trendCls(kpiView.hero.newPatients.up)}>{kpiView.hero.newPatients.label}</span></>}</p></div>
+        <div className="report-hero-card report-hero-warm"><span className="eyebrow">LEADS</span><strong>{leadTotal}</strong><p>enquiries entering the pipeline{kpiView && <> · <span className={trendCls(kpiView.hero.leads.up)}>{kpiView.hero.leads.label}</span></>}</p></div>
       </div>
+
+      {kpiView && <div className="analytics-grid report-kpi-grid">
+        <div className="analytics-card"><p className="eyebrow">LEAD → PATIENT</p><strong>{kpiView.conversion.value}</strong><small className={trendCls(kpiView.conversion.d.up)}>{kpiView.conversion.d.label}</small></div>
+        <div className="analytics-card"><p className="eyebrow">SHOW-UP RATE</p><strong>{kpiView.showUp.value}</strong><small className={trendCls(kpiView.showUp.d.up)}>{kpiView.showUp.d.label}</small></div>
+        <div className="analytics-card"><p className="eyebrow">NO-SHOW RATE</p><strong>{kpiView.noShow.value}</strong><small className={trendCls(kpiView.noShow.d.up, false)}>{kpiView.noShow.d.label}</small></div>
+        {kpiView.collection && <div className="analytics-card"><p className="eyebrow">COLLECTION RATE</p><strong>{kpiView.collection.value}</strong><small className={trendCls(kpiView.collection.d.up)}>{kpiView.collection.d.label}</small></div>}
+        {kpiView.revPerPatient && <div className="analytics-card"><p className="eyebrow">REVENUE / PATIENT</p><strong>{kpiView.revPerPatient.value}</strong><small className={trendCls(kpiView.revPerPatient.d.up)}>{kpiView.revPerPatient.d.label}</small></div>}
+      </div>}
+
+      {branchId && <p className="report-branch-note">New patients, cash position, packages, waiting patients and follow-ups are clinic-wide — those records carry no branch, so the branch filter does not change them.</p>}
 
       <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist" aria-label="Report sections">
         <button role="tab" aria-selected={section === "care"} className={section === "care" ? "active" : ""} onClick={() => setSection("care")}>Care Flow</button>
@@ -143,9 +189,9 @@ export default function ReportsPage() {
       {section === "cash" && <section className="surface-card report-card">
         <div className="surface-card-heading"><div><p className="eyebrow">CASH POSITION</p><h2>Collected and open</h2></div><span className="muted-mono">AUTHORIZED VIEW</span></div>
         {report.financial ? <div className="report-finance">
-          <div><span>Paid</span><strong>{money(report.financial.paid_minor, clinicCurrency)}</strong></div>
-          <div><span>Outstanding</span><strong>{money(report.financial.outstanding_minor, clinicCurrency)}</strong></div>
-          <small>{report.financial.invoices} invoices issued in this window.</small>
+          <div><span>Collected · this period</span><strong>{money(report.financial.paid_minor, clinicCurrency)}</strong></div>
+          <div><span>Outstanding · all open</span><strong>{money(report.financial.outstanding_all_minor, clinicCurrency)}</strong></div>
+          <small>{report.financial.invoices} invoices issued in this window; outstanding and the aging buckets below cover every open invoice.</small>
           <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor, clinicCurrency)}</span>)}</div>
           <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor, clinicCurrency)}</span>)}</div>
         </div> : <div className="dashboard-empty"><strong>Financial data restricted</strong><span>Your role does not include billing.read.</span></div>}

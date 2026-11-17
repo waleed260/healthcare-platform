@@ -32,6 +32,7 @@ const navGroups: NavGroup[] = [
     { href: "/finance", label: "Finance", icon: "∑", permission: "billing.read" },
     { href: "/packages", label: "Packages", icon: "❑", permission: "package.read" },
     { href: "/reports", label: "Reports", icon: "▤", permission: "report.read" },
+    { href: "/analytics", label: "Analytics", icon: "◈", permission: "report.read" },
     { href: "/inventory", label: "Inventory", icon: "◌", permission: "inventory.read" },
   ]},
   { key: "website", label: "WEBSITE", items: [
@@ -39,7 +40,6 @@ const navGroups: NavGroup[] = [
     { href: "/content", label: "Content", icon: "✎", permission: "website.read" },
     { href: "/domains", label: "Domains", icon: "◎", permission: "website.read" },
     { href: "/media", label: "Media", icon: "▣", permission: "website.read" },
-    { href: "/analytics", label: "Analytics", icon: "◈", permission: "report.read" },
   ]},
   { key: "manage", label: "MANAGEMENT", items: [
     { href: "/manage", label: "Manage", icon: "⚙", permission: "clinic.update" },

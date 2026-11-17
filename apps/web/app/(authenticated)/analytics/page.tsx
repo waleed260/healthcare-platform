@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage, money } from "../_lib/client";
 import { useClinicCurrency } from "../_lib/clinic-context";
@@ -66,8 +67,10 @@ export default function AnalyticsPage() {
   useEffect(() => { void load(); }, [load]);
 
   const totals = useMemo(() => {
+    // Compare the last `half` days to the `half` days before — equal-length windows, so an odd
+    // number of rows (an even `days`) drops the middle day instead of skewing the recent half.
     const half = Math.floor(daily.length / 2);
-    const recent = daily.slice(half);
+    const recent = daily.slice(daily.length - half);
     const prior = daily.slice(0, half);
     const sum = (arr: DailyStat[], key: keyof DailyStat) => arr.reduce((s, d) => s + (d[key] as number), 0);
     return {
@@ -94,7 +97,7 @@ export default function AnalyticsPage() {
       <div>
         <p className="eyebrow">INSIGHTS · PERFORMANCE</p>
         <h1>Know your <em>numbers.</em></h1>
-        <p className="workspace-page-intro">Track appointments, revenue, patient acquisition, and conversion across your clinic.</p>
+        <p className="workspace-page-intro">Track appointments, revenue, patient acquisition, and conversion across your clinic. For the period summary and cash position, open <Link className="text-link" href="/reports">Reports ↗</Link></p>
       </div>
       <div className="header-actions">
         <div className="pipeline-tabs" role="tablist">
