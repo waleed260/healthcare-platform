@@ -8,7 +8,11 @@ import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Pair = { current: number; prior: number };
 type Kpis = { appointments: Pair; appointments_completed: Pair; no_shows: Pair; new_patients: Pair; leads: Pair; conversions: Pair; paid_minor?: Pair; invoiced_minor?: Pair; patients_billed?: Pair };
-type Report = { period_days: number; appointments: { status: string; count: number }[]; patients_created: number; leads: { status: string; count: number }[]; kpis: Kpis; financial: { invoices: number; invoiced_minor: number; outstanding_minor: number; outstanding_all_minor: number; paid_minor: number; payment_methods: { method: string; payments: number; paid_minor: number }[]; aging: { bucket: string; invoices: number; outstanding_minor: number }[] } | null; package_utilization: { packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number }; operational: { waiting_patients: number; followups_due: number; no_shows: number; low_inventory: number } };
+type Financial = { invoices: number; invoiced_minor: number; outstanding_minor: number; outstanding_all_minor: number; paid_minor: number; collected_minor: number; refunds_minor: number; net_collected_minor: number; payment_methods: { method: string; payments: number; paid_minor: number }[]; aging: { bucket: string; invoices: number; outstanding_minor: number }[] };
+type QueueStats = { arrivals: number; completed: number; cancelled: number; waiting_now: number; in_service_now: number; backlog: number; avg_wait_seconds: number; wait_samples: number };
+type FollowUpHealth = { overdue: number; due_today: number; upcoming: number; completed: number };
+type InventoryHealth = { tracked: number; in_stock: number; low_stock: number; out_of_stock: number };
+type Report = { period_days: number; appointments: { status: string; count: number }[]; patients_created: number; leads: { status: string; count: number }[]; kpis: Kpis; financial: Financial | null; queue: QueueStats; package_utilization: { packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number }; operational: { waiting_patients: number; followups_due: number; no_shows: number; low_inventory: number; followups: FollowUpHealth; inventory: InventoryHealth } };
 type Branch = { id: string; name: string };
 type Session = { permissions?: string[] };
 type DailyStat = { date: string; appointments: number; new_patients: number; revenue_minor: number; no_shows: number };
@@ -23,6 +27,7 @@ const channelColors = ["#274c42", "#3d7a6a", "#5ba894", "#8cc5b3", "#b84f38", "#
 const rangeForDays = (value: string) => (value === "7" ? "7d" : value === "90" ? "90d" : value === "365" ? "365d" : "30d");
 const money = (minor: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
 const rate = (num: number, den: number) => (den > 0 ? num / den : 0);
+const duration = (s: number) => (s >= 3600 ? `${Math.round(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${Math.round(s)}s`);
 const pctFmt = (value: number) => `${Math.round(value * 100)}%`;
 // Count/amount KPIs compare as a % change; rate KPIs compare in percentage points.
 const delta = (current: number, prior: number): { label: string; up: boolean } => {
@@ -97,14 +102,19 @@ export default function ReportsPage() {
     Object.entries(report.kpis).forEach(([key, pair]) => pair && rows.push(["kpi", key, String(pair.current), String(pair.prior)]));
     if (report.financial) {
       rows.push(["financial", "invoices", String(report.financial.invoices), String(report.financial.invoiced_minor)]);
-      rows.push(["financial", "paid", "", String(report.financial.paid_minor)]);
+      rows.push(["financial", "collected", "", String(report.financial.collected_minor)]);
+      rows.push(["financial", "refunds", "", String(report.financial.refunds_minor)]);
+      rows.push(["financial", "net_collected", "", String(report.financial.net_collected_minor)]);
       rows.push(["financial", "outstanding_window", "", String(report.financial.outstanding_minor)]);
       rows.push(["financial", "outstanding_all_open", "", String(report.financial.outstanding_all_minor)]);
       report.financial.payment_methods.forEach((m) => rows.push(["payment_method", m.method, String(m.payments), String(m.paid_minor)]));
       report.financial.aging.forEach((b) => rows.push(["aging", b.bucket, String(b.invoices), String(b.outstanding_minor)]));
     }
+    Object.entries(report.queue).forEach(([k, v]) => rows.push(["queue", k, String(v), ""]));
     Object.entries(report.package_utilization).forEach(([k, v]) => rows.push(["packages", k, String(v), ""]));
-    Object.entries(report.operational).forEach(([k, v]) => rows.push(["operational", k, String(v), ""]));
+    (["waiting_patients", "followups_due", "no_shows", "low_inventory"] as const).forEach((k) => rows.push(["operational", k, String(report.operational[k]), ""]));
+    Object.entries(report.operational.followups).forEach(([k, v]) => rows.push(["followups", k, String(v), ""]));
+    Object.entries(report.operational.inventory).forEach(([k, v]) => rows.push(["inventory", k, String(v), ""]));
     const csv = rows.map((r) => r.map((c) => `"${c.replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
@@ -185,7 +195,7 @@ export default function ReportsPage() {
         {kpiView.revPerPatient && <div className="analytics-card"><p className="eyebrow">REVENUE / PATIENT</p><strong>{kpiView.revPerPatient.value}</strong><small className={trendCls(kpiView.revPerPatient.d.up)}>{kpiView.revPerPatient.d.label}</small></div>}
       </div>}
 
-      {branchId && <p className="report-branch-note">New patients, cash position, packages, waiting patients, follow-ups and the trend charts are clinic-wide — those records carry no branch, so the branch filter does not change them.</p>}
+      {branchId && <p className="report-branch-note">New patients, cash position, packages, queue demand, follow-ups and the trend charts are clinic-wide — those records carry no branch, so the branch filter does not change them. Appointments, leads and inventory are branch-filtered.</p>}
 
       <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist" aria-label="Report sections">
         <button role="tab" aria-selected={section === "trends"} className={section === "trends" ? "active" : ""} onClick={() => setSection("trends")}>Trends</button>
@@ -242,36 +252,79 @@ export default function ReportsPage() {
       </section>}
 
       {section === "demand" && <section className="surface-card report-card">
-        <div className="surface-card-heading"><div><p className="eyebrow">DEMAND</p><h2>Lead pipeline</h2></div><span className="muted-mono">{leadTotal} TOTAL</span></div>
-        <div className="report-list">
-          {report.leads.length === 0 && <div className="dashboard-empty"><strong>No lead activity</strong><span>New enquiries will appear here as they arrive.</span></div>}
-          {report.leads.map((item) => <div className="report-list-row" key={item.status}><span className={`pipeline-status status-${item.status}`}>{label(item.status)}</span><strong>{item.count}</strong></div>)}
+        <div className="surface-card-heading"><div><p className="eyebrow">DEMAND</p><h2>Queue activity</h2></div><span className="muted-mono">{report.queue.backlog} IN QUEUE NOW</span></div>
+        <div className="report-health-grid">
+          <div><strong className={report.queue.backlog > 0 ? "report-warn" : ""}>{report.queue.backlog}</strong><span>current backlog</span></div>
+          <div><strong>{report.queue.waiting_now}</strong><span>waiting now</span></div>
+          <div><strong>{report.queue.in_service_now}</strong><span>in consultation</span></div>
+          <div><strong>{report.queue.arrivals}</strong><span>arrivals · {report.period_days}d</span></div>
+          <div><strong>{report.queue.completed}</strong><span>seen · {report.period_days}d</span></div>
+          <div><strong>{report.queue.cancelled}</strong><span>left queue · {report.period_days}d</span></div>
+          <div><strong>{report.queue.wait_samples > 0 ? duration(report.queue.avg_wait_seconds) : "—"}</strong><span>{report.queue.wait_samples > 0 ? `avg wait to be seen (${report.queue.wait_samples})` : "avg wait · no data"}</span></div>
         </div>
+        <small className="report-section-note">Live patient flow from the reception queue — not planned appointments. Backlog is point-in-time; arrivals, seen and left-queue cover the selected window by check-in date.</small>
         <div className="report-card-links"><Link className="text-link" href="/queue">Open Queue <span>↗</span></Link></div>
       </section>}
 
       {section === "cash" && <section className="surface-card report-card">
         <div className="surface-card-heading"><div><p className="eyebrow">CASH POSITION</p><h2>Collected and open</h2></div><span className="muted-mono">AUTHORIZED VIEW</span></div>
         {report.financial ? <div className="report-finance">
-          <div><span>Collected · this period</span><strong>{money(report.financial.paid_minor, clinicCurrency)}</strong></div>
+          <div><span>Collected · this period</span><strong>{money(report.financial.collected_minor, clinicCurrency)}</strong></div>
+          <div><span>Refunds · this period</span><strong className={report.financial.refunds_minor > 0 ? "report-warn" : ""}>{money(report.financial.refunds_minor, clinicCurrency)}</strong></div>
+          <div><span>Net collected · this period</span><strong>{money(report.financial.net_collected_minor, clinicCurrency)}</strong></div>
           <div><span>Outstanding · all open</span><strong>{money(report.financial.outstanding_all_minor, clinicCurrency)}</strong></div>
-          <small>{report.financial.invoices} invoices issued in this window; outstanding and the aging buckets below cover every open invoice.</small>
+          <small>Collected counts successful payments by payment date; net collected subtracts refunds recorded in this window. {report.financial.invoices} invoices issued in this window; outstanding and the aging buckets below cover every open invoice.</small>
           <div className="report-mini-list"><strong>Payment methods</strong>{report.financial.payment_methods.map((item) => <span key={item.method}>{label(item.method)} · {money(item.paid_minor, clinicCurrency)}</span>)}</div>
           <div className="report-mini-list"><strong>Outstanding aging</strong>{report.financial.aging.map((item) => <span key={item.bucket}>{label(item.bucket)} · {money(item.outstanding_minor, clinicCurrency)}</span>)}</div>
         </div> : <div className="dashboard-empty"><strong>Financial data restricted</strong><span>Your role does not include billing.read.</span></div>}
         <div className="report-card-links"><Link className="text-link" href="/billing">Open Billing <span>↗</span></Link><Link className="text-link" href="/finance">Open Finance <span>↗</span></Link></div>
       </section>}
 
-      {section === "ops" && <section className="surface-card report-card">
-        <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONAL HEALTH</p><h2>Where attention is due</h2></div></div>
-        <div className="report-health-grid">
-          <div><strong>{report.operational.waiting_patients}</strong><span>waiting patients</span></div>
-          <div><strong>{report.operational.followups_due}</strong><span>follow-ups due</span></div>
-          <div><strong>{report.operational.no_shows}</strong><span>no-shows</span></div>
-          <div><strong>{report.operational.low_inventory}</strong><span>low-stock items</span></div>
-        </div>
-        <div className="report-card-links"><Link className="text-link" href="/operations">Follow-ups <span>↗</span></Link><Link className="text-link" href="/leads">Leads <span>↗</span></Link><Link className="text-link" href="/inventory">Inventory <span>↗</span></Link></div>
-      </section>}
+      {section === "ops" && (() => {
+        const fu = report.operational.followups;
+        const fuOpen = fu.overdue + fu.due_today + fu.upcoming;
+        const fuCompletion = rate(fu.completed, fu.completed + fuOpen);
+        const inv = report.operational.inventory;
+        const leadBy = (s: string) => report.leads.find((l) => l.status === s)?.count ?? 0;
+        const needsAttention = leadBy("new") + leadBy("contacted");
+        return <>
+          <section className="surface-card report-card">
+            <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONAL HEALTH · FOLLOW-UPS</p><h2>Follow-up tasks</h2></div><span className="muted-mono">{pctFmt(fuCompletion)} DONE</span></div>
+            <div className="report-health-grid">
+              <div><strong className={fu.overdue > 0 ? "report-warn" : ""}>{fu.overdue}</strong><span>overdue</span></div>
+              <div><strong>{fu.due_today}</strong><span>due today</span></div>
+              <div><strong>{fu.upcoming}</strong><span>upcoming</span></div>
+              <div><strong>{fu.completed}</strong><span>completed · {report.period_days}d</span></div>
+            </div>
+            <small className="report-section-note">Open tasks by actual due date; overdue means the due date has passed and the task is still open. Clinic-wide — follow-ups carry no branch.</small>
+            <div className="report-card-links"><Link className="text-link" href="/operations">Open Follow-ups <span>↗</span></Link><Link className="text-link" href="/operations?status=completed">Completed <span>↗</span></Link></div>
+          </section>
+          <section className="surface-card report-card">
+            <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONAL HEALTH · LEADS</p><h2>Lead pipeline</h2></div><span className="muted-mono">{leadTotal} TOTAL</span></div>
+            {report.leads.length === 0
+              ? <div className="dashboard-empty"><strong>No lead activity</strong><span>New enquiries will appear here as they arrive.</span></div>
+              : <div className="report-health-grid">
+                <div><strong className={needsAttention > 0 ? "report-warn" : ""}>{needsAttention}</strong><span>need attention</span></div>
+                <div><strong>{leadBy("qualified")}</strong><span>qualified</span></div>
+                <div><strong>{report.kpis.conversions.current}</strong><span>converted</span></div>
+                <div><strong>{leadBy("lost")}</strong><span>lost</span></div>
+                <div><strong>{kpiView?.conversion.value ?? "—"}</strong><span>conversion rate</span></div>
+              </div>}
+            <small className="report-section-note">A lead counts as converted once it is linked to a patient. &ldquo;Need attention&rdquo; is new and contacted leads not yet qualified.</small>
+            <div className="report-card-links"><Link className="text-link" href="/leads">Open Leads <span>↗</span></Link><Link className="text-link" href="/leads?status=qualified">Qualified <span>↗</span></Link><Link className="text-link" href="/leads?status=lost">Lost <span>↗</span></Link></div>
+          </section>
+          <section className="surface-card report-card">
+            <div className="surface-card-heading"><div><p className="eyebrow">OPERATIONAL HEALTH · INVENTORY</p><h2>Stock levels</h2></div><span className="muted-mono">{inv.tracked} TRACKED</span></div>
+            <div className="report-health-grid">
+              <div><strong>{inv.in_stock}</strong><span>in stock</span></div>
+              <div><strong className={inv.low_stock > 0 ? "report-warn" : ""}>{inv.low_stock}</strong><span>low stock</span></div>
+              <div><strong className={inv.out_of_stock > 0 ? "report-warn" : ""}>{inv.out_of_stock}</strong><span>out of stock</span></div>
+            </div>
+            <small className="report-section-note">On-hand stock per branch-product against each product&rsquo;s reorder threshold. Low excludes out-of-stock; the schema tracks no reservations or expiry.</small>
+            <div className="report-card-links"><Link className="text-link" href="/inventory">Open Inventory <span>↗</span></Link></div>
+          </section>
+        </>;
+      })()}
 
       <section className="surface-card report-card report-package-card">
         <div className="surface-card-heading"><div><p className="eyebrow">TREATMENT PACKAGES</p><h2>Sessions in motion</h2></div><span className="muted-mono">{report.package_utilization.packages} PACKAGES</span></div>

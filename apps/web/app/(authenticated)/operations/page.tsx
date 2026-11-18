@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, post, redirectToLogin } from "../_lib/client";
 import FollowUpDrawer from "../_lib/follow-up-drawer";
@@ -43,8 +44,9 @@ export default function OperationsPage() {
   const [addFollowUpOpen, setAddFollowUpOpen] = useState(false);
   const [hasMoreFollowUps, setHasMoreFollowUps] = useState(false);
   const [hasMoreNotifications, setHasMoreNotifications] = useState(false);
+  const searchParams = useSearchParams();
   const [priorityFilter, setPriorityFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(() => { const s = searchParams.get("status"); return ["due", "contacted", "booked", "completed"].includes(s ?? "") ? (s as string) : ""; });
   const [pushState, setPushState] = useState<PushState>("checking");
   const [pushKey, setPushKey] = useState<string | null>(null);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Lead = { id: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; source: string; campaign: string | null; status: string; specialty_id: string | null; requested_service_id: string | null; branch_id: string | null; assigned_to_user_id: string | null; converted_to_patient_id: string | null; lost_reason: string | null; notes: string | null; created_at: string; version: number };
@@ -30,7 +31,8 @@ import { api, apiPage, writeHeaders } from "../_lib/client";
 import AddAppointmentDrawer from "../_lib/add-appointment-drawer";
 
 export default function LeadsPage() {
-  const [leads, setLeads] = useState<Lead[]>([]); const [specialties, setSpecialties] = useState<Specialty[]>([]); const [services, setServices] = useState<Service[]>([]); const [branches, setBranches] = useState<Branch[]>([]); const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]); const [permissions, setPermissions] = useState<string[]>([]); const [filter, setFilter] = useState("all"); const [showForm, setShowForm] = useState(false); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null); const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const [leads, setLeads] = useState<Lead[]>([]); const [specialties, setSpecialties] = useState<Specialty[]>([]); const [services, setServices] = useState<Service[]>([]); const [branches, setBranches] = useState<Branch[]>([]); const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]); const [permissions, setPermissions] = useState<string[]>([]); const [filter, setFilter] = useState(() => { const s = searchParams.get("status"); return s && (s === "all" || s === "archived" || stages.includes(s)) ? s : "all"; }); const [showForm, setShowForm] = useState(false); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [busy, setBusy] = useState<string | null>(null); const [error, setError] = useState<string | null>(null); const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [fullName, setFullName] = useState(""); const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [source, setSource] = useState("website"); const [specialtyId, setSpecialtyId] = useState(""); const [campaign, setCampaign] = useState(""); const [requestedServiceId, setRequestedServiceId] = useState(""); const [branchId, setBranchId] = useState(""); const [assignedToUserId, setAssignedToUserId] = useState(""); const [leadNotes, setLeadNotes] = useState("");
   const [lostLeadId, setLostLeadId] = useState<string | null>(null); const [lostReason, setLostReason] = useState("");
   const [bookingLead, setBookingLead] = useState<Lead | null>(null);
