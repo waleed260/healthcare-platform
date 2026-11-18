@@ -6,10 +6,10 @@ from app.core.security import hash_token
 from app.modules.identity.service import authenticate, create_manual_reset
 
 
-def test_platform_user_uses_short_session_and_opt_in_mfa(monkeypatch):
-    # MFA is opt-in since 221fa0d: an un-enrolled platform user lands straight in
-    # the workspace. Short-session enforcement (30min idle / 24h absolute) must
-    # still hold regardless of MFA state.
+def test_platform_admin_uses_short_session_and_mandatory_mfa(monkeypatch):
+    # Platform admins are MFA-mandatory: an un-enrolled platform admin must enroll an
+    # authenticator before reaching the workspace, so the session starts un-verified and
+    # flags enrollment. Short-session enforcement (30min idle / 24h absolute) holds too.
     user_id = uuid4()
     db = Mock()
     db.execute.side_effect = [
@@ -20,6 +20,7 @@ def test_platform_user_uses_short_session_and_opt_in_mfa(monkeypatch):
             "display_name": "Platform Operator",
             "password_hash": "stored",
             "status": "active",
+            "is_platform_admin": True,
         })),
         Mock(),
         Mock(mappings=lambda: Mock(one=lambda: {"mfa_enrolled": False})),
@@ -33,16 +34,17 @@ def test_platform_user_uses_short_session_and_opt_in_mfa(monkeypatch):
 
     result = authenticate(db, "operator@example.test", "StrongPassword1", "192.0.2.1", None)
 
-    assert result.mfa_required is False
-    assert result.mfa_enrollment_required is False
+    assert result.mfa_required is True
+    assert result.mfa_enrollment_required is True
     session_params = db.execute.call_args_list[4].args[1]
+    assert session_params["mfa_verified"] is False
     assert session_params["absolute_expires_at"] - session_params["idle_expires_at"] == timedelta(hours=23, minutes=30)
 
 
 def test_clinic_owner_login_sets_context_before_forced_rls_query(monkeypatch):
     # The regression this protects: authenticate() must set tenant context
     # before any clinic-scoped query runs (e.g. the mfa_methods lookup under
-    # forced RLS). MFA has been opt-in since 221fa0d, so no enrollment flag.
+    # forced RLS). A clinic owner is not a platform admin, so MFA stays opt-in.
     user_id = uuid4()
     clinic_id = uuid4()
     db = Mock()
@@ -54,6 +56,7 @@ def test_clinic_owner_login_sets_context_before_forced_rls_query(monkeypatch):
             "display_name": "Synthetic Owner",
             "password_hash": "stored",
             "status": "active",
+            "is_platform_admin": False,
         })),
         Mock(),
         Mock(mappings=lambda: Mock(one=lambda: {"mfa_enrolled": False})),
