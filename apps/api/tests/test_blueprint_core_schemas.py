@@ -1,7 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from app.modules.blueprint_core.schemas import InvoiceCreate, LeadCreate, LeadUpdate, PaymentCreate, SpecialtyEnable
+from app.modules.blueprint_core.schemas import (
+    InvoiceCreate,
+    LeadCreate,
+    LeadUpdate,
+    PaymentCreate,
+    SpecialtyEnable,
+)
 
 
 def test_specialty_enable_uses_safe_platform_code():
