@@ -11,10 +11,10 @@ def test_specialty_enable_uses_safe_platform_code():
 
 
 def test_lead_create_is_strict_and_lead_update_requires_a_change():
-    lead = LeadCreate(full_name="Prospect", source="website")
+    lead = LeadCreate(full_name="Prospect", source="website", phone="0300 1234567")
     assert lead.full_name == "Prospect"
     with pytest.raises(ValidationError):
-        LeadCreate(full_name="Prospect", source="website", unsupported=True)
+        LeadCreate(full_name="Prospect", source="website", phone="0300 1234567", unsupported=True)
     with pytest.raises(ValidationError):
         LeadUpdate(expected_version=1)
 
