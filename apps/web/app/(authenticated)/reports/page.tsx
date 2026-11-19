@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../_lib/client";
 import { useToast } from "../_lib/toast";
 import { useClinicCurrency } from "../_lib/clinic-context";
+import ReportBuilder from "./report-builder";
 
 type Pair = { current: number; prior: number };
 type Kpis = { appointments: Pair; appointments_completed: Pair; no_shows: Pair; new_patients: Pair; leads: Pair; conversions: Pair; paid_minor?: Pair; invoiced_minor?: Pair; patients_billed?: Pair };
@@ -51,7 +52,7 @@ export default function ReportsPage() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [section, setSection] = useState<"trends" | "care" | "demand" | "cash" | "ops">("trends");
+  const [section, setSection] = useState<"trends" | "care" | "demand" | "cash" | "ops" | "builder">("trends");
   const [daily, setDaily] = useState<DailyStat[]>([]);
   const [channels, setChannels] = useState<ChannelStat[]>([]);
   const [funnel, setFunnel] = useState<FunnelStep[]>([]);
@@ -203,7 +204,10 @@ export default function ReportsPage() {
         <button role="tab" aria-selected={section === "demand"} className={section === "demand" ? "active" : ""} onClick={() => setSection("demand")}>Demand</button>
         <button role="tab" aria-selected={section === "cash"} className={section === "cash" ? "active" : ""} onClick={() => setSection("cash")}>Cash Position</button>
         <button role="tab" aria-selected={section === "ops"} className={section === "ops" ? "active" : ""} onClick={() => setSection("ops")}>Operational Health</button>
+        <button role="tab" aria-selected={section === "builder"} className={section === "builder" ? "active" : ""} onClick={() => setSection("builder")}>Report Builder</button>
       </div></div>
+
+      {section === "builder" && <ReportBuilder canManage={permissions.includes("report.manage")} />}
 
       {section === "trends" && <>
         <section className="surface-card report-card">
@@ -326,14 +330,14 @@ export default function ReportsPage() {
         </>;
       })()}
 
-      <section className="surface-card report-card report-package-card">
+      {section !== "builder" && <section className="surface-card report-card report-package-card">
         <div className="surface-card-heading"><div><p className="eyebrow">TREATMENT PACKAGES</p><h2>Sessions in motion</h2></div><span className="muted-mono">{report.package_utilization.packages} PACKAGES</span></div>
         <div className="report-health-grid">
           <div><strong>{report.package_utilization.sessions_purchased}</strong><span>sessions purchased</span></div>
           <div><strong>{report.package_utilization.sessions_used}</strong><span>sessions used</span></div>
           <div><strong>{report.package_utilization.sessions_remaining}</strong><span>sessions remaining</span></div>
         </div>
-      </section>
+      </section>}
     </>}
   </main>;
 }

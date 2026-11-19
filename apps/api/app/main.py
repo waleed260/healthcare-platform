@@ -15,6 +15,7 @@ from app.modules.staff.routes import router as staff_router
 from app.modules.websites.routes import router as websites_router, public_router as public_websites_router
 from app.modules.appointments.routes import router as appointments_router, availability_router, catalog_router as public_catalog_router, appointment_router, management_router, question_router
 from app.modules.operations.routes import router as operations_router
+from app.modules.reports.routes import router as reports_router
 from app.modules.crm.routes import router as crm_router, tags_router as crm_tags_router
 from app.modules.files.routes import router as files_router
 from app.modules.governance.routes import router as governance_router
@@ -109,6 +110,7 @@ app.include_router(appointment_router)
 app.include_router(management_router)
 app.include_router(question_router)
 app.include_router(operations_router)
+app.include_router(reports_router)
 app.include_router(crm_router)
 app.include_router(crm_tags_router)
 app.include_router(files_router)

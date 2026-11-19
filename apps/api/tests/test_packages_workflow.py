@@ -1,0 +1,125 @@
+"""Packages backend workflow (PART 1) — real endpoints, real PostgreSQL + RLS.
+
+Drives create → add service → detail → edit → deactivate/activate → sell (with
+idempotency) → consume → exhaust → overview as a clinic 'owner', and checks a
+foreign tenant cannot see the package. Business + financial-integrity focused.
+"""
+import os
+from datetime import timedelta
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine, text
+
+from app.core.security import hash_token, new_opaque_token, utc_now
+from app.db.session import SessionLocal
+from app.db.tenant import set_tenant_context
+from app.modules.packages import routes as pkg
+from app.modules.packages.schemas import (
+    PackageConsume, PackageCreate, PackagePurchase, PackageServiceCreate,
+    PackageStatusUpdate, PackageUpdate,
+)
+
+pytestmark = pytest.mark.integration
+
+CSRF = "c" * 32
+
+
+def _req():
+    return SimpleNamespace(headers={"origin": "http://localhost:3000"}, state=SimpleNamespace(request_id=str(uuid4())))
+
+
+def _admin():
+    if not os.getenv("TEST_ADMIN_DATABASE_URL") or not os.getenv("TEST_DATABASE_URL"):
+        pytest.skip("PostgreSQL integration URLs are not configured")
+    return create_engine(os.getenv("TEST_ADMIN_DATABASE_URL"))
+
+
+def test_packages_full_workflow() -> None:
+    admin = _admin()
+    clinic, user, patient, service = uuid4(), uuid4(), uuid4(), uuid4()
+    token = new_opaque_token()
+    now = utc_now()
+    try:
+        with admin.begin() as c:
+            c.execute(text("INSERT INTO clinics (id, name, slug) VALUES (:id, 'Pkg Clinic', :slug)"), {"id": clinic, "slug": f"pkg-{clinic}"})
+            c.execute(text("INSERT INTO users (id, clinic_id, normalized_email, display_name, password_hash, status) VALUES (:id, :c, :e, 'Manager', 'x', 'active')"), {"id": user, "c": clinic, "e": f"mgr-{user}@t.local"})
+            # 'manager' holds the same package.* permissions as owner (migration 0050) but
+            # is not subject to the last-active-owner trigger, keeping teardown clean.
+            c.execute(text("INSERT INTO user_roles (clinic_id, user_id, role_id) SELECT :c, :u, r.id FROM roles r WHERE r.name='manager' AND r.clinic_id IS NULL"), {"c": clinic, "u": user})
+            c.execute(text("INSERT INTO services (id, clinic_id, name, duration_minutes) VALUES (:id, :c, 'Laser', 30)"), {"id": service, "c": clinic})
+            c.execute(text("INSERT INTO patients (id, clinic_id, patient_number, full_name) VALUES (:id, :c, 'P-1', 'Pkg Patient')"), {"id": patient, "c": clinic})
+            c.execute(text("""INSERT INTO sessions (user_id, token_hash, csrf_token_hash, mfa_verified, ip_hash, idle_expires_at, absolute_expires_at)
+                              VALUES (:u, :th, :ch, true, 'x', :idle, :abs)"""),
+                      {"u": user, "th": hash_token(token), "ch": hash_token(CSRF), "idle": now + timedelta(hours=2), "abs": now + timedelta(days=1)})
+
+        db = SessionLocal()
+        try:
+            # create + add a service with 2 sessions
+            created = pkg.package_create(PackageCreate(name="Starter", total_price_minor=8000, original_value_minor=10000, currency="usd", validity_days=30), _req(), db, token, CSRF)["data"]
+            pid = created["id"]
+            assert created["currency"] == "USD" and created["status"] == "active"
+            pkg.package_service_add(pid, PackageServiceCreate(service_id=service, sessions_count=2), _req(), db, token, CSRF)
+
+            detail = pkg.package_detail(pid, _req(), db, token)["data"]
+            assert detail["total_sessions"] == 2 and len(detail["services"]) == 1 and detail["sold"]["total_sold"] == 0
+
+            # edit savings validation: original must be >= total (endpoint returns 400)
+            with pytest.raises(HTTPException) as bad:
+                pkg.package_update(pid, PackageUpdate(total_price_minor=12000, original_value_minor=10000, expected_version=created["version"]), _req(), db, token, CSRF)
+            assert bad.value.status_code == 400
+            db.rollback()
+            edited = pkg.package_update(pid, PackageUpdate(name="Starter Plus", expected_version=created["version"]), _req(), db, token, CSRF)["data"]
+            assert edited["name"] == "Starter Plus" and edited["version"] == created["version"] + 1
+
+            # deactivate -> cannot be sold
+            deact = pkg.package_status(pid, PackageStatusUpdate(action="deactivate", expected_version=edited["version"]), _req(), db, token, CSRF)["data"]
+            assert deact["status"] == "inactive"
+            with pytest.raises(HTTPException) as exc:
+                pkg.package_purchase(pid, PackagePurchase(patient_id=patient), _req(), db, token, CSRF)
+            assert exc.value.status_code == 404
+            db.rollback()
+            react = pkg.package_status(pid, PackageStatusUpdate(action="activate", expected_version=deact["version"]), _req(), db, token, CSRF)["data"]
+            assert react["status"] == "active"
+
+            # sell with idempotency — repeat returns the SAME purchase, no duplicate
+            key = uuid4()
+            first = pkg.package_purchase(pid, PackagePurchase(patient_id=patient, idempotency_key=key), _req(), db, token, CSRF)["data"]
+            again = pkg.package_purchase(pid, PackagePurchase(patient_id=patient, idempotency_key=key), _req(), db, token, CSRF)["data"]
+            assert first["id"] == again["id"] and first["total_sessions"] == 2 and first["used_sessions"] == 0
+
+            # consume both sessions -> exhausted; third rejected without override
+            pkg.package_consume(first["id"], PackageConsume(service_id=service), _req(), db, token, CSRF)
+            pkg.package_consume(first["id"], PackageConsume(service_id=service), _req(), db, token, CSRF)
+            after = pkg.patient_purchase_detail(first["id"], _req(), db, token)["data"]
+            assert after["used_sessions"] == 2 and after["remaining_sessions"] == 0 and after["status"] == "exhausted"
+            assert sum(1 for s in after["sessions"] if s["status"] == "used") == 2
+            with pytest.raises(HTTPException) as exc2:
+                pkg.package_consume(first["id"], PackageConsume(service_id=service), _req(), db, token, CSRF)
+            assert exc2.value.status_code == 409
+            db.rollback()
+
+            overview = pkg.package_overview(_req(), db, token)["data"]
+            assert overview["total_sold"] == 1 and overview["sessions_purchased"] == 2 and overview["sessions_used"] == 2 and overview["sessions_remaining"] == 0
+
+            # exactly one purchase persisted despite the duplicate sell request
+            db.execute(text("SELECT set_config('app.clinic_id', :c, true)"), {"c": str(clinic)})
+            assert db.execute(text("SELECT COUNT(*) FROM patient_packages WHERE clinic_id = :c AND patient_id = :p"), {"c": clinic, "p": patient}).scalar_one() == 1
+            # a foreign tenant context cannot see this clinic's package (DB-level RLS)
+            set_tenant_context(db, uuid4())
+            assert db.execute(text("SELECT COUNT(*) FROM package_definitions WHERE id = :id"), {"id": pid}).scalar_one() == 0
+            db.rollback()
+        finally:
+            db.close()
+    finally:
+        with admin.begin() as c:
+            for tbl in ("package_sessions", "patient_packages", "package_services", "package_definitions"):
+                c.execute(text(f"DELETE FROM {tbl} WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM patients WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM services WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM sessions WHERE user_id = :u"), {"u": user})
+            c.execute(text("DELETE FROM user_roles WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM users WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM clinics WHERE id = :c"), {"c": clinic})
