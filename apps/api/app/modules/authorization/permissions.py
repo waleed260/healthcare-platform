@@ -61,6 +61,7 @@ PERMISSIONS = {
     "patient.media.write",
     "patient.media.approve",
     "report.read",
+    "report.manage",
     "package.read",
     "package.manage",
     "package.override",
