@@ -224,7 +224,7 @@ export default function PackagesPage() {
         <span className="muted-mono">{packages.length} SHOWN</span>
       </div>
       <div className="invoice-list">
-        {!loading && packages.length === 0 && <div className="dashboard-empty"><strong>No packages yet</strong><span>Create a package to bundle services and track sessions.</span>{can("package.manage") && <button className="button button-primary packages-empty-cta" onClick={() => setCreateDrawer(true)}>Create your first package <span>＋</span></button>}</div>}
+        {!loading && packages.length === 0 && <div className="dashboard-empty"><strong>No packages yet</strong><span>Use “New package” above to bundle services and track sessions.</span></div>}
         {packages.map((pkg) => <article className="invoice-row" key={pkg.id}>
           <div className="invoice-mark">{pkg.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
@@ -277,21 +277,25 @@ export default function PackagesPage() {
     </section>
 
     {/* Create */}
-    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package">
-      <form className="manage-form packages-form" onSubmit={handleCreate}>
-        <label>Name<input name="name" required maxLength={160} placeholder="Hair Transplant · 3 sessions" /></label>
-        <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} /></label>
+    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" width={500} bare
+      footer={<>
+        <button className="button button-secondary" type="button" onClick={() => setCreateDrawer(false)} disabled={busy}>Cancel</button>
+        <button className="button button-primary" type="submit" form="create-package-form" disabled={busy}>{busy ? "Saving…" : "Create package"} <span>↗</span></button>
+      </>}>
+      <form id="create-package-form" className="manage-form packages-form" onSubmit={handleCreate}>
+        <label>Name <span className="packages-req">required</span><input name="name" required maxLength={160} placeholder="Hair Transplant · 3 sessions" /></label>
+        <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={3} placeholder="What this package includes, terms, etc." /></label>
         <div className="packages-grid-2">
-          <label>{priceLabel}<input name="price" type="number" min={0} step="0.01" required /></label>
-          <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" /></label>
+          <label>{priceLabel} <span className="packages-req">required</span><input name="price" type="number" min={0} step="0.01" required placeholder="0.00" /></label>
+          <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" placeholder="0.00" /></label>
         </div>
-        <label>Validity (days)<input name="validity_days" type="number" min={1} max={3650} required defaultValue={365} /></label>
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Create package"}<span>↗</span></button></div>
+        <label>Validity (days) <span className="packages-req">required</span><input name="validity_days" type="number" min={1} max={3650} required defaultValue={365} /></label>
+        <p className="muted-mono packages-form-hint">Original value shows patients their savings — leave blank if there is none.</p>
       </form>
     </Drawer>
 
     {/* Manage */}
-    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined}>
+    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={540} bare>
       {manage && <div className="packages-manage">
         <form className="manage-form packages-form" onSubmit={handleEdit}>
           <label>Name<input name="name" required maxLength={160} defaultValue={manage.name} /></label>
@@ -331,7 +335,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Sell */}
-    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={520}>
+    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={520} bare>
       {sellPkg && <form className="manage-form packages-form" onSubmit={handleSell}>
         <p className="packages-sell-summary">{money(sellPkg.total_price_minor, sellPkg.currency)} · {sellPkg.total_sessions} sessions · valid {sellPkg.validity_days} days</p>
         <label>Patient<select name="patient_id" required><option value="">Choose patient…</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}</select></label>
@@ -353,7 +357,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Purchase detail + consume */}
-    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined}>
+    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={520} bare>
       {purchase && <div className="packages-manage">
         <span className={`pipeline-status status-${purchase.status === "active" ? "paid" : purchase.status === "exhausted" ? "pending" : "void"}`}>{purchase.status}</span>
         {can("package.manage") && purchase.status === "active" && <form className="manage-form packages-form" onSubmit={handleConsume}>
