@@ -12,9 +12,12 @@ type DrawerProps = {
   footer?: ReactNode;
   width?: number;
   opaque?: boolean;
+  /** Transparent scrim: the drawer stays a solid-white right-edge panel but the page behind
+   *  is NOT dimmed (no grey overlay). Click-outside-to-close still works via the invisible scrim. */
+  undimmed?: boolean;
 };
 
-export default function Drawer({ open, onClose, title, subtitle, dirty, children, footer, width = 430, opaque }: DrawerProps) {
+export default function Drawer({ open, onClose, title, subtitle, dirty, children, footer, width = 430, opaque, undimmed }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -54,7 +57,7 @@ export default function Drawer({ open, onClose, title, subtitle, dirty, children
   if (!open) return null;
 
   return (
-    <div className={`drawer-scrim${opaque ? " drawer-scrim-opaque" : ""}`} onClick={requestClose}>
+    <div className={`drawer-scrim${opaque ? " drawer-scrim-opaque" : ""}${undimmed ? " drawer-scrim-undimmed" : ""}`} onClick={requestClose}>
       <aside
         ref={panelRef}
         className="drawer-panel"
