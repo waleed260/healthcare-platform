@@ -445,6 +445,13 @@
 
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.001ms!important}.landing-page [data-reveal],.landing-page .lp-stagger{opacity:1;transform:none;transition:none}.lp-scroll-progress{display:none}.lp-nav{transition:none}.lp-hero-visual{will-change:auto}}
 .admin-page{min-height:100vh;background:var(--paper);color:var(--ink)}
+.platform-owner-header{border-left:4px solid var(--leaf);padding-left:20px;background:linear-gradient(90deg,rgba(39,76,66,.06),transparent)}
+.platform-owner-header h1 em{color:var(--leaf);font-style:normal}
+.platform-owner-header .header-actions{display:flex;align-items:center;gap:14px}
+.platform-owner-badge{display:inline-flex;align-items:center;background:var(--leaf);color:var(--paper);font:10px 'DM Mono',monospace;letter-spacing:.1em;padding:7px 12px;border-radius:999px;white-space:nowrap}
+.admin-drawer-overview{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.admin-drawer-overview .eyebrow{margin-bottom:14px}
+.admin-drawer-overview .muted-mono{display:block;margin-top:12px;color:var(--muted);font:11px/1.5 'DM Mono',monospace}
 .admin-header{display:flex;justify-content:space-between;align-items:center;padding:26px 0;border-bottom:1px solid var(--line)}
 .admin-session{color:var(--muted);font:11px 'DM Mono',monospace;letter-spacing:.04em}
 .admin-shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:44px;padding-top:32px;padding-bottom:80px}
