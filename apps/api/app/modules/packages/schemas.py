@@ -61,12 +61,30 @@ class PackageServiceCreate(BaseModel):
     sessions_count: int = Field(gt=0, le=1000)
 
 
+class PackagePayment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount_minor: int = Field(gt=0)
+    method: Literal["cash", "card", "bank_transfer", "online", "other"]
+    reference: str | None = Field(default=None, max_length=160)
+
+
 class PackagePurchase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     patient_id: UUID
     invoice_id: UUID | None = None
     idempotency_key: UUID | None = None
+    create_invoice: bool = False
+    payment: PackagePayment | None = None
+
+    @model_validator(mode="after")
+    def _billing_consistency(self):
+        if self.create_invoice and self.invoice_id is not None:
+            raise ValueError("provide either invoice_id (to link) or create_invoice, not both")
+        if self.payment is not None and not self.create_invoice and self.invoice_id is None:
+            raise ValueError("recording a payment requires create_invoice or an invoice_id")
+        return self
 
 
 class PackageConsume(BaseModel):

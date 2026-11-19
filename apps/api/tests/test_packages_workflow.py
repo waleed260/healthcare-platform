@@ -18,7 +18,7 @@ from app.db.session import SessionLocal
 from app.db.tenant import set_tenant_context
 from app.modules.packages import routes as pkg
 from app.modules.packages.schemas import (
-    PackageConsume, PackageCreate, PackagePurchase, PackageServiceCreate,
+    PackageConsume, PackageCreate, PackagePayment, PackagePurchase, PackageServiceCreate,
     PackageStatusUpdate, PackageUpdate,
 )
 
@@ -119,6 +119,56 @@ def test_packages_full_workflow() -> None:
                 c.execute(text(f"DELETE FROM {tbl} WHERE clinic_id = :c"), {"c": clinic})
             c.execute(text("DELETE FROM patients WHERE clinic_id = :c"), {"c": clinic})
             c.execute(text("DELETE FROM services WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM sessions WHERE user_id = :u"), {"u": user})
+            c.execute(text("DELETE FROM user_roles WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM users WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM clinics WHERE id = :c"), {"c": clinic})
+
+
+def test_sell_creates_invoice_and_records_payment() -> None:
+    """Sell -> create invoice -> record payment, atomically. Paid invoice reads 'paid';
+    an invoice sold without payment stays 'unpaid' and is never counted as collected."""
+    admin = _admin()
+    clinic, user, patient, service, pkgid = uuid4(), uuid4(), uuid4(), uuid4(), uuid4()
+    token = new_opaque_token()
+    now = utc_now()
+    try:
+        with admin.begin() as c:
+            c.execute(text("INSERT INTO clinics (id, name, slug) VALUES (:id, 'Sell Clinic', :slug)"), {"id": clinic, "slug": f"sell-{clinic}"})
+            c.execute(text("INSERT INTO users (id, clinic_id, normalized_email, display_name, password_hash, status) VALUES (:id, :c, :e, 'Mgr', 'x', 'active')"), {"id": user, "c": clinic, "e": f"s-{user}@t.local"})
+            c.execute(text("INSERT INTO user_roles (clinic_id, user_id, role_id) SELECT :c, :u, r.id FROM roles r WHERE r.name='manager' AND r.clinic_id IS NULL"), {"c": clinic, "u": user})
+            c.execute(text("INSERT INTO services (id, clinic_id, name, duration_minutes) VALUES (:id, :c, 'Laser', 30)"), {"id": service, "c": clinic})
+            c.execute(text("INSERT INTO patients (id, clinic_id, patient_number, full_name) VALUES (:id, :c, 'P-1', 'Sell Patient')"), {"id": patient, "c": clinic})
+            c.execute(text("INSERT INTO package_definitions (id, clinic_id, name, total_price_minor, currency, validity_days) VALUES (:id, :c, 'Bundle', 10000, 'USD', 30)"), {"id": pkgid, "c": clinic})
+            c.execute(text("INSERT INTO package_services (clinic_id, package_definition_id, service_id, sessions_count) VALUES (:c, :pk, :s, 2)"), {"c": clinic, "pk": pkgid, "s": service})
+            c.execute(text("""INSERT INTO sessions (user_id, token_hash, csrf_token_hash, mfa_verified, ip_hash, idle_expires_at, absolute_expires_at)
+                              VALUES (:u, :th, :ch, true, 'x', :idle, :abs)"""),
+                      {"u": user, "th": hash_token(token), "ch": hash_token(CSRF), "idle": now + timedelta(hours=2), "abs": now + timedelta(days=1)})
+
+        db = SessionLocal()
+        try:
+            paid = pkg.package_purchase(pkgid, PackagePurchase(patient_id=patient, create_invoice=True, payment=PackagePayment(amount_minor=10000, method="cash"), idempotency_key=uuid4()), _req(), db, token, CSRF)["data"]
+            assert paid["invoice_id"] is not None and paid["invoice_status"] == "paid"
+            db.execute(text("SELECT set_config('app.clinic_id', :c, true)"), {"c": str(clinic)})
+            inv = db.execute(text("SELECT status, total_minor FROM invoices WHERE clinic_id=:c AND id=:i"), {"c": clinic, "i": paid["invoice_id"]}).mappings().one()
+            assert inv["status"] == "paid" and inv["total_minor"] == 10000
+            assert db.execute(text("SELECT COALESCE(SUM(amount_minor),0) FROM payments WHERE clinic_id=:c AND invoice_id=:i"), {"c": clinic, "i": paid["invoice_id"]}).scalar_one() == 10000
+            db.rollback()
+
+            unpaid = pkg.package_purchase(pkgid, PackagePurchase(patient_id=patient, create_invoice=True, idempotency_key=uuid4()), _req(), db, token, CSRF)["data"]
+            assert "invoice_status" not in unpaid and unpaid["invoice_id"] is not None
+            db.execute(text("SELECT set_config('app.clinic_id', :c, true)"), {"c": str(clinic)})
+            assert db.execute(text("SELECT status FROM invoices WHERE clinic_id=:c AND id=:i"), {"c": clinic, "i": unpaid["invoice_id"]}).scalar_one() == "unpaid"
+            assert db.execute(text("SELECT COALESCE(SUM(amount_minor),0) FROM payments WHERE clinic_id=:c AND invoice_id=:i"), {"c": clinic, "i": unpaid["invoice_id"]}).scalar_one() == 0
+            db.rollback()
+        finally:
+            db.close()
+    finally:
+        with admin.begin() as c:
+            for tbl in ("payment_allocations", "payments", "package_sessions", "patient_packages", "invoice_lines", "invoices", "invoice_number_sequences", "package_services", "package_definitions"):
+                c.execute(text(f"DELETE FROM {tbl} WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM services WHERE clinic_id = :c"), {"c": clinic})
+            c.execute(text("DELETE FROM patients WHERE clinic_id = :c"), {"c": clinic})
             c.execute(text("DELETE FROM sessions WHERE user_id = :u"), {"u": user})
             c.execute(text("DELETE FROM user_roles WHERE clinic_id = :c"), {"c": clinic})
             c.execute(text("DELETE FROM users WHERE clinic_id = :c"), {"c": clinic})

@@ -188,22 +188,76 @@ def package_purchase(package_id: UUID, payload: PackagePurchase, request: Reques
         if existing is not None:
             db.commit()
             return {"data": dict(existing), "meta": {"request_id": request.state.request_id}}
-    package = db.execute(text("SELECT id, validity_days FROM package_definitions WHERE clinic_id = :clinic_id AND id = :id AND status = 'active' AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().one_or_none()
+    package = db.execute(text("SELECT id, validity_days, total_price_minor, currency, name FROM package_definitions WHERE clinic_id = :clinic_id AND id = :id AND status = 'active' AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().one_or_none()
     if package is None:
         raise _error("NOT_FOUND", "Package not found.", status.HTTP_404_NOT_FOUND)
-    if payload.invoice_id is not None:
-        invoice_ok = db.execute(text("SELECT 1 FROM invoices WHERE clinic_id = :clinic_id AND id = :invoice_id AND patient_id = :patient_id AND status <> 'void'"), {"clinic_id": session["clinic_id"], "invoice_id": payload.invoice_id, "patient_id": payload.patient_id}).scalar_one_or_none()
-        if invoice_ok is None:
-            raise _error("NOT_FOUND", "The invoice is not associated with this patient.", status.HTTP_404_NOT_FOUND)
     services = db.execute(text("SELECT service_id, sessions_count FROM package_services WHERE clinic_id = :clinic_id AND package_definition_id = :id ORDER BY service_id"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().all()
     if not services:
         raise _error("INVALID_STATE", "Add at least one service to the package before purchase.", status.HTTP_400_BAD_REQUEST)
     total_sessions = sum(row["sessions_count"] for row in services)
+
+    # Billing orchestration — atomic within this one transaction. Link an existing invoice,
+    # or create a package invoice, and optionally record a payment through the same flow the
+    # Billing module uses (invoice-number sequence, payment_allocations, status). An unpaid
+    # invoice stays 'unpaid' and is never reported as collected. Mirrors
+    # blueprint_core.invoice_create / payment_create to avoid refactoring the billing routes.
+    if payload.create_invoice or payload.payment is not None:
+        try:
+            require_permission(db, session["user_id"], session["clinic_id"], "billing.manage")
+        except ForbiddenError as exc:
+            raise _error("FORBIDDEN", "Creating an invoice or recording a payment needs the billing.manage permission.", status.HTTP_403_FORBIDDEN) from exc
+    resolved_invoice_id = payload.invoice_id
+    if payload.invoice_id is not None:
+        invoice_ok = db.execute(text("SELECT 1 FROM invoices WHERE clinic_id = :clinic_id AND id = :invoice_id AND patient_id = :patient_id AND status <> 'void'"), {"clinic_id": session["clinic_id"], "invoice_id": payload.invoice_id, "patient_id": payload.patient_id}).scalar_one_or_none()
+        if invoice_ok is None:
+            raise _error("NOT_FOUND", "The invoice is not associated with this patient.", status.HTTP_404_NOT_FOUND)
+    if payload.create_invoice:
+        patient_ok = db.execute(text("SELECT 1 FROM patients WHERE clinic_id = :clinic_id AND id = :patient_id AND archived_at IS NULL AND duplicate_of IS NULL"), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id}).scalar_one_or_none()
+        if patient_ok is None:
+            raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
+        total_minor = package["total_price_minor"]
+        year = datetime.now(timezone.utc).year
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:k AS text), 0))"), {"k": f"invoice-sequence:{session['clinic_id']}:{year}"})
+        sequence = db.execute(text("""
+            INSERT INTO invoice_number_sequences (clinic_id, sequence_year, next_value)
+            VALUES (:clinic_id, :year, 2)
+            ON CONFLICT (clinic_id, sequence_year) DO UPDATE SET next_value = invoice_number_sequences.next_value + 1
+            RETURNING next_value - 1 AS sequence_value
+        """), {"clinic_id": session["clinic_id"], "year": year}).scalar_one()
+        invoice_number = f"CLINIC-{year}-{sequence:06d}"
+        invoice_row = db.execute(text("""
+            INSERT INTO invoices (clinic_id, patient_id, invoice_number, currency, subtotal_minor, discount_minor, tax_minor, total_minor, created_by_user_id)
+            VALUES (:clinic_id, :patient_id, :invoice_number, :currency, :total, 0, 0, :total, :user_id)
+            RETURNING id
+        """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "invoice_number": invoice_number, "currency": package["currency"], "total": total_minor, "user_id": session["user_id"]}).mappings().one()
+        resolved_invoice_id = invoice_row["id"]
+        db.execute(text("""
+            INSERT INTO invoice_lines (clinic_id, invoice_id, description, quantity, unit_price_minor, tax_minor, line_total_minor)
+            VALUES (:clinic_id, :invoice_id, :description, 1, :total, 0, :total)
+        """), {"clinic_id": session["clinic_id"], "invoice_id": resolved_invoice_id, "description": f"Package: {package['name']}", "total": total_minor})
+        record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="invoice.create", entity_type="invoice", entity_id=resolved_invoice_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"total_minor": total_minor, "source": "package_sale"})
+    invoice_status = None
+    if payload.payment is not None:
+        invoice = db.execute(text("SELECT id, currency, total_minor FROM invoices WHERE clinic_id = :clinic_id AND id = :invoice_id AND status <> 'void' FOR UPDATE"), {"clinic_id": session["clinic_id"], "invoice_id": resolved_invoice_id}).mappings().one_or_none()
+        if invoice is None:
+            raise _error("NOT_FOUND", "Invoice not found for the payment.", status.HTTP_404_NOT_FOUND)
+        paid = db.execute(text("SELECT COALESCE(SUM(amount_minor), 0) FROM payment_allocations WHERE clinic_id = :clinic_id AND invoice_id = :invoice_id"), {"clinic_id": session["clinic_id"], "invoice_id": resolved_invoice_id}).scalar_one()
+        if payload.payment.amount_minor > invoice["total_minor"] - paid:
+            raise _error("INVALID_INPUT", "Payment exceeds the outstanding invoice balance.", status.HTTP_400_BAD_REQUEST)
+        pay = db.execute(text("""
+            INSERT INTO payments (clinic_id, invoice_id, amount_minor, currency, method, reference, recorded_by_user_id)
+            VALUES (:clinic_id, :invoice_id, :amount, :currency, :method, :reference, :user_id) RETURNING id
+        """), {"clinic_id": session["clinic_id"], "invoice_id": resolved_invoice_id, "amount": payload.payment.amount_minor, "currency": invoice["currency"], "method": payload.payment.method, "reference": payload.payment.reference, "user_id": session["user_id"]}).mappings().one()
+        db.execute(text("INSERT INTO payment_allocations (clinic_id, payment_id, invoice_id, amount_minor) VALUES (:clinic_id, :payment_id, :invoice_id, :amount)"), {"clinic_id": session["clinic_id"], "payment_id": pay["id"], "invoice_id": resolved_invoice_id, "amount": payload.payment.amount_minor})
+        invoice_status = "paid" if paid + payload.payment.amount_minor == invoice["total_minor"] else "partially_paid"
+        db.execute(text("UPDATE invoices SET status = :status, updated_at = now(), version = version + 1 WHERE clinic_id = :clinic_id AND id = :invoice_id"), {"clinic_id": session["clinic_id"], "invoice_id": resolved_invoice_id, "status": invoice_status})
+        record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="payment.record", entity_type="payment", entity_id=pay["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"invoice_id": str(resolved_invoice_id), "amount_minor": payload.payment.amount_minor, "method": payload.payment.method})
+
     purchased = db.execute(text("""
         INSERT INTO patient_packages (clinic_id, patient_id, package_definition_id, invoice_id, expires_at, total_sessions, idempotency_key)
         VALUES (:clinic_id, :patient_id, :package_id, :invoice_id, now() + (:validity_days * INTERVAL '1 day'), :total_sessions, :idempotency_key)
         RETURNING id, patient_id, package_definition_id, invoice_id, purchased_at, expires_at, status, total_sessions, used_sessions, version
-    """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "package_id": package_id, "invoice_id": payload.invoice_id, "validity_days": package["validity_days"], "total_sessions": total_sessions, "idempotency_key": payload.idempotency_key}).mappings().one()
+    """), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id, "package_id": package_id, "invoice_id": resolved_invoice_id, "validity_days": package["validity_days"], "total_sessions": total_sessions, "idempotency_key": payload.idempotency_key}).mappings().one()
     for item in services:
         db.execute(text("""
             INSERT INTO package_sessions (clinic_id, patient_package_id, service_id)
@@ -211,7 +265,10 @@ def package_purchase(package_id: UUID, payload: PackagePurchase, request: Reques
         """), {"clinic_id": session["clinic_id"], "patient_package_id": purchased["id"], "service_id": item["service_id"], "sessions_count": item["sessions_count"]})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="package.purchase", entity_type="patient_package", entity_id=purchased["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_id": str(payload.patient_id), "total_sessions": total_sessions})
     db.commit()
-    return {"data": dict(purchased), "meta": {"request_id": request.state.request_id}}
+    result = dict(purchased)
+    if invoice_status is not None:
+        result["invoice_status"] = invoice_status
+    return {"data": result, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/patients/{patient_id}")
