@@ -68,6 +68,72 @@ def test_required_clinic_tables_have_forced_rls() -> None:
     assert all(row["relrowsecurity"] and row["relforcerowsecurity"] and row["has_policy"] for row in rows)
 
 
+def test_every_clinic_owned_table_has_forced_rls() -> None:
+    """Spec PART 5/8: EVERY table carrying a clinic_id must enforce RLS at the DB,
+    not just in application code. Self-maintaining — any future table that adds a
+    clinic_id without forced RLS + a policy fails here. The only allowed exception
+    is `users`: authentication resolves a user by email BEFORE any tenant context
+    exists, so users cannot be clinic-RLS'd; its isolation is app-layer (the
+    session->clinic association is derived server-side, never from the client)."""
+    _, runtime_url = _database_urls()
+    runtime = create_engine(runtime_url)
+    allowlist = {"users"}
+    with runtime.connect() as connection:
+        rows = connection.execute(text("""
+            SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+                   EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = c.relname) AS has_policy
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+              AND EXISTS (SELECT 1 FROM information_schema.columns col
+                          WHERE col.table_schema = 'public' AND col.table_name = c.relname
+                            AND col.column_name = 'clinic_id')
+        """)).mappings().all()
+    offenders = sorted(
+        row["relname"] for row in rows
+        if row["relname"] not in allowlist
+        and not (row["relrowsecurity"] and row["relforcerowsecurity"] and row["has_policy"])
+    )
+    assert offenders == [], f"clinic-owned tables missing forced RLS + policy: {offenders}"
+
+
+def test_roles_are_tenant_isolated_but_global_roles_are_shared() -> None:
+    """A clinic sees its own custom roles and the shared global system roles, but
+    never another clinic's custom roles, and cannot create/delete roles in another
+    clinic's name (DB-enforced by the roles RLS policies, migration 0095)."""
+    admin_url, runtime_url = _database_urls()
+    admin = create_engine(admin_url)
+    runtime = create_engine(runtime_url)
+    clinic_a, clinic_b = uuid4(), uuid4()
+    role_a, role_b = uuid4(), uuid4()
+    try:
+        with admin.begin() as connection:
+            connection.execute(
+                text("INSERT INTO clinics (id, name, slug) VALUES (:a, 'Roles A', :sa), (:b, 'Roles B', :sb)"),
+                {"a": clinic_a, "b": clinic_b, "sa": f"roles-a-{clinic_a}", "sb": f"roles-b-{clinic_b}"},
+            )
+            connection.execute(
+                text("INSERT INTO roles (id, clinic_id, name, is_system) VALUES (:ra, :a, 'Custom A', false), (:rb, :b, 'Custom B', false)"),
+                {"ra": role_a, "a": clinic_a, "rb": role_b, "b": clinic_b},
+            )
+        with runtime.begin() as connection:
+            set_tenant_context(connection, clinic_a)
+            own = connection.execute(text("SELECT name FROM roles WHERE clinic_id IS NOT NULL ORDER BY name")).scalars().all()
+            assert own == ["Custom A"]  # B's custom role is invisible
+            assert connection.execute(text("SELECT count(*) FROM roles WHERE clinic_id IS NULL")).scalar_one() >= 1  # global roles shared
+            with pytest.raises(Exception):  # cannot create a role for clinic B
+                connection.execute(text("INSERT INTO roles (clinic_id, name, is_system) VALUES (:b, 'Injected', false)"), {"b": clinic_b})
+        with runtime.begin() as connection:
+            set_tenant_context(connection, clinic_a)
+            connection.execute(text("DELETE FROM roles WHERE id = :rb"), {"rb": role_b})  # filtered to zero rows
+        with admin.begin() as connection:
+            assert connection.execute(text("SELECT count(*) FROM roles WHERE id = :rb"), {"rb": role_b}).scalar_one() == 1
+    finally:
+        with admin.begin() as connection:
+            connection.execute(text("DELETE FROM roles WHERE id IN (:ra, :rb)"), {"ra": role_a, "rb": role_b})
+            connection.execute(text("DELETE FROM clinics WHERE id IN (:a, :b)"), {"a": clinic_a, "b": clinic_b})
+
+
 def test_two_tenants_cannot_read_or_write_each_other() -> None:
     admin_url, runtime_url = _database_urls()
     admin = create_engine(admin_url)
