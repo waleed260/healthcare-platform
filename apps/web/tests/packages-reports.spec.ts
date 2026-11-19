@@ -45,6 +45,10 @@ test("packages page shows overview KPIs and the catalog", async ({ page }) => {
   await expect(page.getByText("ACTIVE PACKAGES", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Starter" })).toBeVisible();
   await expect(page.getByRole("button", { name: /New package/ })).toBeVisible();
+  // Open the New-package drawer and capture the fixed UI (full-width styled inputs, KPIs).
+  await page.getByRole("button", { name: /New package/ }).click();
+  await expect(page.getByRole("heading", { name: "New package" })).toBeVisible();
+  await page.screenshot({ path: "/home/waleed/Pictures/Screenshots/packages-fixed.png", fullPage: true });
 });
 
 test("report builder previews an allow-listed report", async ({ page }) => {

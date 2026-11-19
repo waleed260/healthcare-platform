@@ -36,6 +36,8 @@ export default function PackagesPage() {
   const [manage, setManage] = useState<PackageDetail | null>(null);
   const [sellPkg, setSellPkg] = useState<Package | null>(null);
   const [sellKey, setSellKey] = useState<string>("");
+  const [sellMode, setSellMode] = useState<"none" | "create" | "link">("none");
+  const [collectNow, setCollectNow] = useState(false);
   const [patientLookup, setPatientLookup] = useState<string>("");
   const [patientPackages, setPatientPackages] = useState<PatientPackage[]>([]);
   const [purchase, setPurchase] = useState<PurchaseDetail | null>(null);
@@ -154,13 +156,20 @@ export default function PackagesPage() {
     event.preventDefault();
     if (!sellPkg) return;
     const form = new FormData(event.currentTarget);
-    const invoiceId = field(form, "invoice_id");
-    void run(() => post(`/api/v1/packages/${sellPkg.id}/purchase`, {
-      patient_id: field(form, "patient_id"),
-      invoice_id: invoiceId || null,
-      idempotency_key: sellKey,
-    }), "Package sold to patient.", "The purchase could not be completed.").then((ok) => {
-      if (ok) { const pid = field(form, "patient_id"); setSellPkg(null); setPatientLookup(pid); void refreshPatient(pid); void load(); }
+    const patientId = field(form, "patient_id");
+    const body: Record<string, unknown> = { patient_id: patientId, idempotency_key: sellKey };
+    if (sellMode === "create") {
+      body.create_invoice = true;
+      if (collectNow) {
+        const amount = Number(field(form, "amount") || sellPkg.total_price_minor / 100);
+        body.payment = { amount_minor: Math.round(amount * 100), method: field(form, "method") || "cash" };
+      }
+    } else if (sellMode === "link") {
+      const inv = field(form, "invoice_id");
+      if (inv) body.invoice_id = inv;
+    }
+    void run(() => post(`/api/v1/packages/${sellPkg.id}/purchase`, body), "Package sold to patient.", "The purchase could not be completed.").then((ok) => {
+      if (ok) { setSellPkg(null); setPatientLookup(patientId); void refreshPatient(patientId); void load(); }
     });
   }
 
@@ -215,7 +224,7 @@ export default function PackagesPage() {
         <span className="muted-mono">{packages.length} SHOWN</span>
       </div>
       <div className="invoice-list">
-        {!loading && packages.length === 0 && <div className="dashboard-empty"><strong>No packages yet</strong><span>Create a package to bundle services and track sessions.</span></div>}
+        {!loading && packages.length === 0 && <div className="dashboard-empty"><strong>No packages yet</strong><span>Create a package to bundle services and track sessions.</span>{can("package.manage") && <button className="button button-primary packages-empty-cta" onClick={() => setCreateDrawer(true)}>Create your first package <span>＋</span></button>}</div>}
         {packages.map((pkg) => <article className="invoice-row" key={pkg.id}>
           <div className="invoice-mark">{pkg.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
@@ -233,7 +242,7 @@ export default function PackagesPage() {
           <div className="invoice-actions">
             <span className={`pipeline-status status-${pkg.status === "active" ? "paid" : pkg.status === "inactive" ? "pending" : "void"}`}>{pkg.status}</span>
             {can("package.manage") && <button className="text-control" disabled={busy} onClick={() => void refreshManage(pkg.id)}>Manage</button>}
-            {can("package.manage") && pkg.status === "active" && <button className="button button-secondary" disabled={busy} onClick={() => { setSellKey(crypto.randomUUID()); setSellPkg(pkg); }}>Sell</button>}
+            {can("package.manage") && pkg.status === "active" && <button className="button button-secondary" disabled={busy} onClick={() => { setSellKey(crypto.randomUUID()); setSellMode("none"); setCollectNow(false); setSellPkg(pkg); }}>Sell</button>}
           </div>
         </article>)}
       </div>
@@ -322,12 +331,23 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Sell */}
-    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name}>
+    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={520}>
       {sellPkg && <form className="manage-form packages-form" onSubmit={handleSell}>
         <p className="packages-sell-summary">{money(sellPkg.total_price_minor, sellPkg.currency)} · {sellPkg.total_sessions} sessions · valid {sellPkg.validity_days} days</p>
         <label>Patient<select name="patient_id" required><option value="">Choose patient…</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}</select></label>
-        <label>Invoice ID <span className="field-optional">optional — link an existing invoice</span><input name="invoice_id" placeholder="Paste an invoice UUID to link" /></label>
-        <p className="muted-mono packages-sell-note">Linking an invoice does not mark it paid — collection is recorded separately through Billing. Leave blank to sell without an invoice.</p>
+        <label>Billing<select value={sellMode} onChange={(e) => setSellMode(e.target.value as "none" | "create" | "link")}>
+          <option value="none">No invoice — record entitlement only</option>
+          <option value="create">Create an invoice for this sale</option>
+          <option value="link">Link an existing invoice</option>
+        </select></label>
+        {sellMode === "create" && <>
+          <label className="packages-check"><input type="checkbox" checked={collectNow} onChange={(e) => setCollectNow(e.target.checked)} /> Collect payment now</label>
+          {collectNow ? <div className="packages-grid-2">
+            <label>Amount ({sellPkg.currency})<input name="amount" type="number" min={0} step="0.01" defaultValue={(sellPkg.total_price_minor / 100).toFixed(2)} /></label>
+            <label>Method<select name="method" defaultValue="cash"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="online">Online</option><option value="other">Other</option></select></label>
+          </div> : <p className="muted-mono">The invoice is created as <strong>unpaid</strong> — collect payment later in Billing. Unpaid invoices are never counted as collected.</p>}
+        </>}
+        {sellMode === "link" && <label>Existing invoice ID<input name="invoice_id" placeholder="Invoice UUID for this patient" /></label>}
         <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Processing…" : "Confirm sale"}<span>↗</span></button></div>
       </form>}
     </Drawer>

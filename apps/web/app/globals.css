@@ -464,6 +464,16 @@
 .packages-status-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .packages-sub{margin:4px 0 0}
 .packages-sell-summary{font:500 15px Fraunces,serif;color:var(--leaf);margin:0}
+.packages-form label{display:grid;gap:7px;font:10px 'DM Mono',monospace;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+.packages-form input:not([type="checkbox"]),.packages-form select,.packages-form textarea{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:14px 'DM Sans',sans-serif}
+.packages-form textarea{resize:vertical;min-height:62px}
+.packages-form input:focus,.packages-form select:focus,.packages-form textarea:focus{outline:3px solid rgba(231,123,92,.25);border-color:var(--coral)}
+.packages-form .field-optional{text-transform:none;color:var(--muted)}
+.packages-check{display:flex;align-items:center;gap:9px;text-transform:none;font:13px 'DM Sans',sans-serif;color:var(--ink)}
+.packages-check input{width:auto}
+.packages-empty-cta{margin-top:16px;display:inline-flex}
+.report-builder select,.report-filter input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:14px 'DM Sans',sans-serif}
+.report-builder select:focus,.report-filter input:focus{outline:3px solid rgba(231,123,92,.25);border-color:var(--coral)}
 @media(max-width:700px){.packages-grid-2{grid-template-columns:1fr}}
 .report-builder-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .report-templates{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 16px}
