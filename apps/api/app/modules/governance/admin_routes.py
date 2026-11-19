@@ -496,6 +496,49 @@ def clinics_list(request: Request, cursor: str | None = Query(default=None, max_
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
+@router.get("/clinics/{clinic_id}/overview")
+def clinic_overview(clinic_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    """Platform-level, NON-CLINICAL overview for one clinic: identity, plan/subscription,
+    account and activity aggregates, and enabled modules. Deliberately exposes only counts
+    and timestamps — never patient records or clinical content. Reads the clinic's own
+    tenant-scoped rows by setting its tenant context (the same pattern /overview uses)."""
+    _platform(db, session_token)
+    clinic = db.execute(text("""
+        SELECT c.id, c.name, c.slug, c.status, c.timezone, c.locale, c.created_at, c.updated_at,
+               sub.status AS subscription_status, sub.renewal_at, sub.ends_at AS subscription_ends_at,
+               sub.plan_name, sub.plan_code
+        FROM clinics c
+        LEFT JOIN LATERAL (
+            SELECT s.status, s.renewal_at, s.ends_at, p.name AS plan_name, p.code AS plan_code
+            FROM clinic_subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+            WHERE s.clinic_id = c.id ORDER BY s.starts_at DESC, s.created_at DESC LIMIT 1
+        ) sub ON true
+        WHERE c.id = :id
+    """), {"id": clinic_id}).mappings().one_or_none()
+    if clinic is None:
+        raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
+    set_tenant_context(db, clinic_id)
+    stats = db.execute(text("""
+        SELECT (SELECT COUNT(*) FROM users WHERE clinic_id = :id AND status = 'active') AS active_users,
+               (SELECT COUNT(*) FROM users WHERE clinic_id = :id) AS total_users,
+               (SELECT MAX(last_login_at) FROM users WHERE clinic_id = :id) AS last_login_at,
+               (SELECT COUNT(*) FROM appointments WHERE clinic_id = :id) AS appointments_total,
+               (SELECT COUNT(*) FROM appointments WHERE clinic_id = :id AND created_at >= now() - interval '30 days') AS appointments_30d,
+               (SELECT COUNT(*) FROM patients WHERE clinic_id = :id) AS patients_total
+    """), {"id": clinic_id}).mappings().one()
+    modules = db.execute(text("""
+        SELECT s.code FROM clinic_specialties cs JOIN specialties s ON s.id = cs.specialty_id
+        WHERE cs.clinic_id = :id AND cs.status = 'active' ORDER BY s.code
+    """), {"id": clinic_id}).scalars().all()
+    db.commit()
+    return {"data": {
+        "clinic": dict(clinic),
+        "accounts": {"active_users": stats["active_users"], "total_users": stats["total_users"], "last_login_at": stats["last_login_at"]},
+        "activity": {"appointments_total": stats["appointments_total"], "appointments_30d": stats["appointments_30d"], "patients_total": stats["patients_total"]},
+        "modules": list(modules),
+    }, "meta": {"request_id": request.state.request_id}}
+
+
 @router.post("/clinics/{clinic_id}/lifecycle")
 def clinic_lifecycle(clinic_id: UUID, payload: ClinicLifecycleUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write(db, request, session_token, csrf_token)

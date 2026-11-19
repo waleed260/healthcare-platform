@@ -14,6 +14,12 @@ type SupportRow = { id: string; clinic_id: string; requested_by_user_id: string;
 type Plan = { id: string; code: string; name: string; active: boolean; created_at: string; limits: Record<string, { limit_value: number; enabled: boolean }> };
 type Announcement = { id: string; title: string; body: string; severity: string; starts_at: string; ends_at: string | null; created_at: string };
 type Session = { is_platform_admin?: boolean };
+type ClinicOverview = {
+  clinic: { id: string; name: string; status: string };
+  accounts: { active_users: number; total_users: number; last_login_at: string | null };
+  activity: { appointments_total: number; appointments_30d: number; patients_total: number };
+  modules: string[];
+};
 
 type Tab = "clinics" | "metrics" | "support" | "audit" | "plans" | "announcements" | "business";
 
@@ -38,6 +44,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [clinicDrawer, setClinicDrawer] = useState<Clinic | null>(null);
+  const [clinicOverview, setClinicOverview] = useState<ClinicOverview | null>(null);
   const [announcementForm, setAnnouncementForm] = useState(false);
   const [auditFilter, setAuditFilter] = useState("");
 
@@ -87,6 +94,16 @@ export default function AdminPage() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!clinicDrawer) { setClinicOverview(null); return; }
+    let active = true;
+    setClinicOverview(null);
+    void api<ClinicOverview>(`/api/v1/admin/clinics/${clinicDrawer.id}/overview`)
+      .then((d) => { if (active) setClinicOverview(d); })
+      .catch(() => { /* overview is best-effort; the drawer still shows identity + controls */ });
+    return () => { active = false; };
+  }, [clinicDrawer]);
 
   async function clinicLifecycle(clinic: Clinic, action: "suspend" | "reactivate") {
     const ok = await confirm({ title: `${action === "suspend" ? "Suspend" : "Reactivate"} ${clinic.name}`, message: action === "suspend" ? "All active sessions will be revoked and booking tokens invalidated." : "The clinic will be reactivated and users can sign in again.", confirmLabel: label(action), danger: action === "suspend" });
@@ -166,11 +183,14 @@ export default function AdminPage() {
     { key: "business", label: "Business" },
   ];
   return <main className="workspace-page admin-page">
-    <div className="workspace-page-header">
+    <div className="workspace-page-header platform-owner-header">
       <div>
-        <h1>Admin</h1>
+        <p className="eyebrow">PLATFORM OWNER · DEVELOPER CONSOLE</p>
+        <h1>Developer <em>Console</em></h1>
+        <p className="workspace-page-intro">Operating the care/fully SaaS. Every clinic is an isolated tenant — this console manages clients and subscriptions, not their clinical data.</p>
       </div>
       <div className="header-actions">
+        <span className="platform-owner-badge">PLATFORM OWNER</span>
         <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
       </div>
     </div>
@@ -401,6 +421,18 @@ export default function AdminPage() {
             <label>Version<input readOnly value={String(clinicDrawer.version)} /></label>
             <label>Created<input readOnly value={date(clinicDrawer.created_at)} /></label>
             <label>Updated<input readOnly value={date(clinicDrawer.updated_at)} /></label>
+          </div>
+          <div className="admin-drawer-overview">
+            <p className="eyebrow">PLATFORM OVERVIEW · ACCOUNTS &amp; ACTIVITY</p>
+            {!clinicOverview ? <small className="muted-mono">Loading usage…</small> : <>
+              <div className="report-health-grid">
+                <div><strong>{clinicOverview.accounts.active_users}</strong><span>active users</span></div>
+                <div><strong>{clinicOverview.activity.appointments_30d}</strong><span>appointments / 30d</span></div>
+                <div><strong>{clinicOverview.activity.appointments_total}</strong><span>appointments total</span></div>
+                <div><strong>{clinicOverview.activity.patients_total}</strong><span>patients</span></div>
+              </div>
+              <p className="muted-mono">{clinicOverview.accounts.last_login_at ? `Last login ${date(clinicOverview.accounts.last_login_at)}` : "No logins yet"} · {clinicOverview.modules.length ? `Modules: ${clinicOverview.modules.map(label).join(", ")}` : "No specialty modules enabled"}</p>
+            </>}
           </div>
           <div className="form-actions">
             {clinicDrawer.status === "active"
