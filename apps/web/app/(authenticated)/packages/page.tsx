@@ -1,21 +1,30 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, errorMessage, money, post } from "../_lib/client";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { api, errorMessage, money, post, writeHeaders } from "../_lib/client";
 import Drawer from "../_lib/drawer";
 import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Session = { permissions?: string[] };
-type Package = { id: string; name: string; description: string | null; specialty_id: string | null; total_price_minor: number; original_value_minor: number | null; currency: string; validity_days: number; status: string; version: number; created_at: string; total_sessions: number };
-type Service = { id: string; name: string; category: string | null; duration_minutes: number; amount_minor: number | null; currency: string | null };
+type Package = { id: string; name: string; description: string | null; total_price_minor: number; original_value_minor: number | null; currency: string; validity_days: number; status: string; version: number; total_sessions: number };
+type Service = { id: string; name: string; duration_minutes: number; amount_minor: number | null; currency: string | null };
 type Patient = { id: string; full_name: string; patient_number: string };
-type PatientPackage = { id: string; patient_id: string; package_definition_id: string; name: string; purchased_at: string; expires_at: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number; version: number };
+type PatientPackage = { id: string; name: string; purchased_at: string; expires_at: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number };
+type Overview = { active_definitions: number; inactive_definitions: number; total_sold: number; active_patient_packages: number; sessions_purchased: number; sessions_used: number; sessions_remaining: number; expiring_30d: number };
+type PackageService = { service_id: string; name: string; sessions_count: number };
+type PackageDetail = Package & { services: PackageService[]; sold: { total_sold: number; active_count: number } };
+type SessionRow = { id: string; service_id: string | null; service_name: string | null; appointment_id: string | null; status: string; override_reason: string | null; used_at: string | null; created_at: string };
+type PurchaseDetail = PatientPackage & { sessions: SessionRow[] };
+
+const put = <T,>(url: string, body: unknown) => api<T>(url, { method: "PUT", headers: writeHeaders(), body: JSON.stringify(body) });
+const del = <T,>(url: string) => api<T>(url, { method: "DELETE", headers: writeHeaders() });
 
 export default function PackagesPage() {
   const clinicCurrency = useClinicCurrency();
   const [permissions, setPermissions] = useState<string[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -24,11 +33,12 @@ export default function PackagesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [createDrawer, setCreateDrawer] = useState(false);
-  const [serviceDrawer, setServiceDrawer] = useState<string | null>(null);
-  const [sellDrawer, setSellDrawer] = useState<string | null>(null);
-  const [patientLookup, setPatientLookup] = useState<string | null>(null);
+  const [manage, setManage] = useState<PackageDetail | null>(null);
+  const [sellPkg, setSellPkg] = useState<Package | null>(null);
+  const [sellKey, setSellKey] = useState<string>("");
+  const [patientLookup, setPatientLookup] = useState<string>("");
   const [patientPackages, setPatientPackages] = useState<PatientPackage[]>([]);
-  const [expandedPkg, setExpandedPkg] = useState<string | null>(null);
+  const [purchase, setPurchase] = useState<PurchaseDetail | null>(null);
 
   const toast = useToast();
   const confirm = useConfirm();
@@ -38,13 +48,15 @@ export default function PackagesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [session, pkgRows, svcRows, patRows] = await Promise.all([
+      const [session, over, pkgRows, svcRows, patRows] = await Promise.all([
         api<Session>("/api/v1/auth/me"),
+        api<Overview>("/api/v1/packages/overview").catch(() => null),
         api<Package[]>("/api/v1/packages"),
-        api<Service[]>("/api/v1/services?limit=100"),
+        api<Service[]>("/api/v1/services?limit=100").catch(() => []),
         api<Patient[]>("/api/v1/patients?limit=50").catch(() => []),
       ]);
       setPermissions(session.permissions ?? []);
+      setOverview(over);
       setPackages(pkgRows ?? []);
       setServices(svcRows ?? []);
       setPatients(patRows ?? []);
@@ -56,13 +68,21 @@ export default function PackagesPage() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  const refreshManage = useCallback(async (id: string) => {
+    try { setManage(await api<PackageDetail>(`/api/v1/packages/${id}`)); }
+    catch (reason) { toast.error(errorMessage(reason, "The package could not be loaded.")); }
+  }, [toast]);
+
+  const refreshPatient = useCallback(async (patientId: string) => {
+    try { setPatientPackages(await api<PatientPackage[]>(`/api/v1/packages/patients/${patientId}`)); }
+    catch (reason) { toast.error(errorMessage(reason, "Patient packages could not be loaded.")); setPatientPackages([]); }
+  }, [toast]);
+
   async function run(action: () => Promise<unknown>, success: string, fallback: string): Promise<boolean> {
     setBusy(true);
-    setError(null);
     try {
       await action();
       toast.success(success);
-      await load();
       return true;
     } catch (reason) {
       toast.error(errorMessage(reason, fallback));
@@ -74,81 +94,108 @@ export default function PackagesPage() {
 
   const field = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 
-  // ── Create package ──
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const price = Math.round(Number(field(form, "price")) * 100);
     const original = field(form, "original_price") ? Math.round(Number(field(form, "original_price")) * 100) : null;
-    void run(
-      () => post("/api/v1/packages", {
-        name: field(form, "name"),
-        description: field(form, "description") || null,
-        total_price_minor: price,
-        original_value_minor: original,
-        currency: clinicCurrency,
-        validity_days: Number(field(form, "validity_days")),
-      }),
-      "Package created.", "The package could not be created."
-    ).then((ok) => { if (ok) setCreateDrawer(false); });
+    void run(() => post("/api/v1/packages", {
+      name: field(form, "name"),
+      description: field(form, "description") || null,
+      total_price_minor: Math.round(Number(field(form, "price")) * 100),
+      original_value_minor: original,
+      currency: clinicCurrency,
+      validity_days: Number(field(form, "validity_days")),
+    }), "Package created.", "The package could not be created.").then((ok) => { if (ok) { setCreateDrawer(false); void load(); } });
   }
 
-  // ── Add service to package ──
+  function handleEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!manage) return;
+    const form = new FormData(event.currentTarget);
+    void run(() => put(`/api/v1/packages/${manage.id}`, {
+      name: field(form, "name"),
+      description: field(form, "description") || null,
+      total_price_minor: Math.round(Number(field(form, "price")) * 100),
+      original_value_minor: field(form, "original_price") ? Math.round(Number(field(form, "original_price")) * 100) : null,
+      validity_days: Number(field(form, "validity_days")),
+      expected_version: manage.version,
+    }), "Package updated.", "The package could not be updated.").then((ok) => { if (ok) { void refreshManage(manage.id); void load(); } });
+  }
+
+  function changeStatus(action: "activate" | "deactivate" | "archive" | "unarchive") {
+    if (!manage) return;
+    void run(() => post(`/api/v1/packages/${manage.id}/status`, { action, expected_version: manage.version }),
+      `Package ${action}d.`, `The package could not be ${action}d.`).then((ok) => {
+        if (ok) { if (action === "archive") setManage(null); else void refreshManage(manage.id); void load(); }
+      });
+  }
+
+  async function confirmArchive() {
+    const ok = await confirm({ title: `Archive ${manage?.name}`, message: "Archived packages can no longer be sold. Existing patient purchases keep their sessions and history.", danger: true, confirmLabel: "Archive" });
+    if (ok) changeStatus("archive");
+  }
+
   function handleAddService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!serviceDrawer) return;
+    if (!manage) return;
     const form = new FormData(event.currentTarget);
-    void run(
-      () => post(`/api/v1/packages/${serviceDrawer}/services`, {
-        service_id: field(form, "service_id"),
-        sessions_count: Number(field(form, "sessions_count")),
-      }),
-      "Service added to package.", "The service could not be added."
-    ).then((ok) => { if (ok) setServiceDrawer(null); });
+    void run(() => post(`/api/v1/packages/${manage.id}/services`, {
+      service_id: field(form, "service_id"), sessions_count: Number(field(form, "sessions_count")),
+    }), "Service added.", "The service could not be added.").then((ok) => { if (ok) { void refreshManage(manage.id); void load(); } });
   }
 
-  // ── Sell package to patient ──
+  function removeService(serviceId: string) {
+    if (!manage) return;
+    void run(() => del(`/api/v1/packages/${manage.id}/services/${serviceId}`), "Service removed.", "The service could not be removed.")
+      .then((ok) => { if (ok) { void refreshManage(manage.id); void load(); } });
+  }
+
   function handleSell(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!sellDrawer) return;
+    if (!sellPkg) return;
     const form = new FormData(event.currentTarget);
-    void run(
-      () => post(`/api/v1/packages/${sellDrawer}/purchase`, {
-        patient_id: field(form, "patient_id"),
-      }),
-      "Package sold to patient.", "The purchase could not be completed."
-    ).then((ok) => { if (ok) setSellDrawer(null); });
+    const invoiceId = field(form, "invoice_id");
+    void run(() => post(`/api/v1/packages/${sellPkg.id}/purchase`, {
+      patient_id: field(form, "patient_id"),
+      invoice_id: invoiceId || null,
+      idempotency_key: sellKey,
+    }), "Package sold to patient.", "The purchase could not be completed.").then((ok) => {
+      if (ok) { const pid = field(form, "patient_id"); setSellPkg(null); setPatientLookup(pid); void refreshPatient(pid); void load(); }
+    });
   }
 
-  // ── Load patient packages ──
-  async function lookupPatientPackages(patientId: string) {
-    setPatientLookup(patientId);
-    try {
-      const rows = await api<PatientPackage[]>(`/api/v1/packages/patients/${patientId}`);
-      setPatientPackages(rows ?? []);
-    } catch (reason) {
-      toast.error(errorMessage(reason, "Patient packages could not be loaded."));
-      setPatientPackages([]);
-    }
+  async function openPurchase(id: string) {
+    try { setPurchase(await api<PurchaseDetail>(`/api/v1/packages/patient-purchases/${id}`)); }
+    catch (reason) { toast.error(errorMessage(reason, "The purchase could not be loaded.")); }
   }
 
-  // ── Consume session ──
-  async function consumeSession(purchaseId: string) {
-    const ok = await confirm({ message: "Mark one session as used?" });
-    if (!ok) return;
-    void run(
-      () => post(`/api/v1/packages/patient-purchases/${purchaseId}/consume`, {}),
-      "Session consumed.", "The session could not be consumed."
-    ).then(() => { if (patientLookup) void lookupPatientPackages(patientLookup); });
+  function handleConsume(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!purchase) return;
+    const form = new FormData(event.currentTarget);
+    const reason = field(form, "override_reason");
+    void run(() => post(`/api/v1/packages/patient-purchases/${purchase.id}/consume`, {
+      service_id: field(form, "service_id") || null,
+      override_reason: reason || null,
+    }), "Session recorded.", "The session could not be recorded.").then((ok) => {
+      if (ok) { void openPurchase(purchase.id); if (patientLookup) void refreshPatient(patientLookup); void load(); }
+    });
   }
 
-  const activePackages = useMemo(() => packages.filter((p) => p.status === "active"), [packages]);
+  const priceLabel = `Price (${clinicCurrency})`;
+  const kpis = overview && [
+    { label: "ACTIVE PACKAGES", value: overview.active_definitions, note: `${overview.inactive_definitions} inactive` },
+    { label: "PACKAGES SOLD", value: overview.total_sold, note: `${overview.active_patient_packages} active` },
+    { label: "SESSIONS", value: `${overview.sessions_used}/${overview.sessions_purchased}`, note: `${overview.sessions_remaining} remaining` },
+    { label: "EXPIRING · 30D", value: overview.expiring_30d, note: "active packages" },
+  ];
+
   return <main className="workspace-page packages-page">
     <div className="workspace-page-header">
       <div>
         <p className="eyebrow">BUSINESS · SESSION-BASED CARE</p>
         <h1>Packages that <em>keep patients coming back.</em></h1>
-        <p className="workspace-page-intro">Bundle services into packages with session tracking. Sell to patients and track usage across appointments.</p>
+        <p className="workspace-page-intro">Bundle services into packages, sell them to patients, and track every session with an auditable ledger.</p>
       </div>
       <div className="header-actions">
         <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
@@ -158,120 +205,154 @@ export default function PackagesPage() {
 
     {error && <div className="workspace-alert" role="alert"><strong>{error}</strong><button className="ghost-button" onClick={() => void load()}>Try again <span>→</span></button></div>}
 
-    {/* ═══ PACKAGE CATALOG ═══ */}
+    {kpis && <div className="report-health-grid packages-kpis">
+      {kpis.map((k) => <div key={k.label}><strong>{k.value}</strong><span>{k.label}</span><small className="muted-mono">{k.note}</small></div>)}
+    </div>}
+
     <section className="surface-card">
       <div className="surface-card-heading">
         <div><p className="eyebrow">PACKAGE CATALOG</p><h2>Defined packages</h2></div>
-        <span className="muted-mono">{activePackages.length} ACTIVE</span>
+        <span className="muted-mono">{packages.length} SHOWN</span>
       </div>
-
       <div className="invoice-list">
         {!loading && packages.length === 0 && <div className="dashboard-empty"><strong>No packages yet</strong><span>Create a package to bundle services and track sessions.</span></div>}
-        {packages.map((pkg) => <article className="invoice-row" key={pkg.id} style={{ cursor: "pointer" }} onClick={() => setExpandedPkg(expandedPkg === pkg.id ? null : pkg.id)}>
+        {packages.map((pkg) => <article className="invoice-row" key={pkg.id}>
           <div className="invoice-mark">{pkg.name.slice(0, 2).toUpperCase()}</div>
           <div className="invoice-main">
             <h3>{pkg.name}</h3>
             <p>
               {money(pkg.total_price_minor, pkg.currency)}
-              {pkg.original_value_minor != null && pkg.original_value_minor > pkg.total_price_minor && <span style={{ textDecoration: "line-through", color: "var(--text-muted, #6b7280)", marginLeft: 6, fontSize: "0.8rem" }}>{money(pkg.original_value_minor, pkg.currency)}</span>}
+              {pkg.original_value_minor != null && pkg.original_value_minor > pkg.total_price_minor && <>
+                <span className="packages-strike">{money(pkg.original_value_minor, pkg.currency)}</span>
+                <span className="packages-save">save {money(pkg.original_value_minor - pkg.total_price_minor, pkg.currency)}</span>
+              </>}
               {" · "}{pkg.validity_days} days · {pkg.total_sessions} sessions
             </p>
-            {pkg.description && <small style={{ color: "var(--text-muted, #6b7280)" }}>{pkg.description}</small>}
-            {expandedPkg === pkg.id && <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--border-subtle, #e5e5e3)", display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {can("package.manage") && <button className="button button-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setServiceDrawer(pkg.id); }}>Add service</button>}
-              {can("package.manage") && <button className="button button-primary" disabled={busy} onClick={(e) => { e.stopPropagation(); setSellDrawer(pkg.id); }}>Sell to patient</button>}
-            </div>}
+            {pkg.description && <small className="muted-mono">{pkg.description}</small>}
           </div>
           <div className="invoice-actions">
-            <span className={`pipeline-status status-${pkg.status === "active" ? "paid" : "void"}`}>{pkg.status}</span>
+            <span className={`pipeline-status status-${pkg.status === "active" ? "paid" : pkg.status === "inactive" ? "pending" : "void"}`}>{pkg.status}</span>
+            {can("package.manage") && <button className="text-control" disabled={busy} onClick={() => void refreshManage(pkg.id)}>Manage</button>}
+            {can("package.manage") && pkg.status === "active" && <button className="button button-secondary" disabled={busy} onClick={() => { setSellKey(crypto.randomUUID()); setSellPkg(pkg); }}>Sell</button>}
           </div>
         </article>)}
       </div>
     </section>
 
-    {/* ═══ PATIENT PACKAGES ═══ */}
     <section className="surface-card" style={{ marginTop: 20 }}>
       <div className="surface-card-heading">
-        <div><p className="eyebrow">PATIENT PACKAGES</p><h2>Active purchases &amp; session tracking</h2></div>
+        <div><p className="eyebrow">PATIENT PACKAGES</p><h2>Purchases &amp; session tracking</h2></div>
+        <select className="admin-search-input" value={patientLookup} onChange={(e) => { setPatientLookup(e.target.value); if (e.target.value) void refreshPatient(e.target.value); else setPatientPackages([]); }}>
+          <option value="">Choose patient…</option>
+          {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}
+        </select>
       </div>
-
-      <div style={{ padding: "12px 0" }}>
-        <label style={{ fontSize: "0.85rem" }}>
-          Select patient to view packages
-          <select style={{ marginLeft: 8, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border-subtle, #e5e5e3)", fontSize: "0.85rem" }} value={patientLookup ?? ""} onChange={(e) => { if (e.target.value) void lookupPatientPackages(e.target.value); else { setPatientLookup(null); setPatientPackages([]); } }}>
-            <option value="">Choose patient…</option>
-            {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}
-          </select>
-        </label>
-      </div>
-
       {patientLookup && <div className="invoice-list">
         {patientPackages.length === 0 && <div className="dashboard-empty"><strong>No packages</strong><span>This patient has no purchased packages.</span></div>}
         {patientPackages.map((pp) => {
           const pct = pp.total_sessions > 0 ? Math.round((pp.used_sessions / pp.total_sessions) * 100) : 0;
-          const expired = pp.status === "expired" || new Date(pp.expires_at) < new Date();
-          return <article className="invoice-row" key={pp.id}>
-            <div className="invoice-mark" style={{ background: expired ? "var(--red-bg, #fef2f2)" : undefined }}>{pp.name.slice(0, 2).toUpperCase()}</div>
+          return <article className="invoice-row" key={pp.id} style={{ cursor: "pointer" }} onClick={() => void openPurchase(pp.id)}>
+            <div className="invoice-mark">{pp.name.slice(0, 2).toUpperCase()}</div>
             <div className="invoice-main">
               <h3>{pp.name}</h3>
               <p>{pp.used_sessions}/{pp.total_sessions} sessions used · {pp.remaining_sessions} remaining</p>
-              <div style={{ height: 6, background: "var(--border-subtle, #e5e5e3)", borderRadius: 3, overflow: "hidden", marginTop: 4, maxWidth: 240 }}>
-                <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "var(--red, #b91c1c)" : pct > 70 ? "var(--amber, #92400e)" : "var(--accent, #274c42)", borderRadius: 3, transition: "width 0.3s" }} />
-              </div>
-              <small style={{ color: "var(--text-muted, #6b7280)" }}>
-                Purchased {new Date(pp.purchased_at).toLocaleDateString()} · Expires {new Date(pp.expires_at).toLocaleDateString()}
-              </small>
+              <div className="packages-progress"><div style={{ width: `${pct}%` }} data-full={pct >= 100} /></div>
+              <small className="muted-mono">Purchased {new Date(pp.purchased_at).toLocaleDateString()} · Expires {new Date(pp.expires_at).toLocaleDateString()}</small>
             </div>
             <div className="invoice-actions">
-              <span className={`pipeline-status status-${pp.status === "active" ? "paid" : pp.status === "exhausted" ? "contacted" : "void"}`}>{pp.status}</span>
-              {can("package.manage") && pp.status === "active" && !expired && pp.remaining_sessions > 0 && (
-                <button className="button button-secondary" disabled={busy} onClick={() => void consumeSession(pp.id)}>Use session</button>
-              )}
+              <span className={`pipeline-status status-${pp.status === "active" ? "paid" : pp.status === "exhausted" ? "pending" : "void"}`}>{pp.status}</span>
             </div>
           </article>;
         })}
       </div>}
     </section>
 
-    {/* ═══ CREATE PACKAGE DRAWER ═══ */}
+    {/* Create */}
     <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package">
-      <form className="manage-form" onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <label>Name<input name="name" required maxLength={160} placeholder="Hair Transplant 3-Session" /></label>
-        <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} placeholder="What this package includes" style={{ width: "100%" }} /></label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <label>Package price (PKR)<input name="price" type="number" min={0} step="0.01" required placeholder="25000" /></label>
-          <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" placeholder="30000" /></label>
+      <form className="manage-form packages-form" onSubmit={handleCreate}>
+        <label>Name<input name="name" required maxLength={160} placeholder="Hair Transplant · 3 sessions" /></label>
+        <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} /></label>
+        <div className="packages-grid-2">
+          <label>{priceLabel}<input name="price" type="number" min={0} step="0.01" required /></label>
+          <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" /></label>
         </div>
         <label>Validity (days)<input name="validity_days" type="number" min={1} max={3650} required defaultValue={365} /></label>
         <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Create package"}<span>↗</span></button></div>
       </form>
     </Drawer>
 
-    {/* ═══ ADD SERVICE DRAWER ═══ */}
-    <Drawer open={!!serviceDrawer} onClose={() => setServiceDrawer(null)} title="Add service to package">
-      <form className="manage-form" onSubmit={handleAddService} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <label>Service
-          <select name="service_id" required>
-            <option value="">Choose service…</option>
-            {services.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.duration_minutes} min{s.amount_minor != null ? ` · ${money(s.amount_minor, s.currency ?? clinicCurrency)}` : ""})</option>)}
-          </select>
-        </label>
-        <label>Sessions included<input name="sessions_count" type="number" min={1} max={1000} required defaultValue={1} /></label>
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Adding…" : "Add service"}<span>↗</span></button></div>
-      </form>
+    {/* Manage */}
+    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined}>
+      {manage && <div className="packages-manage">
+        <form className="manage-form packages-form" onSubmit={handleEdit}>
+          <label>Name<input name="name" required maxLength={160} defaultValue={manage.name} /></label>
+          <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} defaultValue={manage.description ?? ""} /></label>
+          <div className="packages-grid-2">
+            <label>{priceLabel}<input name="price" type="number" min={0} step="0.01" required defaultValue={(manage.total_price_minor / 100).toFixed(2)} /></label>
+            <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" defaultValue={manage.original_value_minor != null ? (manage.original_value_minor / 100).toFixed(2) : ""} /></label>
+          </div>
+          <label>Validity (days)<input name="validity_days" type="number" min={1} max={3650} required defaultValue={manage.validity_days} /></label>
+          <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Save changes<span>↗</span></button></div>
+        </form>
+
+        <div className="packages-status-actions">
+          {manage.status !== "active" && manage.status !== "archived" && <button className="button button-secondary" disabled={busy} onClick={() => changeStatus("activate")}>Activate</button>}
+          {manage.status === "active" && <button className="button button-secondary" disabled={busy} onClick={() => changeStatus("deactivate")}>Deactivate</button>}
+          {manage.status === "archived" ? <button className="button button-secondary" disabled={busy} onClick={() => changeStatus("unarchive")}>Unarchive</button>
+            : <button className="button button-danger" disabled={busy} onClick={() => void confirmArchive()}>Archive</button>}
+          <span className="muted-mono">{manage.sold.total_sold} sold · {manage.sold.active_count} active</span>
+        </div>
+
+        <h3 className="eyebrow packages-sub">INCLUDED SERVICES · {manage.total_sessions} sessions</h3>
+        <div className="invoice-list">
+          {manage.services.length === 0 && <div className="dashboard-empty"><strong>No services</strong><span>Add at least one service before selling.</span></div>}
+          {manage.services.map((s) => <article className="invoice-row" key={s.service_id}>
+            <div className="invoice-main"><h3>{s.name}</h3><p>{s.sessions_count} session{s.sessions_count === 1 ? "" : "s"}</p></div>
+            <div className="invoice-actions"><button className="text-control" disabled={busy} onClick={() => removeService(s.service_id)}>Remove</button></div>
+          </article>)}
+        </div>
+        <form className="manage-form packages-form" onSubmit={handleAddService}>
+          <div className="packages-grid-2">
+            <label>Add service<select name="service_id" required><option value="">Choose…</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+            <label>Sessions<input name="sessions_count" type="number" min={1} max={1000} required defaultValue={1} /></label>
+          </div>
+          <div className="form-actions"><button className="button button-secondary" type="submit" disabled={busy}>Add service</button></div>
+        </form>
+      </div>}
     </Drawer>
 
-    {/* ═══ SELL DRAWER ═══ */}
-    <Drawer open={!!sellDrawer} onClose={() => setSellDrawer(null)} title="Sell package to patient">
-      <form className="manage-form" onSubmit={handleSell} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <label>Patient
-          <select name="patient_id" required>
-            <option value="">Choose patient…</option>
-            {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}
-          </select>
-        </label>
-        <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Processing…" : "Sell package"}<span>↗</span></button></div>
-      </form>
+    {/* Sell */}
+    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name}>
+      {sellPkg && <form className="manage-form packages-form" onSubmit={handleSell}>
+        <p className="packages-sell-summary">{money(sellPkg.total_price_minor, sellPkg.currency)} · {sellPkg.total_sessions} sessions · valid {sellPkg.validity_days} days</p>
+        <label>Patient<select name="patient_id" required><option value="">Choose patient…</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}</select></label>
+        <label>Invoice ID <span className="field-optional">optional — link an existing invoice</span><input name="invoice_id" placeholder="Paste an invoice UUID to link" /></label>
+        <p className="muted-mono packages-sell-note">Linking an invoice does not mark it paid — collection is recorded separately through Billing. Leave blank to sell without an invoice.</p>
+        <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Processing…" : "Confirm sale"}<span>↗</span></button></div>
+      </form>}
+    </Drawer>
+
+    {/* Purchase detail + consume */}
+    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined}>
+      {purchase && <div className="packages-manage">
+        <span className={`pipeline-status status-${purchase.status === "active" ? "paid" : purchase.status === "exhausted" ? "pending" : "void"}`}>{purchase.status}</span>
+        {can("package.manage") && purchase.status === "active" && <form className="manage-form packages-form" onSubmit={handleConsume}>
+          <label>Use a session for<select name="service_id"><option value="">Any included service</option>{purchase.sessions.filter((s) => s.status === "planned" && s.service_id).map((s) => s.service_id).filter((v, i, a) => a.indexOf(v) === i).map((sid) => { const row = purchase.sessions.find((s) => s.service_id === sid); return <option key={sid} value={sid ?? ""}>{row?.service_name ?? sid}</option>; })}</select></label>
+          <label>Override reason <span className="field-optional">only if no planned session remains</span><input name="override_reason" maxLength={500} placeholder="Authorized overuse reason" /></label>
+          <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Record session<span>↗</span></button></div>
+        </form>}
+        <h3 className="eyebrow packages-sub">SESSION HISTORY</h3>
+        <div className="invoice-list">
+          {purchase.sessions.map((s) => <article className="invoice-row" key={s.id}>
+            <div className="invoice-main">
+              <h3>{s.service_name ?? "Any service"}</h3>
+              <p>{s.status}{s.used_at ? ` · ${new Date(s.used_at).toLocaleString()}` : ""}</p>
+              {s.override_reason && <small className="muted-mono">Override: {s.override_reason}</small>}
+            </div>
+            <div className="invoice-actions"><span className={`pipeline-status status-${s.status === "used" ? "paid" : s.status === "planned" ? "pending" : "contacted"}`}>{s.status}</span></div>
+          </article>)}
+        </div>
+      </div>}
     </Drawer>
   </main>;
 }
