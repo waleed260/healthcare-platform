@@ -12,9 +12,10 @@ type DrawerProps = {
   footer?: ReactNode;
   width?: number;
   opaque?: boolean;
+  bare?: boolean;
 };
 
-export default function Drawer({ open, onClose, title, subtitle, dirty, children, footer, width = 430, opaque }: DrawerProps) {
+export default function Drawer({ open, onClose, title, subtitle, dirty, children, footer, width = 430, opaque, bare }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -54,7 +55,7 @@ export default function Drawer({ open, onClose, title, subtitle, dirty, children
   if (!open) return null;
 
   return (
-    <div className={`drawer-scrim${opaque ? " drawer-scrim-opaque" : ""}`} onClick={requestClose}>
+    <div className={`drawer-scrim${opaque ? " drawer-scrim-opaque" : ""}${bare ? " drawer-scrim-bare" : ""}`} onClick={requestClose}>
       <aside
         ref={panelRef}
         className="drawer-panel"
