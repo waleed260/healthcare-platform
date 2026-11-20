@@ -1381,7 +1381,6 @@ legend{font-size:var(--text-xs)}
 .enc-d-inv-link-accent{color:var(--coral);font-weight:600}
 .enc-d-gen-btn-gap{margin-top:8px}
 .enc-d-discharge-btn{background:var(--leaf)}
-.enc-d-print-title{margin-bottom:4px}
 .enc-d-print-token{font-size:18px;font-weight:700;margin:2px 0 0}
 .enc-d-print-right{text-align:right}
 .enc-d-print-status{font-size:14px;font-weight:600;margin:2px 0 0}
@@ -1407,53 +1406,74 @@ legend{font-size:var(--text-xs)}
 .finance-invoices-link{font-size:11px}
 .finance-inv-link{color:inherit;text-decoration:underline;text-underline-offset:2px}
 
-/* Print styles for encounter summary — aim for one A4 page */
-.enc-print-header{display:none}
+/* Encounter Summary — professional A4 clinical document (print only) */
+.enc-print-header,.enc-print-foot,.enc-run-head{display:none}
+/* On screen the print document is plain block flow, not a table. */
+.enc-print-doc,.enc-print-doc>tbody,.enc-print-doc>tbody>tr,.enc-print-doc>tbody>tr>td{display:block}
 @media print{
-  @page{size:A4;margin:8mm 10mm}
-  html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .workspace-sidebar,.workspace-topbar,.pipeline-toolbar,.form-actions,.header-actions,.button,.ghost-button,.back-link,.mobile-nav-toggle,.enc-detail-internal-note,nav,aside{display:none!important}
-  .workspace-layout{display:block!important}
-  html,body{margin:0!important;padding:0!important}
-  .workspace-body .dash-content{width:100%!important;padding:0!important;margin:0!important}
-  /* No border on print cards — the border's bottom pixel was spilling onto a trailing blank page. */
-  .surface-card{break-inside:avoid;page-break-inside:avoid;border:0!important;box-shadow:none!important;padding:4px 0!important;margin:2px 0!important}
-  .surface-card:last-of-type{margin-bottom:0!important}
-  .enc-print-header{display:block!important;margin-bottom:6px;padding-bottom:4px;border-bottom:1.5px solid #333;page-break-after:avoid}
-  .enc-print-header h2{font-size:14px;margin:0 0 2px}
-  .enc-print-header p{font-size:10px;margin:1px 0}
-  body{background:#fff!important;color:#000!important;font-size:10px;line-height:1.25;orphans:3;widows:3}
-  h1,h2,h3{font-size:11px;margin:2px 0;page-break-after:avoid}
-  p,dd,dt,span,strong,label,li{font-size:10px!important}
-  .eyebrow{font-size:8px!important;letter-spacing:.5px;margin:2px 0 1px!important}
-  .enc-d-print-section{margin-top:4px!important;page-break-inside:avoid}
-  .enc-d-print-title{font-size:13px;margin-bottom:2px}
-  .enc-d-print-token{font-size:12px;margin:0}
-  .enc-d-print-status{font-size:10px;margin:0}
-  .enc-d-print-doctor{font-size:10px;margin:1px 0 0}
-  .enc-d-print-date{font-size:9px;margin:0}
-  .enc-detail-vitals-grid{gap:4px!important;grid-template-columns:repeat(4,1fr)!important;page-break-inside:avoid}
+  @page{size:A4;margin:16mm 15mm;@bottom-right{content:"Page " counter(page) " of " counter(pages);font:400 8.5px 'DM Mono',monospace;color:#6b7a73}}
+  html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;margin:0!important;padding:0!important}
+  body{background:#fff!important;color:var(--ink)!important;font:12px/1.5 'DM Sans',sans-serif!important;orphans:3;widows:3}
+  .workspace-layout{display:block!important;background:#fff!important}
+  .workspace-body,.workspace-body .dash-content{width:100%!important;padding:0!important;margin:0!important;background:#fff!important}
+  /* Hide app chrome and on-screen-only encounter UI so only the document prints. */
+  .workspace-sidebar,.workspace-topbar,.pipeline-toolbar,.form-actions,.header-actions,
+  .button,.ghost-button,.back-link,.mobile-nav-toggle,.enc-detail-internal-note,
+  .enc-detail-ref-bar,.enc-d-summary-head,.enc-d-no-print,
+  nav,aside{display:none!important}
+  /* Scoped to the encounter page only, so printing other pages keeps their header/summary bar. */
+  .enc-detail-main .dash-topline,.enc-detail-main .billing-summary{display:none!important}
+  .surface-card{break-inside:auto;border:0!important;box-shadow:none!important;padding:0!important;margin:0!important;background:transparent!important}
+
+  /* Document table: the thead repeats as a running header on every printed page. */
+  .enc-print-doc{display:table!important;width:100%!important;border-collapse:collapse}
+  .enc-run-head{display:table-header-group!important}
+  .enc-print-doc>tbody{display:table-row-group!important}
+  .enc-print-doc>tbody>tr,.enc-run-head>tr{display:table-row!important}
+  .enc-print-doc>tbody>tr>td,.enc-run-head td{display:table-cell!important;padding:0}
+  .enc-run-head td{padding-bottom:7px}
+  .enc-rh{display:flex;justify-content:space-between;align-items:baseline;gap:16px;border-bottom:2px solid var(--clay);padding-bottom:6px;font:600 9px/1.3 'DM Mono',monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--leaf)}
+  .enc-rh span:last-child{color:var(--muted);font-weight:500;text-align:right}
+
+  /* Masthead: title + patient/encounter facts (first page) */
+  .enc-print-header{display:block!important;margin:14px 0 16px;page-break-after:avoid}
+  .enc-ph-title{font:500 30px/1 Fraunces,serif;color:var(--leaf);margin:0 0 16px}
+  .enc-ph-meta{display:grid;grid-template-columns:1fr 1fr;gap:7px 40px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .enc-ph-meta>div{display:grid;grid-template-columns:92px 1fr;gap:10px;align-items:baseline}
+  .enc-ph-meta span{font:600 8.5px/1.5 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .enc-ph-meta b{font-size:11.5px;font-weight:600;color:var(--ink)}
+
+  /* Section group headings (ARRIVAL VITALS, CLINICAL FINDINGS, …) */
+  h1,h2,h3{page-break-after:avoid}
+  .enc-d-print-section,.enc-d-section-gap{margin-top:15px!important;break-inside:auto}
+  .enc-d-eyebrow-tight-sm{display:block;font:600 10px/1 'DM Mono',monospace!important;letter-spacing:.1em;text-transform:uppercase;color:var(--leaf)!important;margin:0 0 8px!important;padding-bottom:4px;border-bottom:1px solid var(--line);page-break-after:avoid}
+
+  /* Definition rows: bold label + readable value */
+  .enc-detail-summary-row{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:baseline;padding:3.5px 0!important;border-bottom:0!important;break-inside:avoid}
+  .enc-detail-summary-row .eyebrow{margin:0!important;font:600 9px/1.5 'DM Mono',monospace!important;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)!important}
+  .enc-d-finding-text{margin:0!important;font-size:11.5px!important;line-height:1.5;color:var(--ink);white-space:pre-wrap}
+
+  /* Vitals grid: label above value */
+  .enc-detail-vitals-grid{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:9px 16px!important;break-inside:avoid}
   .enc-detail-vitals-grid br{display:none}
-  .enc-detail-vitals-grid>div{line-height:1.15}
-  .enc-detail-ref-bar{margin:2px 0!important;padding:2px 0!important;background:transparent!important;page-break-inside:avoid}
-  .enc-detail-sign-footer{margin-top:6px!important;padding-top:4px!important;border-top:0!important;page-break-inside:avoid}
-  .enc-d-section-gap{margin-top:4px!important}
-  /* Summary tab: explicitly mark cards that should not print (Amendment history,
-     Amend form) with .enc-d-no-print so we never accidentally hide printable content. */
-  .enc-d-no-print{display:none!important}
-  /* Dense summary rows: inline label+value, no dividers, almost no padding. */
-  .enc-detail-summary-row{padding:1px 0!important;border-bottom:0!important;display:grid;grid-template-columns:110px 1fr;gap:6px;align-items:baseline;page-break-inside:avoid}
-  .enc-detail-summary-row .eyebrow{margin:0!important;font-size:7px!important}
-  .enc-d-finding-text{margin:0!important;font-size:9.5px!important;line-height:1.25}
-  .enc-d-print-section{margin-top:3px!important}
-  .enc-d-eyebrow-tight-sm{margin:2px 0 1px!important;font-size:8px!important}
+  .enc-detail-vitals-grid>div{display:flex;flex-direction:column;gap:1px;line-height:1.3}
+  .enc-detail-vitals-grid strong{font-size:12px}
+  .enc-d-print-vitals-label{font:600 8.5px/1.4 'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+  /* Signatures */
+  .enc-detail-sign-footer{display:flex!important;gap:44px;margin-top:22px!important;padding-top:12px!important;border-top:1px solid var(--line)!important;break-inside:avoid}
+  .enc-detail-sign-footer .eyebrow{font:600 8.5px/1.4 'DM Mono',monospace!important;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)!important;margin:0!important}
+  .enc-d-print-doctor{font-size:12px!important;font-weight:600;margin:5px 0 0}
+  .enc-d-print-date{font-size:10px!important;color:var(--muted);margin:2px 0 0}
+
+  /* Document footer (once, at end) */
+  .enc-print-foot{display:block!important;margin-top:18px;padding-top:8px;border-top:1px solid var(--line);font:9px/1.4 'DM Mono',monospace;letter-spacing:.06em;color:var(--muted);text-align:center}
+
   a{color:inherit!important;text-decoration:none!important}
-  /* Letter-paper fallback: keep margins tight so A4-tuned content still fits */
-  @page :first{margin-top:6mm}
 }
+/* Letter paper: keep the A4-tuned layout, only tighten page margins. */
 @media print and (max-width:150mm){
-  @page{margin:5mm}
-  body{font-size:9px}
+  @page{margin:12mm}
 }
 
 /* quality-remediation: accessible landing menu (button + aria-expanded), legal/privacy page, public-site mobile nav + 12px floor */
