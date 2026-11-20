@@ -536,6 +536,13 @@ export default function EncounterDetailPage() {
   const visibleTab: Tab = lockedTabs.has(tab) ? "arrival" : tab;
   const arrivalLocked = !isDraft && !readonly;
 
+  // Summary document: only render a section when it has real data — no misleading empty headers.
+  const hasArrivalVitals = (enc.arrival_vitals != null && Object.values(enc.arrival_vitals).some((v) => v != null && v !== "")) || enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null;
+  const hasArrival = hasArrivalVitals || Boolean(enc.condition_on_arrival || enc.symptom_duration || enc.arrival_mode || enc.arrival_datetime);
+  const hasFindings = Boolean(enc.chief_complaint || enc.history_present_illness || enc.diagnosis || enc.examination_findings || enc.clinical_assessment || enc.pain_score != null || enc.investigations || enc.investigation_results);
+  const hasTreatment = (enc.medications?.length ?? 0) > 0 || (enc.administered_treatments?.length ?? 0) > 0 || (enc.administered_procedures?.length ?? 0) > 0 || Boolean(enc.treatment_plan || enc.treatment_response || enc.adverse_reactions);
+  const hasDischargeInfo = Boolean(enc.discharge_condition || enc.discharge_outcome || enc.discharge_datetime);
+
   /* ── Render ───────────────────────────────────────────────────── */
   return (
     <main className="dash-content enc-detail-main" ref={pageRef}>
@@ -999,9 +1006,11 @@ export default function EncounterDetailPage() {
                 <div className="enc-d-print-right"><span className="eyebrow">STATUS</span><p className="enc-d-print-status" style={{ color: statusColor[enc.status] }}>{statusLabel[enc.status] ?? enc.status}</p></div>
               </div>
 
-              {/* Arrival Vitals */}
-              <div className="enc-d-section-gap">
-                <p className="eyebrow enc-d-eyebrow-tight-sm">ARRIVAL VITALS</p>
+              {/* Arrival */}
+              {hasArrival && (
+              <div className="enc-d-section-gap enc-d-print-section">
+                <p className="eyebrow enc-d-eyebrow-tight-sm">ARRIVAL</p>
+                {hasArrivalVitals && (
                 <div className="enc-detail-vitals-grid">
                   {enc.arrival_vitals?.weight_kg != null && <div><span className="enc-d-print-vitals-label">Weight</span><br /><strong>{enc.arrival_vitals.weight_kg} kg</strong></div>}
                   {enc.arrival_vitals?.height_cm != null && <div><span className="enc-d-print-vitals-label">Height</span><br /><strong>{enc.arrival_vitals.height_cm} cm</strong></div>}
@@ -1012,15 +1021,16 @@ export default function EncounterDetailPage() {
                   {enc.arrival_vitals?.temperature != null && <div><span className="enc-d-print-vitals-label">Temp. (°C)</span><br /><strong>{enc.arrival_vitals.temperature}°C</strong></div>}
                   {(enc.gcs_eye != null || enc.gcs_verbal != null || enc.gcs_motor != null) && <div><span className="enc-d-print-vitals-label">GCS Score</span><br /><strong>E{enc.gcs_eye ?? "-"} V{enc.gcs_verbal ?? "-"} M{enc.gcs_motor ?? "-"} = {(enc.gcs_eye ?? 0) + (enc.gcs_verbal ?? 0) + (enc.gcs_motor ?? 0)}</strong></div>}
                 </div>
+                )}
+                <SummarySection label="Condition on Arrival" value={enc.condition_on_arrival} />
+                <SummarySection label="Duration of Symptoms" value={enc.symptom_duration} />
+                {enc.arrival_mode && <SummarySection label="Arrival Mode" value={typeLabel(enc.arrival_mode)} />}
+                {enc.arrival_datetime && <SummarySection label="Arrival Time" value={fmtDateTime(enc.arrival_datetime)} />}
               </div>
-
-              {/* Condition on Arrival & Duration */}
-              <SummarySection label="Condition on Arrival" value={enc.condition_on_arrival} />
-              <SummarySection label="Duration of Symptoms" value={enc.symptom_duration} />
-              {enc.arrival_mode && <SummarySection label="Arrival Mode" value={typeLabel(enc.arrival_mode)} />}
-              {enc.arrival_datetime && <SummarySection label="Arrival Time" value={fmtDateTime(enc.arrival_datetime)} />}
+              )}
 
               {/* Clinical Findings */}
+              {hasFindings && (
               <div className="enc-d-print-section">
                 <p className="eyebrow enc-d-eyebrow-tight-sm">CLINICAL FINDINGS</p>
                 <SummarySection label="Chief Complaint" value={enc.chief_complaint} />
@@ -1032,8 +1042,10 @@ export default function EncounterDetailPage() {
                 <SummarySection label="Investigations" value={enc.investigations} />
                 <SummarySection label="Investigation Results" value={enc.investigation_results} />
               </div>
+              )}
 
               {/* Treatment Given */}
+              {hasTreatment && (
               <div className="enc-d-print-section">
                 <p className="eyebrow enc-d-eyebrow-tight-sm">TREATMENT GIVEN BY CLINIC</p>
                 {(enc.medications?.length ?? 0) > 0 && <SummarySection label="Medicines" value={enc.medications!.map((m) => `${m.name}${m.dosage ? ` ${m.dosage}` : ""}${m.route ? ` (${m.route})` : ""}${m.frequency ? ` ${m.frequency}` : ""}${m.duration ? ` x ${m.duration}` : ""}`).join("; ")} />}
@@ -1043,14 +1055,17 @@ export default function EncounterDetailPage() {
                 <SummarySection label="Treatment Response" value={enc.treatment_response} />
                 {enc.adverse_reactions && <SummarySection label="Adverse Reactions" value={enc.adverse_reactions} />}
               </div>
+              )}
 
               {/* Condition at Discharge */}
+              {hasDischargeInfo && (
               <div className="enc-d-print-section">
                 <p className="eyebrow enc-d-eyebrow-tight-sm">DISCHARGE</p>
                 <SummarySection label="Condition at Discharge" value={enc.discharge_condition} />
                 <SummarySection label="Discharge Outcome" value={enc.discharge_outcome ? typeLabel(enc.discharge_outcome) : null} />
                 {enc.discharge_datetime && <SummarySection label="Discharge Time" value={fmtDateTime(enc.discharge_datetime)} />}
               </div>
+              )}
 
               {/* Discharge Vitals */}
               {enc.discharge_vitals && Object.values(enc.discharge_vitals).some((v) => v != null && v !== "") && (
