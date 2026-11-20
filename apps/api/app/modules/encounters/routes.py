@@ -214,11 +214,15 @@ def encounter_detail(
                p.emergency_contact_name, p.emergency_contact_phone, p.emergency_contact_relation,
                d.public_name AS doctor_name, d.specialty AS doctor_specialty,
                d.user_id AS doctor_user_id,
-               b.name AS branch_name
+               b.name AS branch_name,
+               du.display_name AS discharged_by_name,
+               fu.display_name AS finalized_by_name
         FROM encounter_forms e
         JOIN patients p ON p.clinic_id = e.clinic_id AND p.id = e.patient_id
         JOIN doctor_profiles d ON d.clinic_id = e.clinic_id AND d.id = e.doctor_id
         LEFT JOIN branches b ON b.clinic_id = e.clinic_id AND b.id = e.branch_id
+        LEFT JOIN users du ON du.clinic_id = e.clinic_id AND du.id = e.discharged_by
+        LEFT JOIN users fu ON fu.clinic_id = e.clinic_id AND fu.id = e.finalized_by
         WHERE e.clinic_id = :clinic_id AND e.id = :encounter_id AND e.archived_at IS NULL
     """), {"clinic_id": session["clinic_id"], "encounter_id": encounter_id}).mappings().one_or_none()
     if row is None:

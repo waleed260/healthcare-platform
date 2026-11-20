@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, writeHeaders } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
+import { useClinicName } from "../../_lib/clinic-context";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 type Vitals = { blood_pressure?: string; pulse?: number; temperature?: number; respiratory_rate?: number; oxygen_saturation?: number; weight_kg?: number; height_cm?: number; notes?: string };
@@ -48,6 +49,7 @@ type Encounter = {
   discharge_condition: string | null; discharge_outcome: string | null;
   discharge_destination: string | null; discharge_reason: string | null;
   discharge_datetime: string | null; discharged_by: string | null;
+  discharged_by_name: string | null; finalized_by_name: string | null;
   discharge_instructions: string | null; warning_signs: string | null;
   medicine_guidance: string | null;
   follow_up_clinician: string | null; follow_up_department: string | null;
@@ -63,6 +65,8 @@ type Encounter = {
 };
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
+// Clinic-entered doctor names sometimes already include the honorific; avoid "Dr. Dr. X".
+const docName = (name: string) => `Dr. ${name.replace(/^\s*dr\.?\s*/i, "")}`;
 const fmtDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v));
 const fmtDateTime = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
 const typeLabel = (v: string) => v.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -128,6 +132,7 @@ export default function EncounterDetailPage() {
   const { encounterId } = useParams<{ encounterId: string }>();
   const toast = useToast();
   const confirm = useConfirm();
+  const clinicName = useClinicName();
 
   const [enc, setEnc] = useState<Encounter | null>(null);
   const [loading, setLoading] = useState(true);
@@ -533,13 +538,13 @@ export default function EncounterDetailPage() {
 
   /* ── Render ───────────────────────────────────────────────────── */
   return (
-    <main className="dash-content" ref={pageRef}>
+    <main className="dash-content enc-detail-main" ref={pageRef}>
       {/* Header */}
       <div className="dash-topline">
         <div>
           <p className="eyebrow"><Link href="/encounters" className="enc-d-link-muted">ENCOUNTERS</Link> &middot; {typeLabel(enc.encounter_type).toUpperCase()}</p>
           <h1><Link href={`/patients/${enc.patient_id}`} className="enc-d-link-inherit">{enc.patient_name}</Link></h1>
-          <p className="enc-d-meta">Dr. {enc.doctor_name}{enc.doctor_specialty && ` · ${enc.doctor_specialty}`}{enc.branch_name && ` · ${enc.branch_name}`}</p>
+          <p className="enc-d-meta">{docName(enc.doctor_name)}{enc.doctor_specialty && ` · ${enc.doctor_specialty}`}{enc.branch_name && ` · ${enc.branch_name}`}</p>
         </div>
         <div className="header-actions">
           <span className="enc-detail-status-badge" style={{ background: statusColor[enc.status] ?? "var(--line)" }}>{statusLabel[enc.status] ?? typeLabel(enc.status)}</span>
@@ -960,15 +965,31 @@ export default function EncounterDetailPage() {
         {/* ── Tab H: Summary / Print ──────────────────────────────── */}
         {visibleTab === "summary" && (
           <>
-            {/* Print header (hidden on screen, visible when printing) */}
-            <div className="enc-section surface-card enc-print-header">
-              <h2 className="enc-d-print-title">Discharge Summary</h2>
-              <p>Patient: <strong>{enc.patient_name}</strong> {enc.mrn && `(MRN: ${enc.mrn})`} | Doctor: <strong>Dr. {enc.doctor_name}</strong>{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
-              {enc.branch_name && <p>Branch: {enc.branch_name}</p>}
+            {/* Printable document — table layout so the running header (thead) repeats on every printed page */}
+            <table className="enc-print-doc"><thead className="enc-run-head"><tr><td>
+              <div className="enc-rh">
+                <span>{clinicName || "care/fully"}{enc.branch_name ? ` · ${enc.branch_name}` : ""}</span>
+                <span>{enc.patient_name}{enc.mrn ? ` · ${enc.mrn}` : ""}</span>
+              </div>
+            </td></tr></thead><tbody><tr><td>
+
+            {/* Masthead — title + patient/encounter facts (first page) */}
+            <div className="enc-print-header">
+              <h1 className="enc-ph-title">Encounter Summary</h1>
+              <div className="enc-ph-meta">
+                <div><span>Patient</span><b>{enc.patient_name}</b></div>
+                {enc.mrn && <div><span>MRN</span><b>{enc.mrn}</b></div>}
+                {enc.patient_dob && <div><span>Date of Birth</span><b>{fmtDate(enc.patient_dob)}{computeAge(enc.patient_dob) && ` · ${computeAge(enc.patient_dob)}`}</b></div>}
+                <div><span>Examined By</span><b>{docName(enc.doctor_name)}{enc.doctor_specialty && ` · ${enc.doctor_specialty}`}</b></div>
+                <div><span>Encounter Date</span><b>{fmtDateTime(enc.created_at)}</b></div>
+                <div><span>Status</span><b>{statusLabel[enc.status] ?? typeLabel(enc.status)}</b></div>
+                <div><span>Token</span><b>{enc.token_number != null ? enc.token_number : enc.id.slice(0, 8).toUpperCase()}</b></div>
+                <div><span>Visit Type</span><b>{typeLabel(enc.encounter_type)}</b></div>
+              </div>
             </div>
 
             <div className="enc-section surface-card">
-              <div className="surface-card-heading"><div><p className="eyebrow">DISCHARGE SUMMARY</p><h2>Encounter Summary</h2></div>
+              <div className="surface-card-heading enc-d-summary-head"><div><p className="eyebrow">ENCOUNTER</p><h2>Encounter Summary</h2></div>
                 <button className="button button-secondary" type="button" onClick={() => window.print()}>Print</button>
               </div>
 
@@ -1055,22 +1076,34 @@ export default function EncounterDetailPage() {
               {/* Follow-up */}
               <SummarySection label="Follow-up" value={[enc.follow_up_date && `Date: ${fmtDate(enc.follow_up_date)}`, enc.follow_up_instructions, enc.follow_up_clinician && `Clinician: ${enc.follow_up_clinician}`, enc.follow_up_department && `Dept: ${enc.follow_up_department}`].filter(Boolean).join(" | ") || null} />
 
-              {/* Examined By + Printed By */}
+              {/* Signatures: examined / discharged / finalized — only those with real data */}
               <div className="enc-detail-sign-footer">
                 <div>
                   <span className="eyebrow">EXAMINED BY</span>
-                  <p className="enc-d-print-doctor">Dr. {enc.doctor_name}{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
+                  <p className="enc-d-print-doctor">{docName(enc.doctor_name)}{enc.doctor_specialty && ` (${enc.doctor_specialty})`}</p>
                   <p className="enc-d-print-date">{fmtDateTime(enc.created_at)}</p>
                 </div>
-                <div>
-                  <span className="eyebrow">{enc.discharged_by ? "DISCHARGED BY" : "PRINTED BY"}</span>
-                  <p className="enc-d-print-doctor">{enc.discharged_by ?? `Dr. ${enc.doctor_name}`}</p>
-                  {enc.discharge_datetime && <p className="enc-d-print-date">{fmtDateTime(enc.discharge_datetime)}</p>}
-                </div>
+                {(enc.discharged_by_name || enc.discharge_datetime) && (
+                  <div>
+                    <span className="eyebrow">DISCHARGED BY</span>
+                    <p className="enc-d-print-doctor">{enc.discharged_by_name ?? docName(enc.doctor_name)}</p>
+                    {enc.discharge_datetime && <p className="enc-d-print-date">{fmtDateTime(enc.discharge_datetime)}</p>}
+                  </div>
+                )}
+                {enc.finalized_at && (
+                  <div>
+                    <span className="eyebrow">FINALIZED BY</span>
+                    <p className="enc-d-print-doctor">{enc.finalized_by_name ?? "—"}</p>
+                    <p className="enc-d-print-date">{fmtDateTime(enc.finalized_at)}</p>
+                  </div>
+                )}
               </div>
 
               {enc.internal_notes && <div className="enc-detail-internal-note"><span className="eyebrow">INTERNAL NOTES (NOT PRINTED)</span><p>{enc.internal_notes}</p></div>}
+
+              <p className="enc-print-foot">{clinicName || "care/fully"} · Encounter Summary generated {fmtDateTime(new Date().toISOString())}</p>
             </div>
+            </td></tr></tbody></table>
 
             {/* Amendment history */}
             {(enc.amendment_history?.length ?? 0) > 0 && (
