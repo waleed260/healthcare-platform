@@ -40,7 +40,7 @@ for (const role of roles) {
     }
 
     await page.goto("/website");
-    const publish = page.getByRole("button", { name: /publish draft/i });
+    const publish = page.getByRole("button", { name: /^publish/i });
     if (role.name === "owner" || role.name === "manager") await expect(publish).toBeEnabled();
     else await expect(publish).toBeDisabled();
     if (role.name === "website editor") {
