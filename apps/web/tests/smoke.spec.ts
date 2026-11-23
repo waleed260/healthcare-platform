@@ -22,6 +22,11 @@ const syntheticSession: SessionInfo = {
 };
 
 async function installSyntheticApi(page: Page): Promise<void> {
+  // The login form only enables its submit button once /health/ready answers;
+  // CI has no backend behind the Next server, so mock readiness too.
+  await page.route("**/health/ready", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "ready" }) });
+  });
   await page.route("**/api/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     let data: unknown = [];

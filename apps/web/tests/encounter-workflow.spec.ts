@@ -218,7 +218,8 @@ test.describe("Clinical Encounter Workflow", () => {
     // Draft → In Progress
     await expect(page.getByText("Draft")).toBeVisible();
     await page.getByRole("button", { name: "Begin Assessment" }).click();
-    await expect(page.getByText("In Progress")).toBeVisible();
+    // The history list also prints the new status; assert on the status badge itself.
+    await expect(page.locator(".enc-detail-status-badge")).toHaveText("In Progress");
 
     // In Progress → Ready for Discharge
     await page.getByRole("button", { name: "Ready for Discharge" }).click();
