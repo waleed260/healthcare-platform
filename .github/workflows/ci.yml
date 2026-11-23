@@ -68,6 +68,10 @@ jobs:
         env:
           APP_ENV: test
           SEED_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare
+          # Dev-only owner for the synthetic throwaway CI database (seed_demo.py
+          # requires OWNER_PASSWORD); not a real credential, like the dev DB passwords above.
+          OWNER_PASSWORD: ci-seed-owner-pw
+          OWNER_EMAIL: owner@synthetic.example.test
         run: |
           PYTHONPATH=. python scripts/seed_demo.py
           PYTHONPATH=. python scripts/seed_demo.py
@@ -155,7 +159,7 @@ jobs:
         run: bash infra/verify_deploy.sh http://localhost:8000
       - name: Seed fake data and run the API smoke test (real DB, real runtime role)
         run: |
-          docker compose run --rm -e APP_ENV=test -e SEED_DATABASE_URL=postgresql+psycopg://healthcare_migrator:healthcare_migrator_dev@db:5432/healthcare api python scripts/seed_demo.py
+          docker compose run --rm -e APP_ENV=test -e SEED_DATABASE_URL=postgresql+psycopg://healthcare_migrator:healthcare_migrator_dev@db:5432/healthcare -e OWNER_PASSWORD=ci-seed-owner-pw -e OWNER_EMAIL=owner@synthetic.example.test api python scripts/seed_demo.py
           pip install --quiet httpx pyotp
           python infra/smoke_api.py http://127.0.0.1:8000
       - name: Runtime role privilege check (throwaway local Postgres only; never touches Neon)
