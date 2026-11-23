@@ -104,10 +104,10 @@ test.describe("core responsive browser flows", () => {
     });
     await page.goto("/patients");
     await expect(page.getByText("Synthetic First")).toBeVisible();
-    await page.getByRole("button", { name: /load more patient records/i }).click();
+    await page.getByRole("button", { name: /load more patients/i }).click();
     await expect(page.getByText("Synthetic Second")).toBeVisible();
     expect(cursorRequests).toBe(1);
-    await expect(page.getByRole("button", { name: /load more patient records/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /load more patients/i })).toHaveCount(0);
   });
 
   test("patient detail renders only the authorized care-team response", async ({ page }) => {
@@ -281,9 +281,13 @@ test.describe("core responsive browser flows", () => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [{ id: "privacy-1", patient_id: "patient-1", request_type: "access", status: "requested", reason: "Synthetic access review", requested_at: "2026-09-22T08:00:00Z", identity_verified_at: "2026-09-22T08:10:00Z" }], meta: { next_cursor: null } }) });
     });
     await page.route("**/api/v1/governance/patients/patient-1/privacy-requests", async (route) => { created = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ data: { id: "privacy-1", status: "requested" } }) }); });
+    await page.route("**/api/v1/patients?**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [{ id: "patient-1", patient_number: "SYN-0001", full_name: "Synthetic Patient", normalized_email: null, normalized_phone: null, status: "active", version: 1 }], meta: { next_cursor: null } }) });
+    });
     await page.goto("/privacy");
     await page.getByRole("button", { name: /new request/i }).click();
-    await page.getByLabel("Patient ID").fill("patient-1");
+    await page.getByPlaceholder("Search by name, email, or phone").fill("Synthetic");
+    await page.getByRole("button", { name: /Synthetic Patient/i }).click();
     await page.getByLabel("Reason").fill("Synthetic access review");
     await page.getByRole("button", { name: /record request/i }).click();
     await expect.poll(() => created).toBe(true);

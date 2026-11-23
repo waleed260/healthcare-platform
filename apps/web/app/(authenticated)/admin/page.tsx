@@ -223,10 +223,12 @@ export default function AdminPage() {
       </div>}
 
       {/* Tab bar */}
-      <div className="pipeline-tabs admin-tab-bar" role="tablist">
-        {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-          {t.label}{t.count !== undefined ? ` (${t.count})` : ""}
-        </button>)}
+      <div className="pipeline-toolbar admin-tab-bar">
+        <div className="pipeline-tabs" role="tablist">
+          {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+            {t.label}{t.count !== undefined ? ` (${t.count})` : ""}
+          </button>)}
+        </div>
       </div>
 
       {/* === Clinics tab === */}

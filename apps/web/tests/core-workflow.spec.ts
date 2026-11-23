@@ -23,7 +23,7 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
     else if (path.endsWith("/onboarding/complete")) { setupCompleted = true; data = { completed: true }; }
     else if (path.endsWith("/websites")) data = [published ? { ...website, status: "published", version: 2, live_version_id: "version-2" } : website];
     else if (path.endsWith("/domains")) data = [];
-    else if (path.endsWith("/pages")) data = [pageRecord];
+    else if (path.endsWith("/pages")) data = [pageRecord, { id: "page-legal", slug: "privacy", title: "Privacy Policy", version: 1 }];
     else if (path.endsWith("/versions")) data = [{ id: "version-1", version_number: 1, published_at: null, created_at: "2026-09-27T08:00:00Z" }];
     else if (path.endsWith("/sections")) data = [section];
     else if (path.endsWith("/validation")) data = { valid: true, code: null, message: null };
@@ -36,6 +36,7 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
     else if (path.endsWith("/appointments")) data = bookingCreated ? [{ id: "appointment-1", reference: "SYN-BOOK-001", branch_id: "branch-1", doctor_id: "doctor-1", service_id: "service-1", patient_id: "patient-1", starts_at: bookingStarts, ends_at: `${bookingDate}T09:30:00Z`, status: appointmentStatus, version: appointmentStatus === "confirmed" ? 2 : 1 }] : [];
     else if (path.endsWith("/approve")) { appointmentStatus = "confirmed"; data = { status: appointmentStatus, version: 2 }; }
     else if (path.endsWith("/transitions")) { appointmentStatus = "waiting"; data = { status: appointmentStatus, version: 3 }; }
+    else if (path.endsWith("/check-in")) { appointmentStatus = "waiting"; data = { status: appointmentStatus, version: 3 }; }
     else if (path.endsWith("/operations/queue")) data = appointmentStatus === "waiting" || appointmentStatus === "in_consultation" ? [{ id: "queue-1", appointment_id: "appointment-1", status: appointmentStatus === "waiting" ? "waiting" : "in_consultation", checked_in_at: `${bookingDate}T08:55:00Z`, priority: 0, full_name: "Synthetic Patient", reference: "SYN-BOOK-001", starts_at: bookingStarts, version: appointmentStatus === "waiting" ? 1 : 2 }] : [];
     else if (path.endsWith("/start")) { appointmentStatus = "in_consultation"; data = { status: appointmentStatus, version: 2 }; }
     else if (path.endsWith("/complete")) { appointmentStatus = "completed"; data = { status: appointmentStatus, version: 3 }; }
@@ -47,26 +48,30 @@ test("synthetic clinic workflow runs from onboarding through a completed consult
   await expect(page.locator(".success-alert")).toContainText(/setup completed/i);
 
   await page.goto("/website");
-  await page.getByRole("button", { name: /publish draft/i }).click();
-  await expect(page.getByRole("status")).toContainText(/draft published/i);
+  await page.getByRole("button", { name: /^publish/i }).click();
+  await expect(page.getByRole("status")).toContainText(/the live site now uses this version/i);
 
   await page.goto("/synthetic-care");
   await expect(page.getByRole("heading", { name: /welcome synthetic patients/i })).toBeVisible();
   await page.getByRole("link", { name: /book an appointment/i }).first().click();
-  await page.getByLabel("Date").fill(bookingDate);
-  await page.locator(".slot").click();
+  // Walk the 5-step wizard: Service → Provider → Date & Time → Your Details → Confirm.
+  await page.getByText("Synthetic consultation").click();
+  await page.getByRole("button", { name: /next/i }).click();
+  await page.getByRole("button", { name: /next/i }).click();
+  await page.getByLabel("Appointment date").fill(bookingDate);
+  await page.locator(".slot").first().click();
+  await page.getByRole("button", { name: /next/i }).click();
   await page.getByLabel("Full name").fill("Synthetic Patient");
+  await page.getByRole("button", { name: /next/i }).click();
   await page.getByRole("button", { name: /request appointment/i }).click();
   await expect(page.getByText("SYN-BOOK-001")).toBeVisible();
   expect(bookingCreated).toBe(true);
 
   await page.goto("/schedule");
-  // The calendar opens on the current week, but the booking is up to 2 days out and
-  // can fall into the next week near a week boundary. Advance the view until the card
-  // is on screen so this does not fail on certain weekdays (a long-standing flake).
-  for (let attempt = 0; attempt < 3 && !(await page.getByText("SYN-BOOK-001").isVisible().catch(() => false)); attempt += 1) {
-    await page.getByRole("button", { name: "Next period" }).click();
-  }
+  // The week view only shows the current week, and a booking two days out crosses into
+  // the next week near a week boundary. The month grid covers both without navigation,
+  // so the card is deterministic on any weekday.
+  await page.getByRole("button", { name: "Month" }).click();
   await expect(page.getByText("SYN-BOOK-001")).toBeVisible();
   await page.locator(".calendar-appointment").first().click({ force: true });
   await page.getByRole("button", { name: "Approve" }).click({ force: true });
