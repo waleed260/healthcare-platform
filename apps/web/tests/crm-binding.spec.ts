@@ -21,7 +21,7 @@ test.describe("CRM-to-website data binding", () => {
       } else if (path.includes("/public/catalog")) {
         data = {
           clinic: { name: "Test Clinic", timezone: "UTC" },
-          branches: [{ id: "b1", name: "Main Branch", address: "123 Main St", timezone: "UTC" }],
+          branches: [{ id: "b1", name: "Main Branch", address: "123 Main St", timezone: "UTC" }, { id: "b2", name: "Second Branch", address: "456 North Ave", timezone: "UTC" }],
           services: [{ id: "s1", name: serviceName, short_description: "General checkup", duration_minutes: 30, branch_id: "b1" }],
           doctors: [{ id: "d1", public_name: "Dr. Smith", specialty: "General", branch_id: "b1", service_id: "s1" }],
         };
@@ -46,6 +46,8 @@ test.describe("CRM-to-website data binding", () => {
   test("doctor name from CRM appears on booking page", async ({ page }) => {
     await installApi(page);
     await page.goto("/book/test-clinic");
+    // Doctors live on the provider step (step 2); the service is pre-selected on load.
+    await page.getByRole("button", { name: /next/i }).click();
     await expect(page.getByText("Dr. Smith")).toBeVisible();
   });
 

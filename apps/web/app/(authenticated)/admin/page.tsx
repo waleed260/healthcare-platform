@@ -23,11 +23,15 @@ type ClinicOverview = {
 
 type Tab = "clinics" | "metrics" | "support" | "audit" | "plans" | "announcements" | "business";
 
+// A single malformed/missing date must not throw ("Invalid time value") and
+// white-screen the whole admin panel, so fall back to an em dash.
 function date(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 function shortDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "short" }).format(new Date(value));
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "short" }).format(parsed);
 }
 
 export default function AdminPage() {

@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
 
-const permissions = ["billing.read", "billing.write", "patient.read", "appointment.read", "invoice.write", "invoice.read"];
+const permissions = ["billing.read", "billing.write", "billing.manage", "patient.read", "appointment.read", "invoice.write", "invoice.read"];
 
 test.describe("billing validation", () => {
   test.beforeEach(async ({ page }) => {
@@ -45,13 +45,13 @@ test.describe("billing validation", () => {
 
   test("billing page renders invoice list", async ({ page }) => {
     await page.goto("/billing");
-    await expect(page.locator(".invoice-row")).toHaveCount(1);
-    await expect(page.locator(".invoice-row").first()).toContainText("INV-001");
+    await expect(page.locator(".dt-row")).toHaveCount(1);
+    await expect(page.locator(".dt-row").first()).toContainText("INV-001");
   });
 
   test("invoice shows correct total", async ({ page }) => {
     await page.goto("/billing");
-    await expect(page.locator(".invoice-row").first()).toContainText("150");
+    await expect(page.locator(".dt-row").first()).toContainText("150");
   });
 
   test("billing page has create invoice button", async ({ page }) => {

@@ -38,6 +38,28 @@ const topServiceData = [
   { name: "X-Ray", count: 15, revenue_minor: 375000 },
 ];
 
+// /analytics redirects to /reports, whose summary KPIs load from
+// /operations/reporting-summary. Without it `report` stays the default [] and the
+// page throws on render, so the whole trends view must mock it too.
+const reportSummary = {
+  period_days: 30,
+  appointments: [{ status: "completed", count: 15 }, { status: "cancelled", count: 10 }],
+  patients_created: 7,
+  leads: [{ status: "new", count: 12 }, { status: "converted", count: 8 }],
+  kpis: {
+    appointments: { current: 25, prior: 20 },
+    appointments_completed: { current: 15, prior: 12 },
+    no_shows: { current: 3, prior: 4 },
+    new_patients: { current: 7, prior: 5 },
+    leads: { current: 20, prior: 18 },
+    conversions: { current: 8, prior: 6 },
+  },
+  financial: null,
+  queue: { arrivals: 0, completed: 0, cancelled: 0, waiting_now: 0, in_service_now: 0, backlog: 0, avg_wait_seconds: 0, wait_samples: 0 },
+  package_utilization: { packages: 0, sessions_purchased: 0, sessions_used: 0, sessions_remaining: 0 },
+  operational: { waiting_patients: 0, followups_due: 0, no_shows: 0, low_inventory: 0, followups: { overdue: 0, due_today: 0, upcoming: 0, completed: 0 }, inventory: { tracked: 0, in_stock: 0, low_stock: 0, out_of_stock: 0 } },
+};
+
 async function installAnalyticsApi(page: Page): Promise<void> {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -53,6 +75,8 @@ async function installAnalyticsApi(page: Page): Promise<void> {
       };
     } else if (path.endsWith("/notifications")) {
       data = [];
+    } else if (path.includes("/reporting-summary")) {
+      data = reportSummary;
     } else if (path.includes("/analytics/daily")) {
       data = dailyData;
     } else if (path.includes("/analytics/channels")) {
@@ -78,9 +102,11 @@ test.describe("analytics page", () => {
 
   test("renders KPI cards with correct totals", async ({ page }) => {
     await page.goto("/analytics");
-    await expect(page.locator(".analytics-card")).toHaveCount(4);
-    await expect(page.locator(".analytics-card").first()).toContainText("APPOINTMENTS");
-    await expect(page.locator(".analytics-card").first()).toContainText("25");
+    // APPOINTMENTS total (15 + 10) is the hero card; the rate cards are .analytics-card.
+    await expect(page.locator(".report-hero-card").first()).toContainText("APPOINTMENTS");
+    await expect(page.locator(".report-hero-card").first()).toContainText("25");
+    await expect(page.locator(".analytics-card")).toHaveCount(3);
+    await expect(page.locator(".analytics-card").first()).toContainText("PATIENT");
   });
 
   test("renders bar chart with correct number of bars", async ({ page }) => {
@@ -92,9 +118,9 @@ test.describe("analytics page", () => {
     await page.goto("/analytics");
     const labels = page.locator(".funnel-label");
     await expect(labels).toHaveCount(6);
-    await expect(labels.nth(0)).toHaveText("new");
-    await expect(labels.nth(1)).toHaveText("contacted");
-    await expect(labels.nth(5)).toHaveText("converted");
+    await expect(labels.nth(0)).toHaveText("New");
+    await expect(labels.nth(1)).toHaveText("Contacted");
+    await expect(labels.nth(5)).toHaveText("Converted");
   });
 
   test("renders donut chart with channel labels", async ({ page }) => {
@@ -119,8 +145,7 @@ test.describe("analytics page", () => {
     await page.goto("/analytics");
     await page.waitForSelector(".analytics-card");
     const initialCount = fetchCount;
-    await page.locator('[role="tab"]').filter({ hasText: "7 days" }).click();
-    await page.waitForTimeout(500);
-    expect(fetchCount).toBeGreaterThan(initialCount);
+    await page.getByLabel("Window").selectOption("7");
+    await expect.poll(() => fetchCount).toBeGreaterThan(initialCount);
   });
 });

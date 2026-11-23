@@ -67,8 +67,9 @@ type Encounter = {
 /* ── Helpers ───────────────────────────────────────────────────────── */
 // Clinic-entered doctor names sometimes already include the honorific; avoid "Dr. Dr. X".
 const docName = (name: string) => `Dr. ${name.replace(/^\s*dr\.?\s*/i, "")}`;
-const fmtDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v));
-const fmtDateTime = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
+// Guard date formatting: a missing/invalid date must not throw and white-screen the page.
+const fmtDate = (v: string) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(d); };
+const fmtDateTime = (v: string) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(d); };
 const typeLabel = (v: string) => v.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const statusColor: Record<string, string> = {
   draft: "#e0a458", in_progress: "var(--accent)", ready_for_discharge: "#5886b4",
