@@ -21,7 +21,7 @@ for (const role of roles) {
       else if (path.endsWith("/start")) { queueCommand = true; data = { id: "queue-1", status: "in_consultation", version: 2 }; }
       else if (path.endsWith("/websites")) data = [{ id: "site-1", name: "Synthetic website", template_key: "calm_clinic", status: "draft", version: 1, draft_version_id: "version-1", live_version_id: null, brand: {} }];
       else if (path.endsWith("/domains")) data = [];
-      else if (path.endsWith("/pages")) data = [{ id: "page-1", slug: "home", title: "Home", version: 1 }];
+      else if (path.endsWith("/pages")) data = [{ id: "page-1", slug: "home", title: "Home", version: 1 }, { id: "page-2", slug: "privacy", title: "Privacy Policy", version: 1 }];
       else if (path.endsWith("/versions")) data = [];
       else if (path.endsWith("/sections")) data = [{ id: "section-1", section_type: "hero", layout_key: "split", position: 0, content: { heading: "Synthetic heading", body: "Synthetic body" }, is_visible: true, version: 1 }];
       else if (path.endsWith("/validation")) data = { valid: true, code: null, message: null };
@@ -44,6 +44,7 @@ for (const role of roles) {
     if (role.name === "owner" || role.name === "manager") await expect(publish).toBeEnabled();
     else await expect(publish).toBeDisabled();
     if (role.name === "website editor") {
+      await page.locator(".wb-tree-item").first().click(); // select the section to reveal its content editor
       const heading = page.getByLabel("Heading");
       await expect(heading).toBeEnabled();
       await heading.fill("Updated synthetic heading");

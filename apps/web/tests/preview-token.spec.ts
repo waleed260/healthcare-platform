@@ -30,7 +30,8 @@ test.describe("preview token validation", () => {
       }
     });
     await page.goto("/demo-clinic?preview=tok_expired_456");
-    await expect(page.getByText(/expired|error|unavailable/i)).toBeVisible();
+    // A rejected site fetch renders the not-found state rather than the draft.
+    await expect(page.getByRole("heading", { name: /isn.t available/i })).toBeVisible();
   });
 
   test("no undefined URLs appear in page requests", async ({ page }) => {
