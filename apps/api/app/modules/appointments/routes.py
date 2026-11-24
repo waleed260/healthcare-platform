@@ -2,9 +2,11 @@ from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import json
 import secrets
+import threading
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from cachetools import TTLCache
 from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Request, Response, status
 from fastapi import Depends
 from sqlalchemy import text
@@ -32,6 +34,18 @@ appointment_router = APIRouter(prefix="/api/v1/appointments", tags=["appointment
 management_router = APIRouter(prefix="/api/v1/public/booking-management", tags=["public-booking-management"])
 question_router = APIRouter(prefix="/api/v1/public/booking-questions", tags=["public-booking-questions"])
 
+# The public catalog/availability are hot, unauthenticated reads that change rarely;
+# under load every visitor of one clinic requests the same data. Cache the computed
+# payload for a few seconds so repeat reads skip the DB entirely (get_db's Session is
+# lazy, so a cache hit never checks out a pool connection). Per-worker TTLCache, same
+# pattern as the session/permission caches. Availability uses a short TTL because it is
+# more dynamic; a just-booked slot can linger for a few seconds, but the booking POST
+# re-checks and returns APPOINTMENT_CONFLICT, so no double-booking results.
+_catalog_cache: TTLCache[tuple[str, str | None, int], tuple[dict, str | None]] = TTLCache(maxsize=512, ttl=30)
+_catalog_cache_lock = threading.Lock()
+_availability_cache: TTLCache[tuple, dict] = TTLCache(maxsize=2048, ttl=5)
+_availability_cache_lock = threading.Lock()
+
 
 def _public_catalog_cursor(cursor: str | None) -> dict[str, str | None]:
     if not cursor:
@@ -51,6 +65,12 @@ def _public_catalog_cursor(cursor: str | None) -> dict[str, str | None]:
 @catalog_router.get("")
 def public_catalog(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db)) -> dict:
     state = _public_catalog_cursor(cursor)
+    cache_key = (clinic_slug.strip().casefold(), cursor, limit)
+    with _catalog_cache_lock:
+        cached = _catalog_cache.get(cache_key)
+    if cached is not None:
+        payload, cached_cursor = cached
+        return {"data": payload, "meta": {"request_id": request.state.request_id, "next_cursor": cached_cursor, "limit": limit}}
     clinic_id = db.execute(text("SELECT id, name, timezone, locale FROM clinics WHERE slug = :slug AND archived_at IS NULL AND status = 'active'"), {"slug": clinic_slug.strip().casefold()}).mappings().one_or_none()
     if clinic_id is None:
         raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
@@ -97,7 +117,10 @@ def public_catalog(*, request: Request, clinic_slug: str = Query(min_length=1, m
         next_state.update(doctor_name=doctors[-1]["public_name"], doctor_id=str(doctors[-1]["id"]), doctor_branch_id=str(doctors[-1]["branch_id"]), doctor_service_id=str(doctors[-1]["service_id"]))
     next_cursor = encode_cursor("public-catalog", {"state": json.dumps(next_state, sort_keys=True, separators=(",", ":"))}) if has_next else None
     db.commit()
-    return {"data": {"clinic": dict(clinic_id), "branches": [dict(row) for row in branches], "services": [dict(row) for row in services], "doctors": [dict(row) for row in doctors]}, "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
+    payload = {"clinic": dict(clinic_id), "branches": [dict(row) for row in branches], "services": [dict(row) for row in services], "doctors": [dict(row) for row in doctors]}
+    with _catalog_cache_lock:
+        _catalog_cache[cache_key] = (payload, next_cursor)
+    return {"data": payload, "meta": {"request_id": request.state.request_id, "next_cursor": next_cursor, "limit": limit}}
 
 
 def _validate_availability_range(from_date: date, to_date: date) -> None:
@@ -540,6 +563,11 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
 @availability_router.get("")
 def public_availability(*, request: Request, clinic_slug: str = Query(min_length=1, max_length=120), branch_id: UUID = Query(), service_id: UUID = Query(), from_date: date = Query(), to_date: date = Query(), doctor_id: UUID | None = Query(default=None), db: Session = Depends(get_db)) -> dict:
     _validate_availability_range(from_date, to_date)
+    cache_key = (clinic_slug.strip().casefold(), branch_id, service_id, from_date, to_date, doctor_id)
+    with _availability_cache_lock:
+        cached = _availability_cache.get(cache_key)
+    if cached is not None:
+        return {"data": {"slots": cached["slots"]}, "meta": {"request_id": request.state.request_id, "timezone": cached["timezone"], "minimum_notice_minutes": 120}}
     clinic_id = db.execute(text("SELECT id FROM clinics WHERE slug = :slug AND archived_at IS NULL AND status = 'active'"), {"slug": clinic_slug.strip().casefold()}).scalar_one_or_none()
     if clinic_id is None:
         raise _error("NOT_FOUND", "Clinic not found.", status.HTTP_404_NOT_FOUND)
@@ -589,7 +617,10 @@ def public_availability(*, request: Request, clinic_slug: str = Query(min_length
     busy.extend(db.execute(text("SELECT starts_at, ends_at FROM blocked_slots WHERE clinic_id = :clinic_id AND branch_id = :branch_id AND (doctor_id IS NULL OR doctor_id = :doctor_id) AND ends_at > CAST(:from_date AS date) AND starts_at < (CAST(:to_date AS date) + interval '1 day')"), {"clinic_id": clinic_id, "branch_id": branch_id, "doctor_id": doctor_id, "from_date": from_date, "to_date": to_date}).all())
     slots = generate_slots(start_date=from_date, end_date=to_date, timezone_name=branch["timezone"], branch_intervals=[AvailabilityInterval(r["weekday"], r["opens_at"], r["closes_at"]) for r in hours], doctor_intervals=[AvailabilityInterval(r["weekday"], r["starts_at"], r["ends_at"], r["effective_from"], r["effective_to"], r["slot_cadence_minutes"]) for r in rules], duration_minutes=service["duration_minutes"], buffer_before_minutes=service["buffer_before_minutes"], buffer_after_minutes=service["buffer_after_minutes"], busy_ranges=[(row[0], row[1]) for row in busy], holidays=holidays, holiday_blocks=holiday_blocks)
     db.commit()
-    return {"data": {"slots": [slot.isoformat().replace("+00:00", "Z") for slot in slots]}, "meta": {"request_id": request.state.request_id, "timezone": branch["timezone"], "minimum_notice_minutes": 120}}
+    slot_strings = [slot.isoformat().replace("+00:00", "Z") for slot in slots]
+    with _availability_cache_lock:
+        _availability_cache[cache_key] = {"slots": slot_strings, "timezone": branch["timezone"]}
+    return {"data": {"slots": slot_strings}, "meta": {"request_id": request.state.request_id, "timezone": branch["timezone"], "minimum_notice_minutes": 120}}
 
 
 @question_router.get("")
