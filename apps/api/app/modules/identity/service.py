@@ -203,13 +203,11 @@ def _start_session(db: Session, user: dict, ip_address: str, user_agent: str | N
         {"user_id": user["id"]},
     ).mappings().one()
     mfa_enrolled = bool(mfa_state["mfa_enrolled"])
-    # Platform admins are MFA-mandatory. An unenrolled platform admin must set up an
-    # authenticator before anything works: start the session unverified and signal
-    # enrollment (the login page already drives /mfa/enroll on this flag). Clinic-user
-    # policy is unchanged — MFA is required only once the user has enrolled.
-    is_platform_admin = bool(user["is_platform_admin"])
-    mfa_enrollment_required = is_platform_admin and not mfa_enrolled
-    mfa_required = mfa_enrolled or is_platform_admin
+    # MFA is fully opt-in for every role, including platform admins: it is required
+    # only once a user has enrolled it themselves, and no role is force-enrolled at
+    # login. (Session durations below still track platform vs clinic via clinic_id.)
+    mfa_enrollment_required = False
+    mfa_required = mfa_enrolled
     idle_duration = timedelta(minutes=30) if user["clinic_id"] is None else timedelta(hours=8)
     absolute_duration = timedelta(hours=24) if user["clinic_id"] is None else timedelta(days=7)
     db.execute(

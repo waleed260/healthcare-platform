@@ -34,10 +34,10 @@ def _write_session(request: Request, db: Session, session_token: str | None, csr
 def _mfa_state(db: Session, session: dict) -> dict:
     return dict(db.execute(text("""
         SELECT EXISTS (SELECT 1 FROM mfa_methods WHERE user_id = :user_id AND enrolled_at IS NOT NULL) AS enrolled,
-               (EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id AND r.name = 'owner')
-                OR CAST(:clinic_id AS uuid) IS NULL) AS mandatory,
+               -- MFA is fully opt-in: no role is forced, so it can always be turned off.
+               FALSE AS mandatory,
                (SELECT COUNT(*) FROM recovery_codes WHERE user_id = :user_id AND used_at IS NULL) AS recovery_codes_remaining
-    """), {"user_id": session["user_id"], "clinic_id": session["clinic_id"]}).mappings().one())
+    """), {"user_id": session["user_id"]}).mappings().one())
 
 
 def _audit(db: Session, session: dict, request: Request, action: str) -> None:
@@ -83,7 +83,7 @@ def regenerate_recovery_codes(payload: MfaVerifyRequest, request: Request, db: S
 def disable_mfa(payload: MfaVerifyRequest, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_session(request, db, session_token, csrf_token)
     if _mfa_state(db, session)["mandatory"]:
-        raise _error("MFA_MANDATORY", "MFA is required for owners and platform administrators and cannot be turned off.", status.HTTP_403_FORBIDDEN)
+        raise _error("MFA_MANDATORY", "MFA is required for platform administrators and cannot be turned off.", status.HTTP_403_FORBIDDEN)
     _verified_secret(db, session, payload.code)
     db.execute(text("DELETE FROM recovery_codes WHERE user_id = :user_id"), {"user_id": session["user_id"]})
     db.execute(text("DELETE FROM mfa_methods WHERE user_id = :user_id"), {"user_id": session["user_id"]})

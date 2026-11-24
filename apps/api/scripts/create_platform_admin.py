@@ -4,7 +4,7 @@
 
 Reads the owner/admin connection from DATABASE_MIGRATION_URL, SEED_DATABASE_URL or DATABASE_URL.
 Password: ADMIN_PASSWORD if set, otherwise a strong one is generated and printed once.
-Platform admins are MFA-mandatory, so the first sign-in forces authenticator enrollment.
+MFA is opt-in: the admin can enable an authenticator later from Security settings.
 """
 from __future__ import annotations
 
@@ -59,4 +59,4 @@ if row is None:
 print(f"platform admin {'created' if row[1] else 'updated'}: {normalize_email(email)}  (id {row[0]})")
 if not os.environ.get("ADMIN_PASSWORD"):
     print(f"temporary password: {password}")
-    print("Sign in, you will be required to set up an authenticator (MFA), then change this password.", file=sys.stderr)
+    print("Sign in and change this password. You can enable an authenticator (MFA) from Security settings.", file=sys.stderr)
