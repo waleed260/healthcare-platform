@@ -17,12 +17,14 @@ type Role = { id: string; name: string; is_system: boolean; permissions: { code:
 type Specialty = { id: string; code: string; name: string; description: string | null; enabled?: boolean; status?: string };
 type Upgrade = { id: string; kind: string; target_code: string; message: string | null; status: string; decision_note: string | null; created_at: string };
 type Invitation = { id: string; email: string; status: string; created_at: string };
+type AccessRequest = { id: string; email: string; display_name: string | null; requested_role: string | null; reason: string | null; status: string; created_at: string; decided_at: string | null; version: number };
 type FeatureLimit = { feature: string; current_usage: number; limit_value: number };
 type Subscription = { id: string; code: string; name: string; status: string; starts_at: string | null; ends_at: string | null } | null;
 
 const TABS = [
   { id: "services", label: "Services", permission: "service.read" },
   { id: "staff", label: "Staff", permission: "staff.read" },
+  { id: "access-requests", label: "Access requests", permission: "staff.manage" },
   { id: "roles", label: "Roles", permission: "staff.read" },
   { id: "modules", label: "Specialties & Plan", permission: "clinic.read" },
 ] as const;
@@ -48,6 +50,8 @@ export default function ManagePage() {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [upgrades, setUpgrades] = useState<Upgrade[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
+  const [approveReq, setApproveReq] = useState<AccessRequest | null>(null);
   const [featureLimits, setFeatureLimits] = useState<FeatureLimit[]>([]);
   const [subscription, setSubscription] = useState<Subscription>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +85,7 @@ export default function ManagePage() {
       setPermissions(granted);
       if (session.user_id) setCurrentUserId(session.user_id);
       const has = (code: string) => granted.includes(code);
-      const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow, permRows] = await Promise.all([
+      const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow, permRows, accessRequestRows] = await Promise.all([
         has("service.read") ? api<Service[]>("/api/v1/services?limit=100") : Promise.resolve([]),
         has("branch.read") ? api<Branch[]>("/api/v1/branches?limit=100") : Promise.resolve([]),
         has("staff.read") ? api<StaffUser[]>("/api/v1/staff/users?limit=100") : Promise.resolve([]),
@@ -93,6 +97,7 @@ export default function ManagePage() {
         has("clinic.read") ? api<FeatureLimit[]>("/api/v1/governance/feature-limits").catch(() => []) : Promise.resolve([]),
         has("admin.plan.manage") ? api<Subscription>("/api/v1/governance/subscription").catch(() => null) : Promise.resolve(null),
         has("staff.read") ? api<{ code: string; description: string }[]>("/api/v1/staff/permissions").catch(() => []) : Promise.resolve([]),
+        has("staff.manage") ? api<AccessRequest[]>("/api/v1/staff/access-requests?status=pending").catch(() => []) : Promise.resolve([]),
       ]);
       setServices(serviceRows ?? []);
       setBranches(branchRows ?? []);
@@ -105,6 +110,7 @@ export default function ManagePage() {
       setFeatureLimits(limitRows ?? []);
       setSubscription(subscriptionRow ?? null);
       setAllPermissions(permRows ?? []);
+      setAccessRequests(accessRequestRows ?? []);
     } catch (reason) {
       setError(errorMessage(reason, "The admin panel could not be loaded."));
     } finally {
@@ -315,6 +321,36 @@ export default function ManagePage() {
     void run(() => post("/api/v1/upgrade-requests", { kind: "specialty", target_code: code }), "Request sent to the platform team.", "The request could not be sent.");
   }
 
+  // ── Access requests ──
+
+  function handleApprove(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!approveReq) return;
+    const form = new FormData(event.currentTarget);
+    const roleName = field(form, "role_name");
+    setBusy(true); setError(null);
+    post<{ setup_url: string }>(`/api/v1/staff/access-requests/${approveReq.id}/approve`, { expected_version: approveReq.version, role_name: roleName })
+      .then(async (result) => {
+        const url = result?.setup_url ?? "";
+        if (url) { try { await navigator.clipboard.writeText(url); } catch { /* clipboard unavailable */ } }
+        toast.success(`Approved. Invitation link${url ? " copied to clipboard." : " created."}`);
+        setApproveReq(null);
+        await load();
+      })
+      .catch((reason) => { toast.error(errorMessage(reason, "The request could not be approved.")); })
+      .finally(() => { setBusy(false); });
+  }
+
+  async function rejectAccessRequest(req: AccessRequest) {
+    const ok = await confirm({ message: `Reject the access request from ${req.email}? They will not be notified of the reason.`, danger: true, confirmLabel: "Reject" });
+    if (!ok) return;
+    void run(
+      () => post(`/api/v1/staff/access-requests/${req.id}/reject`, { expected_version: req.version }),
+      "Request rejected.", "The request could not be rejected."
+    );
+  }
+
+  const systemRoles = useMemo(() => roles.filter((r) => r.is_system), [roles]);
   const pendingInvites = invitations.filter((i) => i.status === "pending");
 
   // ── Render ──
@@ -403,6 +439,30 @@ export default function ManagePage() {
             {can("staff.manage") && <>
               <button className="text-control" disabled={busy} onClick={() => void loadStaffDetail(item)}>Manage</button>
               <button className="text-control" disabled={busy} onClick={() => void run(() => post(`/api/v1/staff/users/${item.id}/status`, { expected_version: item.version, status: item.status === "active" ? "suspended" : "active" }), "Staff status updated.", "The status could not be changed.")}>{item.status === "active" ? "Suspend" : "Reactivate"}</button>
+            </>}
+          </div>
+        </article>)}
+      </div>
+    </section>}
+
+    {/* ═══ ACCESS REQUESTS TAB ═══ */}
+    {tab === "access-requests" && <section className="surface-card">
+      <div className="surface-card-heading"><div><p className="eyebrow">ACCESS REQUESTS</p><h2>You decide who gets in.</h2></div></div>
+      <div className="invoice-list">
+        {!loading && accessRequests.length === 0 && <div className="dashboard-empty"><strong>No pending requests</strong><span>Access requests submitted for your clinic appear here for review. Nobody gets in without your approval.</span></div>}
+        {accessRequests.map((req) => <article className="invoice-row" key={req.id}>
+          <div className="invoice-mark">{(req.display_name ?? req.email).slice(0, 2).toUpperCase()}</div>
+          <div className="invoice-main">
+            <h3>{req.display_name ?? req.email}</h3>
+            <p>{req.email}{req.requested_role ? ` · requested: ${req.requested_role}` : ""}</p>
+            {req.reason && <small className="manage-page-service-desc">{req.reason}</small>}
+            <small>Requested {new Date(req.created_at).toLocaleDateString()}</small>
+          </div>
+          <div className="invoice-actions">
+            <span className="pipeline-status status-contacted">Pending</span>
+            {can("staff.manage") && <>
+              <button className="text-control" disabled={busy} onClick={() => setApproveReq(req)}>Approve</button>
+              <button className="text-control" disabled={busy} onClick={() => void rejectAccessRequest(req)}>Reject</button>
             </>}
           </div>
         </article>)}
@@ -567,6 +627,17 @@ export default function ManagePage() {
           <p className="drawer-note">An invitation link will be generated and copied to your clipboard. Roles and branch scopes can be assigned after the staff member accepts.</p>
         </div>
       </form>
+    </Drawer>
+
+    {/* ═══ APPROVE ACCESS REQUEST DRAWER ═══ */}
+    <Drawer open={!!approveReq} onClose={() => setApproveReq(null)} title={approveReq ? `Approve ${approveReq.email}` : "Approve request"} subtitle="GRANT ACCESS" opaque footer={<><button className="button button-secondary" type="button" onClick={() => setApproveReq(null)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="approve-form" disabled={busy}>{busy ? "Approving…" : "Approve & invite"} <span>→</span></button></>}>
+      {approveReq && <form className="drawer-form" id="approve-form" onSubmit={handleApprove}>
+        <div className="manage-page-invite-prompt"><p className="drawer-note">Choose the role this person will get. Approving issues a secure invitation link (copied to your clipboard); they set their own password when they accept. You can refine roles and branch scopes afterwards.</p></div>
+        <label>Role<select name="role_name" required defaultValue="receptionist">
+          {systemRoles.map((r) => <option key={r.id} value={r.name}>{label(r.name)}</option>)}
+        </select></label>
+        {approveReq.reason && <p className="drawer-note">Reason given: {approveReq.reason}</p>}
+      </form>}
     </Drawer>
 
     {/* ═══ ROLE DRAWER ═══ */}
