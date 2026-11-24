@@ -59,7 +59,10 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
-      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      # One gunicorn/uvicorn worker per core; a fixed 4 left half of an 8-core
+      # host idle under load. Override per host (match the box's core count; keep
+      # it small on CPU-limited containers, where each worker adds ~100MB RSS).
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-8}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
     volumes:
