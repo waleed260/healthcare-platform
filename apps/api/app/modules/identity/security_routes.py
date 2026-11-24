@@ -34,11 +34,10 @@ def _write_session(request: Request, db: Session, session_token: str | None, csr
 def _mfa_state(db: Session, session: dict) -> dict:
     return dict(db.execute(text("""
         SELECT EXISTS (SELECT 1 FROM mfa_methods WHERE user_id = :user_id AND enrolled_at IS NOT NULL) AS enrolled,
-               -- Only platform admins (clinic_id IS NULL) are MFA-mandatory. Clinic owners
-               -- may opt out and log in directly, like any other clinic user.
-               (CAST(:clinic_id AS uuid) IS NULL) AS mandatory,
+               -- MFA is fully opt-in: no role is forced, so it can always be turned off.
+               FALSE AS mandatory,
                (SELECT COUNT(*) FROM recovery_codes WHERE user_id = :user_id AND used_at IS NULL) AS recovery_codes_remaining
-    """), {"user_id": session["user_id"], "clinic_id": session["clinic_id"]}).mappings().one())
+    """), {"user_id": session["user_id"]}).mappings().one())
 
 
 def _audit(db: Session, session: dict, request: Request, action: str) -> None:

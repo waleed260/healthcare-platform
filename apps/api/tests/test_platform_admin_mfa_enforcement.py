@@ -1,6 +1,5 @@
-"""Platform admins are MFA-mandatory: _start_session must start an unenrolled
-platform admin UNVERIFIED and flag enrollment, while leaving clinic-user policy
-(MFA required only once enrolled) unchanged. Mocks the db — no PostgreSQL needed."""
+"""MFA is opt-in for every role: _start_session never force-enrolls any role and
+only requires MFA once the user has enrolled it. Mocks the db — no PostgreSQL needed."""
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -30,11 +29,12 @@ def _start(*, is_platform_admin: bool, mfa_enrolled: bool, clinic_id=None):
     return result, captured["session"]
 
 
-def test_unenrolled_platform_admin_must_enroll_before_access():
+def test_unenrolled_platform_admin_is_not_forced_into_mfa():
+    # MFA is opt-in: an unenrolled platform admin logs straight into the workspace.
     result, session = _start(is_platform_admin=True, mfa_enrolled=False)
-    assert result.mfa_required is True
-    assert result.mfa_enrollment_required is True
-    assert session["mfa_verified"] is False  # cannot reach protected endpoints yet
+    assert result.mfa_required is False
+    assert result.mfa_enrollment_required is False
+    assert session["mfa_verified"] is True
 
 
 def test_enrolled_platform_admin_must_verify_but_not_re_enroll():
