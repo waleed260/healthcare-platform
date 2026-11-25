@@ -6,6 +6,10 @@ import { useToast } from "../_lib/toast";
 import { useConfirm } from "../_lib/confirm";
 import Drawer from "../_lib/drawer";
 
+// Derive a backend-valid slug (^[a-z0-9][a-z0-9-]*$) from a free-text category name so staff
+// never have to hand-craft one — the strict pattern was the silent "Add category" failure.
+const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
 /* ── types ──────────────────────────────────────────────────────────── */
 
 type Product = { id: string; name: string; sku: string | null; product_type: string | null; unit: string; minimum_stock: string; status: string; version: number; category_id: string | null; cost_minor: number | null; selling_price_minor: number | null; currency: string | null; tax_inclusive: boolean };
@@ -118,6 +122,7 @@ export default function InventoryPage() {
   const [reason, setReason] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [categorySlug, setCategorySlug] = useState("");
+  const [categorySlugEdited, setCategorySlugEdited] = useState(false);
 
   const toast = useToast();
   const confirm = useConfirm();
@@ -228,8 +233,8 @@ export default function InventoryPage() {
   async function createCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true);
     try {
-      await post("/api/v1/inventory/categories", { name: categoryName, slug: categorySlug });
-      setCategoryName(""); setCategorySlug(""); setShowCategory(false); toast.success("Category created."); await load();
+      await post("/api/v1/inventory/categories", { name: categoryName.trim(), slug: categorySlug });
+      setCategoryName(""); setCategorySlug(""); setCategorySlugEdited(false); toast.success("Category created."); await load();
     } catch (r) { toast.error(errorMessage(r, "The category could not be created.")); } finally { setBusy(false); }
   }
 
@@ -440,14 +445,14 @@ export default function InventoryPage() {
       </div>}
 
       {showCategory && <section className="surface-card inventory-form">
-        <div className="surface-card-heading"><div><p className="eyebrow">CATEGORIES</p><h2>Organize your inventory.</h2></div></div>
-        {categories.length > 0 && <div className="invoice-list" style={{ marginBottom: 16 }}>
-          {categories.map((c) => <article className="invoice-row" key={c.id}><div className="invoice-main"><h3>{c.name}</h3><p>{c.slug}</p></div><div className="invoice-actions"><button className="text-control" disabled={busy} onClick={() => void deleteCategory(c.id, c.name)}>Delete</button></div></article>)}
+        <div className="surface-card-heading"><div><p className="eyebrow">CATEGORIES</p><h2>Organize your inventory.</h2></div><span className="muted-mono">{categories.length} {categories.length === 1 ? "CATEGORY" : "CATEGORIES"}</span></div>
+        {categories.length > 0 && <div className="invoice-list" style={{ marginBottom: 20 }}>
+          {categories.map((c) => <article className="invoice-row" key={c.id}><div className="invoice-mark">{c.name.slice(0, 1).toUpperCase()}</div><div className="invoice-main"><h3>{c.name}</h3><p>{c.slug}</p></div><div className="invoice-actions"><button className="text-control danger-control" disabled={busy} onClick={() => void deleteCategory(c.id, c.name)}>Delete</button></div></article>)}
         </div>}
-        <form onSubmit={createCategory} style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
-          <label style={{ flex: 1, minWidth: 160 }}>Name<input required value={categoryName} onChange={(e) => setCategoryName(e.target.value)} placeholder="Instruments" /></label>
-          <label style={{ flex: 1, minWidth: 160 }}>Slug<input required value={categorySlug} onChange={(e) => setCategorySlug(e.target.value)} placeholder="instruments" pattern="^[a-z0-9][a-z0-9-]*$" /></label>
-          <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Add category"}</button>
+        <form onSubmit={createCategory} className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <label>Name<input required maxLength={100} value={categoryName} onChange={(e) => { setCategoryName(e.target.value); if (!categorySlugEdited) setCategorySlug(slugify(e.target.value)); }} placeholder="Instruments" /></label>
+          <label>Slug<input required value={categorySlug} onChange={(e) => { setCategorySlug(slugify(e.target.value)); setCategorySlugEdited(true); }} placeholder="instruments" pattern="^[a-z0-9][a-z0-9-]*$" /><span className="field-optional">lowercase · auto-filled</span></label>
+          <div className="form-actions" style={{ gridColumn: "1 / -1" }}><button className="button button-primary" type="submit" disabled={busy || !categoryName.trim() || !categorySlug}>{busy ? "Saving…" : "Add category"}</button></div>
         </form>
       </section>}
 

@@ -129,10 +129,11 @@ test.describe("Lead -> Appointment booking", () => {
 
     await completeDrawer(page, "lead-seeded");
 
-    // On the leads page a successful booking closes the drawer (onCreated) and refetches the
-    // list, which then shows the server-reported stage. Waiting on the badge proves the refetch.
-    await expect(page.locator(".pipeline-status.status-appointment_booked").first()).toBeVisible();
-    await expect(page.getByText("STEP 1 — BRANCH & DOCTOR")).toHaveCount(0); // drawer closed
+    // Token bugfix: a lead-originated booking now shows the drawer's token/confirmation screen
+    // (it no longer closes on success). The server token must be displayed.
+    await expect(page.getByRole("heading", { name: "Appointment Booked" })).toBeVisible();
+    await expect(page.getByText("TOKEN NUMBER")).toBeVisible();
+    await expect(page.locator(".token")).toHaveText("7");
 
     // The outgoing request carried the original lead_id exactly once, not a patient id.
     expect(state.appointmentPosts).toHaveLength(1);
@@ -142,6 +143,10 @@ test.describe("Lead -> Appointment booking", () => {
     expect(body.full_name).toBe("Qualified Prospect");
     // The stage came from the server GET, never from a frontend status PATCH.
     expect(state.leadPatches.filter((p) => p.status === "appointment_booked" || p.status === "visited")).toHaveLength(0);
+
+    // Closing the drawer reveals the list, refetched in the background to the server-reported stage.
+    await page.locator(".drawer-close").click();
+    await expect(page.locator(".pipeline-status.status-appointment_booked").first()).toBeVisible();
 
     // The lead detail shows the new appointment in its history (server data, after refresh).
     await page.goto(`/leads/${LEAD_ID}`);
