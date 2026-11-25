@@ -138,8 +138,8 @@ def public_form_submit(clinic_slug: str, form_id: UUID, payload: FormSubmission,
     email = (mapped.get("email") or "").casefold() or None
     key = "form:" + hashlib.sha256(f"{form_id}:{idempotency_key.strip()}".encode()).hexdigest()[:100]  # fits leads.intake_key (128)
     lead = db.execute(text("""
-        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, campaign, specialty_id, notes, intake_key)
-        VALUES (:c, :name, :email, :phone, 'website', :campaign, :specialty_id, :notes, :key)
+        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, capture_method, campaign, specialty_id, notes, intake_key)
+        VALUES (:c, :name, :email, :phone, 'website', 'custom_website_form', :campaign, :specialty_id, :notes, :key)
         ON CONFLICT (clinic_id, intake_key) WHERE intake_key IS NOT NULL DO NOTHING RETURNING id
     """), {"c": clinic_id, "name": (mapped.get("full_name") or "").strip()[:160], "email": email, "phone": phone, "campaign": campaign, "specialty_id": form["specialty_id"], "notes": "\n".join(notes)[:5000], "key": key}).scalar_one_or_none()
     duplicate = lead is None

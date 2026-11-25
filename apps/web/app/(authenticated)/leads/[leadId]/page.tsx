@@ -7,13 +7,19 @@ import { api, apiPage, post, patch, errorMessage } from "../../_lib/client";
 import { useToast } from "../../_lib/toast";
 import { useConfirm } from "../../_lib/confirm";
 
-type Lead = { id: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; source: string; campaign: string | null; status: string; specialty_id: string | null; requested_service_id: string | null; branch_id: string | null; assigned_to_user_id: string | null; converted_to_patient_id: string | null; lost_reason: string | null; notes: string | null; created_at: string; updated_at: string; version: number };
+type Lead = { id: string; full_name: string; normalized_email: string | null; normalized_phone: string | null; source: string; capture_method: string; campaign: string | null; status: string; specialty_id: string | null; requested_service_id: string | null; branch_id: string | null; assigned_to_user_id: string | null; converted_to_patient_id: string | null; lost_reason: string | null; notes: string | null; created_at: string; updated_at: string; version: number };
 type Activity = { id: string; lead_id: string; actor_user_id: string; kind: string; body: string; due_at: string | null; created_at: string };
+type Appointment = { id: string; reference: string | null; branch_id: string | null; service_id: string | null; patient_id: string | null; status: string; starts_at: string; created_at: string };
+type FollowUp = { id: string; description: string; due_at: string; assigned_to_user_id: string | null; status: string; completed_at: string | null; version: number; overdue: boolean };
+type StageEvent = { id: string; from_status: string | null; to_status: string; actor_user_id: string | null; reason: string | null; created_at: string };
 type Specialty = { id: string; name: string };
 type Service = { id: string; name: string };
 type Branch = { id: string; name: string };
 type Session = { permissions?: string[] };
 
+// Stages a staffer may set by hand. appointment_booked / visited / converted are driven by
+// real events (booking, arrival, explicit conversion) and are shown read-only here.
+const manualStages = ["new", "contacted", "qualified"];
 const stages = ["new", "contacted", "qualified", "appointment_booked", "visited", "converted", "lost"];
 const activityKinds = ["call", "note", "message", "follow_up"] as const;
 type ActivityKind = (typeof activityKinds)[number];
@@ -46,6 +52,14 @@ export default function LeadDetailPage() {
   const [actBody, setActBody] = useState("");
   const [actDueAt, setActDueAt] = useState("");
   const [actBusy, setActBusy] = useState(false);
+
+  // Appointments, follow-up tasks, and stage history
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [history, setHistory] = useState<StageEvent[]>([]);
+  const [fuDesc, setFuDesc] = useState("");
+  const [fuDue, setFuDue] = useState("");
+  const [fuBusy, setFuBusy] = useState(false);
 
   const can = (p: string) => permissions.includes(p);
   const specialtyNames = useMemo(() => new Map(specialties.map((s) => [s.id, s.name])), [specialties]);
@@ -86,7 +100,41 @@ export default function LeadDetailPage() {
     finally { setActivitiesLoading(false); }
   }, [leadId, toast]);
 
-  useEffect(() => { void loadLead(); void loadActivities(); }, [loadLead, loadActivities]);
+  const loadRelated = useCallback(async () => {
+    try {
+      const [appts, tasks, events] = await Promise.all([
+        api<Appointment[]>(`/api/v1/leads/${leadId}/appointments`).catch(() => []),
+        api<FollowUp[]>(`/api/v1/leads/${leadId}/follow-ups`).catch(() => []),
+        api<StageEvent[]>(`/api/v1/leads/${leadId}/history`).catch(() => []),
+      ]);
+      setAppointments(appts ?? []);
+      setFollowUps(tasks ?? []);
+      setHistory(events ?? []);
+    } catch (reason) { toast.error(errorMessage(reason, "Lead detail could not be fully loaded.")); }
+  }, [leadId, toast]);
+
+  useEffect(() => { void loadLead(); void loadActivities(); void loadRelated(); }, [loadLead, loadActivities, loadRelated]);
+
+  async function addFollowUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!fuDue) { toast.error("Pick a due date."); return; }
+    setFuBusy(true);
+    try {
+      await post(`/api/v1/leads/${leadId}/follow-ups`, { description: fuDesc, due_at: new Date(fuDue).toISOString() });
+      setFuDesc(""); setFuDue("");
+      toast.success("Follow-up scheduled.");
+      await Promise.all([loadRelated(), loadActivities()]);
+    } catch (reason) { toast.error(errorMessage(reason, "The follow-up could not be created.")); }
+    finally { setFuBusy(false); }
+  }
+
+  async function closeFollowUp(task: FollowUp, status: "completed" | "cancelled") {
+    try {
+      await patch(`/api/v1/leads/${leadId}/follow-ups/${task.id}`, { expected_version: task.version, status });
+      toast.success(`Follow-up ${status}.`);
+      await Promise.all([loadRelated(), loadActivities()]);
+    } catch (reason) { toast.error(errorMessage(reason, "The follow-up could not be updated.")); }
+  }
 
   async function updateStatus(newStatus: string) {
     if (!lead) return;
@@ -218,7 +266,7 @@ export default function LeadDetailPage() {
               {!isTerminal && can("lead.manage") && (
                 <button className="button button-secondary" type="button" onClick={openEdit} disabled={busy}>Edit details <span>✎</span></button>
               )}
-              {!isTerminal && can("lead.manage") && (
+              {!isTerminal && can("lead.convert") && (
                 <button className="button button-primary" type="button" onClick={() => void convertToPatient()} disabled={busy}>Convert to patient <span>→</span></button>
               )}
               {lead.status !== "converted" && can("lead.manage") && (
@@ -258,7 +306,8 @@ export default function LeadDetailPage() {
               <dl>
                 <div><dt>Email</dt><dd>{lead.normalized_email ?? "Not provided"}</dd></div>
                 <div><dt>Phone</dt><dd>{lead.normalized_phone ?? "Not provided"}</dd></div>
-                <div><dt>Source</dt><dd>{statusLabel(lead.source)}</dd></div>
+                <div><dt>Acquisition source</dt><dd>{statusLabel(lead.source)}</dd></div>
+                <div><dt>Capture method</dt><dd>{statusLabel(lead.capture_method)}</dd></div>
                 <div><dt>Branch</dt><dd>{lead.branch_id ? (branchNames.get(lead.branch_id) ?? "Branch") : "Unassigned"}</dd></div>
                 <div><dt>Created</dt><dd>{formatDate(lead.created_at)}</dd></div>
                 <div><dt>Last updated</dt><dd>{formatDate(lead.updated_at)}</dd></div>
@@ -272,35 +321,22 @@ export default function LeadDetailPage() {
             <section className="detail-card">
               <p className="eyebrow">PIPELINE STAGE</p>
               <h2>Progress</h2>
-              {!isTerminal && can("lead.manage") ? (
-                <div className="stage-pipeline">
-                  {stages.filter((s) => !["converted", "lost"].includes(s)).map((stage) => (
-                    <button
-                      key={stage}
-                      className={`stage-step ${lead.status === stage ? "active" : ""}`}
-                      type="button"
-                      onClick={() => void updateStatus(stage)}
-                      disabled={busy || lead.status === stage}
-                    >
+              <div className="stage-pipeline">
+                {stages.map((stage) => {
+                  const clickable = !isTerminal && can("lead.manage") && manualStages.includes(stage) && lead.status !== stage;
+                  return clickable ? (
+                    <button key={stage} className={`stage-step ${lead.status === stage ? "active" : ""}`} type="button" onClick={() => void updateStatus(stage)} disabled={busy}>
                       {statusLabel(stage)}
                     </button>
-                  ))}
-                  <button
-                    className="stage-step stage-lost"
-                    type="button"
-                    onClick={() => void updateStatus("lost")}
-                    disabled={busy}
-                  >
-                    Mark lost
-                  </button>
-                </div>
-              ) : (
-                <div className="stage-pipeline">
-                  {stages.map((stage) => (
+                  ) : (
                     <span key={stage} className={`stage-step ${lead.status === stage ? "active" : ""}`}>{statusLabel(stage)}</span>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+                {!isTerminal && can("lead.manage") && (
+                  <button className="stage-step stage-lost" type="button" onClick={() => void updateStatus("lost")} disabled={busy}>Mark lost</button>
+                )}
+              </div>
+              <p className="muted-mono" style={{ fontSize: 10, marginTop: 8 }}>Booked, Visited and Converted are set automatically by booking, attendance and conversion.</p>
             </section>
           </div>
 
@@ -355,6 +391,90 @@ export default function LeadDetailPage() {
               <button className="button button-secondary" type="button" onClick={() => void loadActivities(activitiesCursor, true)} disabled={activitiesLoading}>
                 {activitiesLoading ? "Loading…" : "Load more activity"} <span>↓</span>
               </button>
+            )}
+          </section>
+
+          {/* Follow-up tasks */}
+          <section className="detail-card">
+            <div className="card-heading">
+              <div><p className="eyebrow">FOLLOW-UP TASKS</p><h2>Next actions</h2></div>
+              <span className="directory-count">{followUps.filter((t) => t.status === "pending").length} open</span>
+            </div>
+            {can("lead.manage") && (
+              <form className="lead-activity-form" onSubmit={(e) => void addFollowUp(e)}>
+                <div className="lead-activity-fields">
+                  <label className="lead-activity-body">Task<input required value={fuDesc} onChange={(e) => setFuDesc(e.target.value)} placeholder="e.g. Call back about availability" /></label>
+                  <label>Due<input type="datetime-local" required value={fuDue} onChange={(e) => setFuDue(e.target.value)} /></label>
+                  <button className="button button-primary" type="submit" disabled={fuBusy}>{fuBusy ? "Saving…" : "Schedule"} <span>↗</span></button>
+                </div>
+              </form>
+            )}
+            {followUps.length === 0 ? (
+              <div className="dashboard-empty"><strong>No follow-ups</strong><span>Schedule a dated task so this lead is never dropped.</span></div>
+            ) : (
+              <ul className="activity-list">
+                {followUps.map((task) => (
+                  <li className="activity-item" key={task.id}>
+                    <span className={`activity-kind kind-follow_up`}>{task.status === "pending" && task.overdue ? "Overdue" : statusLabel(task.status)}</span>
+                    <div className="activity-body">
+                      <p>{task.description}</p>
+                      <small>Due {formatDateTime(task.due_at)}{task.completed_at ? ` · closed ${formatDateTime(task.completed_at)}` : ""}</small>
+                    </div>
+                    {task.status === "pending" && can("lead.manage") && (
+                      <div className="lead-actions">
+                        <button className="text-control" type="button" onClick={() => void closeFollowUp(task, "completed")}>Complete ✓</button>
+                        <button className="text-control danger-control" type="button" onClick={() => void closeFollowUp(task, "cancelled")}>Cancel</button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Appointment history */}
+          <section className="detail-card">
+            <div className="card-heading">
+              <div><p className="eyebrow">APPOINTMENTS</p><h2>Linked appointments</h2></div>
+              <span className="directory-count">{appointments.length} total</span>
+            </div>
+            {appointments.length === 0 ? (
+              <div className="dashboard-empty"><strong>No appointments yet</strong><span>Book one from the pipeline to link it to this lead.</span></div>
+            ) : (
+              <ul className="activity-list">
+                {appointments.map((appt) => (
+                  <li className="activity-item" key={appt.id}>
+                    <span className={`pipeline-status status-${appt.status}`}>{statusLabel(appt.status)}</span>
+                    <div className="activity-body">
+                      <p>{appt.reference ?? "Appointment"}{appt.branch_id ? ` · ${branchNames.get(appt.branch_id) ?? "Branch"}` : ""}</p>
+                      <small>{formatDateTime(appt.starts_at)}</small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Stage history */}
+          <section className="detail-card">
+            <div className="card-heading">
+              <div><p className="eyebrow">STAGE HISTORY</p><h2>Audit trail</h2></div>
+              <span className="directory-count">{history.length} changes</span>
+            </div>
+            {history.length === 0 ? (
+              <div className="dashboard-empty"><strong>No stage history</strong></div>
+            ) : (
+              <ol className="activity-list">
+                {history.map((event) => (
+                  <li className="activity-item" key={event.id}>
+                    <span className={`pipeline-status status-${event.to_status}`}>{statusLabel(event.to_status)}</span>
+                    <div className="activity-body">
+                      <p>{event.from_status ? `${statusLabel(event.from_status)} → ${statusLabel(event.to_status)}` : statusLabel(event.to_status)}{event.reason ? ` · ${event.reason}` : ""}</p>
+                      <small>{formatDateTime(event.created_at)}</small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
             )}
           </section>
         </>

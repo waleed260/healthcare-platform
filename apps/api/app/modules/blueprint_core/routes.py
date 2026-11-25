@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Cookie, Depends, Header, Query, Request, status
 from sqlalchemy import text
@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.db.tenant import set_tenant_context
 from app.modules.audit.service import record_event
 from app.modules.authorization.service import ForbiddenError, require_permission
+from app.modules.blueprint_core.lead_service import create_lead_follow_up, record_lead_stage
 from app.modules.blueprint_core.lead_state import validate_transition as validate_lead_transition
 from app.modules.blueprint_core.schemas import (
     InvoiceCreate,
@@ -20,11 +21,14 @@ from app.modules.blueprint_core.schemas import (
     LeadActivityCreate,
     LeadConvert,
     LeadCreate,
+    LeadFollowUpCreate,
+    LeadFollowUpUpdate,
     LeadUpdate,
     PaymentCreate,
     RefundCreate,
     SpecialtyEnable,
 )
+from app.modules.crm.identity import DuplicatePatientReview, resolve_patient
 from app.modules.crm.routes import _normalize_email, _normalize_phone
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
@@ -47,7 +51,8 @@ _LEAD_SCOPE_SQL = """
               AND s.branch_id = COALESCE(
                   l.branch_id,
                   (SELECT a.branch_id FROM appointments a
-                   WHERE a.clinic_id = l.clinic_id AND a.id = l.appointment_id)
+                   WHERE a.clinic_id = l.clinic_id AND a.lead_id = l.id AND a.archived_at IS NULL
+                   ORDER BY a.created_at DESC LIMIT 1)
               )
         )
     )
@@ -139,9 +144,9 @@ def lead_list(request: Request, status_filter: str | None = Query(default=None, 
     archived = status_filter == "archived"
     status_value = None if archived else status_filter
     rows = db.execute(text(f"""
-        SELECT l.id, l.full_name, l.normalized_email, l.normalized_phone, l.source, l.campaign,
+        SELECT l.id, l.full_name, l.normalized_email, l.normalized_phone, l.source, l.capture_method, l.campaign,
                l.status, l.specialty_id, l.requested_service_id, l.assigned_to_user_id,
-               l.branch_id, l.appointment_id, l.converted_to_patient_id, l.lost_reason, l.created_at, l.updated_at, l.version
+               l.branch_id, l.converted_to_patient_id, l.lost_reason, l.created_at, l.updated_at, l.version
         FROM leads l
         WHERE l.clinic_id = :clinic_id
           AND (CASE WHEN :archived THEN l.archived_at IS NOT NULL ELSE l.archived_at IS NULL END)
@@ -162,9 +167,9 @@ def lead_detail(lead_id: UUID, request: Request, db: Session = Depends(get_db), 
     session = _authorized(db, session_token, "lead.read")
     _require_lead(db, session, lead_id)
     row = db.execute(text("""
-        SELECT l.id, l.full_name, l.normalized_email, l.normalized_phone, l.source, l.campaign,
+        SELECT l.id, l.full_name, l.normalized_email, l.normalized_phone, l.source, l.capture_method, l.campaign,
                l.status, l.specialty_id, l.requested_service_id, l.assigned_to_user_id,
-               l.branch_id, l.appointment_id, l.converted_to_patient_id, l.lost_reason, l.notes,
+               l.branch_id, l.converted_to_patient_id, l.lost_reason, l.notes,
                l.created_at, l.updated_at, l.version
         FROM leads l
         WHERE l.clinic_id = :clinic_id AND l.id = :lead_id AND l.archived_at IS NULL
@@ -178,11 +183,18 @@ def lead_detail(lead_id: UUID, request: Request, db: Session = Depends(get_db), 
 @lead_router.post("", status_code=status.HTTP_201_CREATED)
 def lead_create(payload: LeadCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    # A user may only create a lead within their own specialty/branch scope, or it would be
+    # invisible to them the moment it is saved (the list/detail scope filter would hide it).
+    if payload.specialty_id is not None:
+        _assert_specialty_in_scope(db, session, payload.specialty_id)
+    if payload.branch_id is not None:
+        _assert_branch_in_scope(db, session, payload.branch_id)
     row = db.execute(text("""
-        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, campaign, specialty_id, requested_service_id, branch_id, assigned_to_user_id, notes)
-        VALUES (:clinic_id, :full_name, :email, :phone, :source, :campaign, :specialty_id, :service_id, :branch_id, :assigned_to, :notes)
-        RETURNING id, full_name, normalized_email, normalized_phone, source, campaign, specialty_id, requested_service_id, branch_id, assigned_to_user_id, status, notes, version, created_at, updated_at
+        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, capture_method, campaign, specialty_id, requested_service_id, branch_id, assigned_to_user_id, notes)
+        VALUES (:clinic_id, :full_name, :email, :phone, :source, 'manual_staff_entry', :campaign, :specialty_id, :service_id, :branch_id, :assigned_to, :notes)
+        RETURNING id, full_name, normalized_email, normalized_phone, source, capture_method, campaign, specialty_id, requested_service_id, branch_id, assigned_to_user_id, status, notes, version, created_at, updated_at
     """), {"clinic_id": session["clinic_id"], "full_name": payload.full_name.strip(), "email": _normalize_email(payload.email), "phone": _normalize_phone(payload.phone), "source": payload.source.strip().casefold(), "campaign": payload.campaign, "specialty_id": payload.specialty_id, "service_id": payload.requested_service_id, "branch_id": payload.branch_id, "assigned_to": payload.assigned_to_user_id, "notes": payload.notes}).mappings().one()
+    record_lead_stage(db, session["clinic_id"], row["id"], None, "new", session["user_id"], "lead created")
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.create", entity_type="lead", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"source": row["source"]})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
@@ -209,31 +221,9 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
         except ValueError as exc:
             raise _error("INVALID_TRANSITION", str(exc), status.HTTP_409_CONFLICT) from exc
     if "specialty_id" in payload.model_fields_set and payload.specialty_id is not None:
-        in_scope = db.execute(text("""
-            SELECT NOT EXISTS (
-                SELECT 1 FROM user_specialty_scopes
-                WHERE clinic_id = :clinic_id AND user_id = :user_id
-            ) OR EXISTS (
-                SELECT 1 FROM user_specialty_scopes
-                WHERE clinic_id = :clinic_id AND user_id = :user_id
-                  AND specialty_id = :specialty_id
-            )
-        """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "specialty_id": payload.specialty_id}).scalar_one()
-        if not in_scope:
-            raise _error("FORBIDDEN", "You cannot move a lead to a specialty outside your scope.", status.HTTP_403_FORBIDDEN)
+        _assert_specialty_in_scope(db, session, payload.specialty_id)
     if "branch_id" in payload.model_fields_set and payload.branch_id is not None:
-        in_scope = db.execute(text("""
-            SELECT NOT EXISTS (
-                SELECT 1 FROM user_branch_scopes
-                WHERE clinic_id = :clinic_id AND user_id = :user_id
-            ) OR EXISTS (
-                SELECT 1 FROM user_branch_scopes
-                WHERE clinic_id = :clinic_id AND user_id = :user_id
-                  AND branch_id = :branch_id
-            )
-        """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": payload.branch_id}).scalar_one()
-        if not in_scope:
-            raise _error("FORBIDDEN", "You cannot move a lead to a branch outside your scope.", status.HTTP_403_FORBIDDEN)
+        _assert_branch_in_scope(db, session, payload.branch_id)
     values = payload.model_dump(exclude={"expected_version"}, exclude_unset=True)
     if "email" in values:
         values["normalized_email"] = _normalize_email(values.pop("email"))
@@ -241,15 +231,10 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
         values["normalized_phone"] = _normalize_phone(values.pop("phone"))
     if "full_name" in values and values["full_name"] is not None:
         values["full_name"] = values["full_name"].strip()
-    # Reaching "visited" auto-creates (or links) the patient so staff never re-key the record.
-    auto_convert = payload.status == "visited" and lead["converted_to_patient_id"] is None
-    if auto_convert:
-        values["converted_to_patient_id"] = _resolve_or_create_patient(
-            db, session["clinic_id"],
-            (values.get("full_name") or lead["full_name"]).strip(),
-            values.get("normalized_email", lead["normalized_email"]),
-            values.get("normalized_phone", lead["normalized_phone"]),
-        )
+    # Reopening a lost lead (lost -> new/contacted) clears the stale lost reason.
+    status_changed = payload.status is not None and payload.status != lead["status"]
+    if status_changed and lead["status"] == "lost" and payload.status != "lost":
+        values["lost_reason"] = None
     assignments = ", ".join(f"{field} = :{field}" for field in values)
     row = db.execute(text(f"""
         UPDATE leads SET {assignments}, version = version + 1, updated_at = now()
@@ -258,11 +243,31 @@ def lead_update(lead_id: UUID, payload: LeadUpdate, request: Request, db: Sessio
     """), {"clinic_id": session["clinic_id"], "lead_id": lead_id, "expected_version": payload.expected_version, **values}).mappings().one_or_none()
     if row is None:
         raise _error("VERSION_CONFLICT", "The lead changed before this update or is unavailable.", status.HTTP_409_CONFLICT)
+    if status_changed:
+        record_lead_stage(db, session["clinic_id"], lead_id, lead["status"], payload.status, session["user_id"], payload.lost_reason if payload.status == "lost" else None)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.update", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"fields": sorted(values)})
-    if auto_convert:
-        record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.convert", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_id": str(values["converted_to_patient_id"]), "auto": True})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+def _assert_specialty_in_scope(db: Session, session: dict, specialty_id: UUID) -> None:
+    """Reject assigning a lead to a specialty outside the user's scope (unscoped users pass)."""
+    in_scope = db.execute(text("""
+        SELECT NOT EXISTS (SELECT 1 FROM user_specialty_scopes WHERE clinic_id = :clinic_id AND user_id = :user_id)
+            OR EXISTS (SELECT 1 FROM user_specialty_scopes WHERE clinic_id = :clinic_id AND user_id = :user_id AND specialty_id = :specialty_id)
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "specialty_id": specialty_id}).scalar_one()
+    if not in_scope:
+        raise _error("FORBIDDEN", "You cannot assign a lead to a specialty outside your scope.", status.HTTP_403_FORBIDDEN)
+
+
+def _assert_branch_in_scope(db: Session, session: dict, branch_id: UUID) -> None:
+    """Reject assigning a lead to a branch outside the user's scope (unscoped users pass)."""
+    in_scope = db.execute(text("""
+        SELECT NOT EXISTS (SELECT 1 FROM user_branch_scopes WHERE clinic_id = :clinic_id AND user_id = :user_id)
+            OR EXISTS (SELECT 1 FROM user_branch_scopes WHERE clinic_id = :clinic_id AND user_id = :user_id AND branch_id = :branch_id)
+    """), {"clinic_id": session["clinic_id"], "user_id": session["user_id"], "branch_id": branch_id}).scalar_one()
+    if not in_scope:
+        raise _error("FORBIDDEN", "You cannot assign a lead to a branch outside your scope.", status.HTTP_403_FORBIDDEN)
 
 
 def _require_lead(db: Session, session: dict, lead_id: UUID) -> None:
@@ -287,24 +292,24 @@ def _require_lead(db: Session, session: dict, lead_id: UUID) -> None:
 def _resolve_or_create_patient(db: Session, clinic_id, full_name: str, email: str | None, phone: str | None, date_of_birth=None) -> UUID:
     """Return the single non-duplicate patient matching the lead's email/phone, or create one.
 
-    Shared by the manual ``/convert`` endpoint and the automatic conversion that fires when a
-    lead moves to ``visited``. Raises ``DUPLICATE_REVIEW_REQUIRED`` when more than one candidate
-    matches, so a human picks the right record instead of silently merging strangers."""
-    candidates = db.execute(text("""
-        SELECT id FROM patients
-        WHERE clinic_id = :clinic_id AND archived_at IS NULL AND duplicate_of IS NULL
-          AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone))
-        ORDER BY created_at LIMIT 2
-    """), {"clinic_id": clinic_id, "email": email, "phone": phone}).scalars().all()
-    if len(candidates) > 1:
-        raise _error("DUPLICATE_REVIEW_REQUIRED", "Review duplicate patient candidates before conversion.", status.HTTP_409_CONFLICT)
-    if candidates:
-        return candidates[0]
-    return db.execute(text("""
-        INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth)
-        VALUES (:clinic_id, 'PENDING-' || substr(gen_random_uuid()::text, 1, 12), :full_name, :email, :phone, :date_of_birth)
-        RETURNING id
-    """), {"clinic_id": clinic_id, "full_name": full_name, "email": email, "phone": phone, "date_of_birth": date_of_birth}).scalar_one()
+    Thin wrapper over the shared resolver (:mod:`app.modules.crm.identity`) used by the
+    ``/convert`` endpoint. Interactive: more than one candidate raises
+    ``DUPLICATE_REVIEW_REQUIRED`` so a human picks the right record instead of merging strangers.
+    """
+    try:
+        return resolve_patient(
+            db, clinic_id,
+            full_name=full_name, email=email, phone=phone,
+            patient_number=f"PENDING-{uuid4().hex[:12]}",
+            date_of_birth=date_of_birth, interactive=True,
+        )
+    except DuplicatePatientReview as review:
+        raise _error(
+            "DUPLICATE_REVIEW_REQUIRED",
+            "Review duplicate patient candidates before conversion.",
+            status.HTTP_409_CONFLICT,
+            fields={"candidates": [str(candidate) for candidate in review.candidates]},
+        ) from review
 
 
 @lead_router.get("/{lead_id}/activities")
@@ -377,9 +382,116 @@ def lead_activity_create(
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
 
 
+@lead_router.get("/{lead_id}/history")
+def lead_stage_history_list(lead_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "lead.read")
+    _require_lead(db, session, lead_id)
+    rows = db.execute(text("""
+        SELECT id, lead_id, from_status, to_status, actor_user_id, reason, created_at
+        FROM lead_stage_history
+        WHERE clinic_id = :clinic_id AND lead_id = :lead_id
+        ORDER BY created_at DESC, id DESC LIMIT 200
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@lead_router.get("/{lead_id}/appointments")
+def lead_appointment_list(lead_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "lead.read")
+    _require_lead(db, session, lead_id)
+    rows = db.execute(text("""
+        SELECT id, reference, branch_id, doctor_id, service_id, patient_id, status, starts_at, ends_at, created_at
+        FROM appointments
+        WHERE clinic_id = :clinic_id AND lead_id = :lead_id AND archived_at IS NULL
+        ORDER BY created_at DESC, id DESC LIMIT 200
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@lead_router.get("/{lead_id}/follow-ups")
+def lead_follow_up_list(lead_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+    session = _authorized(db, session_token, "lead.read")
+    _require_lead(db, session, lead_id)
+    rows = db.execute(text("""
+        SELECT id, lead_id, description, due_at, assigned_to_user_id, status, completed_at,
+               completed_by_user_id, created_by_user_id, version, created_at, updated_at,
+               (status = 'pending' AND due_at < now()) AS overdue
+        FROM lead_follow_ups
+        WHERE clinic_id = :clinic_id AND lead_id = :lead_id
+        ORDER BY (status = 'pending') DESC, due_at ASC, id ASC LIMIT 200
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().all()
+    db.commit()
+    return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
+
+
+@lead_router.post("/{lead_id}/follow-ups", status_code=status.HTTP_201_CREATED)
+def lead_follow_up_create(lead_id: UUID, payload: LeadFollowUpCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_lead(db, session, lead_id)
+    if payload.assigned_to_user_id is not None and db.execute(text(
+        "SELECT 1 FROM users WHERE clinic_id = :clinic_id AND id = :user_id"
+    ), {"clinic_id": session["clinic_id"], "user_id": payload.assigned_to_user_id}).scalar_one_or_none() is None:
+        raise _error("INVALID_INPUT", "The assignee is not a member of this clinic.", status.HTTP_400_BAD_REQUEST)
+    follow_up_id = create_lead_follow_up(
+        db, session["clinic_id"], lead_id,
+        description=payload.description, due_at=payload.due_at,
+        assigned_to_user_id=payload.assigned_to_user_id, created_by_user_id=session["user_id"],
+    )
+    # Mirror the task onto the immutable timeline (a follow_up activity carries the due date).
+    db.execute(text("""
+        INSERT INTO lead_activities (clinic_id, lead_id, actor_user_id, kind, body, due_at)
+        VALUES (:clinic_id, :lead_id, :actor, 'follow_up', :body, :due_at)
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id, "actor": session["user_id"], "body": payload.description, "due_at": payload.due_at})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.follow_up.create", entity_type="lead_follow_up", entity_id=follow_up_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"lead_id": str(lead_id)})
+    row = db.execute(text("""
+        SELECT id, lead_id, description, due_at, assigned_to_user_id, status, completed_at,
+               completed_by_user_id, created_by_user_id, version, created_at, updated_at,
+               (status = 'pending' AND due_at < now()) AS overdue
+        FROM lead_follow_ups WHERE clinic_id = :clinic_id AND id = :id
+    """), {"clinic_id": session["clinic_id"], "id": follow_up_id}).mappings().one()
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
+@lead_router.patch("/{lead_id}/follow-ups/{follow_up_id}")
+def lead_follow_up_update(lead_id: UUID, follow_up_id: UUID, payload: LeadFollowUpUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    _require_lead(db, session, lead_id)
+    existing = db.execute(text(
+        "SELECT description, status, version FROM lead_follow_ups WHERE clinic_id = :clinic_id AND lead_id = :lead_id AND id = :id FOR UPDATE"
+    ), {"clinic_id": session["clinic_id"], "lead_id": lead_id, "id": follow_up_id}).mappings().one_or_none()
+    if existing is None:
+        raise _error("NOT_FOUND", "Follow-up not found.", status.HTTP_404_NOT_FOUND)
+    if existing["version"] != payload.expected_version:
+        raise _error("VERSION_CONFLICT", "The follow-up changed before this update.", status.HTTP_409_CONFLICT)
+    if existing["status"] != "pending":
+        raise _error("INVALID_TRANSITION", "Only a pending follow-up can be completed or cancelled.", status.HTTP_409_CONFLICT)
+    completed = payload.status == "completed"
+    row = db.execute(text("""
+        UPDATE lead_follow_ups
+        SET status = :status,
+            completed_at = CASE WHEN :completed THEN now() ELSE NULL END,
+            completed_by_user_id = CASE WHEN :completed THEN :actor ELSE NULL END,
+            version = version + 1, updated_at = now()
+        WHERE clinic_id = :clinic_id AND lead_id = :lead_id AND id = :id AND version = :expected_version
+        RETURNING id, lead_id, description, due_at, assigned_to_user_id, status, completed_at,
+                  completed_by_user_id, created_by_user_id, version, created_at, updated_at,
+                  (status = 'pending' AND due_at < now()) AS overdue
+    """), {"status": payload.status, "completed": completed, "actor": session["user_id"], "clinic_id": session["clinic_id"], "lead_id": lead_id, "id": follow_up_id, "expected_version": payload.expected_version}).mappings().one()
+    db.execute(text("""
+        INSERT INTO lead_activities (clinic_id, lead_id, actor_user_id, kind, body)
+        VALUES (:clinic_id, :lead_id, :actor, 'note', :body)
+    """), {"clinic_id": session["clinic_id"], "lead_id": lead_id, "actor": session["user_id"], "body": f"Follow-up {payload.status}: {existing['description']}"})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action=f"lead.follow_up.{payload.status}", entity_type="lead_follow_up", entity_id=follow_up_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"lead_id": str(lead_id)})
+    db.commit()
+    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+
+
 @lead_router.post("/{lead_id}/convert")
 def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
-    session = _write_authorized(db, request, session_token, "lead.manage", csrf_token)
+    session = _write_authorized(db, request, session_token, "lead.convert", csrf_token)
     _require_lead(db, session, lead_id)
     lead = db.execute(text("SELECT * FROM leads WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).mappings().one_or_none()
     if lead is None:
@@ -396,15 +508,24 @@ def lead_convert(lead_id: UUID, payload: LeadConvert, request: Request, db: Sess
         if valid is None:
             raise _error("NOT_FOUND", "The target patient was not found.", status.HTTP_404_NOT_FOUND)
     else:
-        full_name = (payload.full_name or lead["full_name"]).strip()
-        email = _normalize_email(payload.email) or lead["normalized_email"]
-        phone = _normalize_phone(payload.phone) or lead["normalized_phone"]
-        patient_id = _resolve_or_create_patient(db, session["clinic_id"], full_name, email, phone, payload.date_of_birth)
+        # Reuse the patient already associated through the lead's most-recent linked appointment
+        # (booking/visit) instead of creating a second record; fall back to contact resolution.
+        patient_id = db.execute(text("""
+            SELECT patient_id FROM appointments
+            WHERE clinic_id = :clinic_id AND lead_id = :lead_id AND patient_id IS NOT NULL AND archived_at IS NULL
+            ORDER BY created_at DESC LIMIT 1
+        """), {"clinic_id": session["clinic_id"], "lead_id": lead_id}).scalar_one_or_none()
+        if patient_id is None:
+            full_name = (payload.full_name or lead["full_name"]).strip()
+            email = _normalize_email(payload.email) or lead["normalized_email"]
+            phone = _normalize_phone(payload.phone) or lead["normalized_phone"]
+            patient_id = _resolve_or_create_patient(db, session["clinic_id"], full_name, email, phone, payload.date_of_birth)
     row = db.execute(text("""
         UPDATE leads SET converted_to_patient_id = :patient_id, status = 'converted', version = version + 1, updated_at = now()
         WHERE clinic_id = :clinic_id AND id = :lead_id AND converted_to_patient_id IS NULL
         RETURNING id, status, converted_to_patient_id, version, updated_at
     """), {"clinic_id": session["clinic_id"], "lead_id": lead_id, "patient_id": patient_id}).mappings().one()
+    record_lead_stage(db, session["clinic_id"], lead_id, lead["status"], "converted", session["user_id"], "converted to patient")
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="lead.convert", entity_type="lead", entity_id=lead_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_id": str(patient_id)})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}

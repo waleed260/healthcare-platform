@@ -58,8 +58,8 @@ def _capture_public_lead(clinic_id: UUID | None, payload: WebsiteLeadCreate, req
     normalized_phone = "".join(character for character in payload.phone if character.isdigit() or character == "+") if payload.phone else None
     key = idempotency_key.strip()
     row = db.execute(text("""
-        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, campaign, specialty_id, requested_service_id, notes, intake_key)
-        VALUES (:clinic_id, :full_name, :email, :phone, 'website', :campaign, :specialty_id, :service_id, :notes, :intake_key)
+        INSERT INTO leads (clinic_id, full_name, normalized_email, normalized_phone, source, capture_method, campaign, specialty_id, requested_service_id, notes, intake_key)
+        VALUES (:clinic_id, :full_name, :email, :phone, 'website', 'public_website_form', :campaign, :specialty_id, :service_id, :notes, :intake_key)
         ON CONFLICT (clinic_id, intake_key) WHERE intake_key IS NOT NULL DO NOTHING
         RETURNING id, full_name, status, created_at
     """), {"clinic_id": clinic_id, "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "campaign": payload.campaign, "specialty_id": specialty_id, "service_id": payload.requested_service_id, "notes": payload.notes, "intake_key": key}).mappings().one_or_none()
