@@ -26,6 +26,12 @@ from app.modules.identity.routes import _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, verify_csrf
 from app.modules.audit.service import record_event
 from app.modules.appointments.rate_limit import consume_public_management_limit
+from app.modules.blueprint_core.lead_service import (
+    link_appointment_to_lead,
+    mark_lead_visited,
+    revert_lead_if_no_active_appointment,
+)
+from app.modules.crm.identity import DuplicatePatientReview, resolve_patient
 
 router = APIRouter(prefix="/api/v1/public/bookings", tags=["public-bookings"])
 availability_router = APIRouter(prefix="/api/v1/public/availability", tags=["public-availability"])
@@ -354,7 +360,7 @@ def appointment_transition(appointment_id: UUID, payload: AppointmentTransitionR
     branch_id = _appointment_branch_id(db, session_token, appointment_id)
     session = _staff_authorized(db, session_token, permission, branch_id=branch_id)
     _csrf(request, session, csrf_token)
-    row = db.execute(text("SELECT id, status, version FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
+    row = db.execute(text("SELECT id, status, version, lead_id FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
     if row is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
     if row["version"] != payload.expected_version:
@@ -373,6 +379,13 @@ def appointment_transition(appointment_id: UUID, payload: AppointmentTransitionR
     if payload.to_status in {"cancelled", "rescheduled", "no_show"} or (row["status"] == "waiting" and payload.to_status == "confirmed"):
         db.execute(text("UPDATE queue_entries SET status = 'cancelled', version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND appointment_id = :id AND status IN ('waiting', 'in_consultation')"), {"clinic_id": session["clinic_id"], "id": appointment_id})
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, from_status, to_status, actor_user_id, reason) VALUES (:clinic_id, :id, :from_status, :to_status, :actor, :reason)"), {"clinic_id": session["clinic_id"], "id": appointment_id, "from_status": row["status"], "to_status": payload.to_status, "actor": session["user_id"], "reason": reason or None})
+    # Keep a linked lead in sync with real attendance: arrival is the authoritative visit event;
+    # cancellation / no-show returns the lead to the working pipeline (never lost, never visited).
+    if row["lead_id"] is not None:
+        if payload.to_status == "arrived":
+            mark_lead_visited(db, session["clinic_id"], row["lead_id"], session["user_id"])
+        elif payload.to_status in {"cancelled", "no_show"}:
+            revert_lead_if_no_active_appointment(db, session["clinic_id"], row["lead_id"], session["user_id"], f"appointment {payload.to_status}")
     _audit(db, request, session, f"appointment.{payload.to_status}", appointment_id)
     db.commit()
     return {"data": dict(updated), "meta": {"request_id": request.state.request_id}}
@@ -419,7 +432,7 @@ def appointment_reschedule(appointment_id: UUID, payload: AppointmentRescheduleR
     branch_id = _appointment_branch_id(db, session_token, appointment_id)
     session = _staff_authorized(db, session_token, "appointment.reschedule", branch_id=branch_id)
     _csrf(request, session, csrf_token)
-    old = db.execute(text("SELECT id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, version, policy_snapshot FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
+    old = db.execute(text("SELECT id, branch_id, doctor_id, service_id, patient_id, lead_id, starts_at, ends_at, occupancy_start, occupancy_end, status, version, policy_snapshot FROM appointments WHERE clinic_id = :clinic_id AND id = :id AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": appointment_id}).mappings().one_or_none()
     if old is None:
         raise _error("NOT_FOUND", "Appointment not found.", status.HTTP_404_NOT_FOUND)
     if old["version"] != payload.expected_version:
@@ -448,10 +461,10 @@ def appointment_reschedule(appointment_id: UUID, payload: AppointmentRescheduleR
         raise _error("VERSION_CONFLICT", "The appointment changed before rescheduling.", status.HTTP_409_CONFLICT)
     try:
         replacement = db.execute(text("""
-            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, blocks_time, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, supersedes_appointment_id, status_changed_at)
-            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, :status, true, 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :supersedes, now())
+            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, lead_id, starts_at, ends_at, occupancy_start, occupancy_end, status, blocks_time, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, supersedes_appointment_id, status_changed_at)
+            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :lead_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, :status, true, 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :supersedes, now())
             RETURNING id, reference, status, version, starts_at, ends_at
-        """), {"clinic_id": session["clinic_id"], "branch_id": old["branch_id"], "doctor_id": old["doctor_id"], "service_id": old["service_id"], "patient_id": old["patient_id"], "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "status": old["status"], "reference": f"RS-{secrets.token_hex(5).upper()}", "idempotency_key": f"reschedule:{appointment_id}:{payload.expected_version}:{starts_at.isoformat()}", "body_hash": hashlib.sha256(f"{appointment_id}:{starts_at.isoformat()}".encode()).hexdigest(), "policy": json.dumps(policy), "supersedes": appointment_id}).mappings().one()
+        """), {"clinic_id": session["clinic_id"], "branch_id": old["branch_id"], "doctor_id": old["doctor_id"], "service_id": old["service_id"], "patient_id": old["patient_id"], "lead_id": old["lead_id"], "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "status": old["status"], "reference": f"RS-{secrets.token_hex(5).upper()}", "idempotency_key": f"reschedule:{appointment_id}:{payload.expected_version}:{starts_at.isoformat()}", "body_hash": hashlib.sha256(f"{appointment_id}:{starts_at.isoformat()}".encode()).hexdigest(), "policy": json.dumps(policy), "supersedes": appointment_id}).mappings().one()
     except Exception as exc:
         db.rollback()
         if "no_doctor_overlap" in str(exc):
@@ -473,6 +486,10 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
     session = _staff_authorized(db, session_token, "appointment.create", branch_id=payload.branch_id)
     _csrf(request, session, csrf_token)
     clinic_id = session["clinic_id"]
+    if payload.lead_id is not None and db.execute(text(
+        "SELECT 1 FROM leads WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL"
+    ), {"clinic_id": clinic_id, "lead_id": payload.lead_id}).scalar_one_or_none() is None:
+        raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
     service = db.execute(text("""
         SELECT s.id, s.duration_minutes, s.buffer_before_minutes, s.buffer_after_minutes
         FROM services s
@@ -515,11 +532,18 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
             raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
         patient_id = patient
     elif payload.full_name:
-        normalized_email = _normalize_email(payload.email)
-        normalized_phone = _normalize_phone(payload.phone)
-        patient_id = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone)) ORDER BY created_at LIMIT 1"), {"clinic_id": clinic_id, "email": normalized_email, "phone": normalized_phone}).scalar_one_or_none()
-        if patient_id is None:
-            patient_id = db.execute(text("INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth) VALUES (:clinic_id, :patient_number, :full_name, :email, :phone, :dob) RETURNING id"), {"clinic_id": clinic_id, "patient_number": f"P-{secrets.token_hex(6).upper()}", "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "dob": payload.date_of_birth}).scalar_one()
+        try:
+            patient_id = resolve_patient(
+                db, clinic_id,
+                full_name=payload.full_name.strip(),
+                email=_normalize_email(payload.email),
+                phone=_normalize_phone(payload.phone),
+                patient_number=f"P-{secrets.token_hex(6).upper()}",
+                date_of_birth=payload.date_of_birth,
+                interactive=True,
+            )
+        except DuplicatePatientReview as review:
+            raise _error("DUPLICATE_REVIEW_REQUIRED", "Multiple patients match this contact. Select the right record and retry.", status.HTTP_409_CONFLICT, fields={"candidates": [str(candidate) for candidate in review.candidates]}) from review
     else:
         raise _error("INVALID_INPUT", "Either patient_id or full_name is required.", status.HTTP_400_BAD_REQUEST)
     active_enc = db.execute(text("SELECT id FROM encounter_forms WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND archived_at IS NULL AND status IN ('draft','in_progress','ready_for_discharge') LIMIT 1"), {"clinic_id": clinic_id, "patient_id": patient_id}).scalar_one_or_none()
@@ -542,10 +566,10 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
     """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "seq_date": booking_date}).scalar_one()
     try:
         appointment = db.execute(text("""
-            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, starts_at, ends_at, occupancy_start, occupancy_end, status, blocks_time, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, token_number)
-            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', false, 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :token_number)
+            INSERT INTO appointments (clinic_id, branch_id, doctor_id, service_id, patient_id, lead_id, starts_at, ends_at, occupancy_start, occupancy_end, status, blocks_time, source, reference, idempotency_key, idempotency_body_hash, policy_snapshot, token_number)
+            VALUES (:clinic_id, :branch_id, :doctor_id, :service_id, :patient_id, :lead_id, :starts_at, :ends_at, :occupancy_start, :occupancy_end, 'confirmed', false, 'staff', :reference, :idempotency_key, :body_hash, CAST(:policy AS jsonb), :token_number)
             RETURNING id, reference, status, token_number
-        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": doctor_id, "service_id": payload.service_id, "patient_id": patient_id, "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "reference": reference, "idempotency_key": idempotency_key, "body_hash": body_hash, "policy": json.dumps(policy), "token_number": token_number}).mappings().one()
+        """), {"clinic_id": clinic_id, "branch_id": payload.branch_id, "doctor_id": doctor_id, "service_id": payload.service_id, "patient_id": patient_id, "lead_id": payload.lead_id, "starts_at": starts_at, "ends_at": ends_at, "occupancy_start": occupancy_start, "occupancy_end": occupancy_end, "reference": reference, "idempotency_key": idempotency_key, "body_hash": body_hash, "policy": json.dumps(policy), "token_number": token_number}).mappings().one()
     except IntegrityError as exc:
         db.rollback()
         replay = _replay_idempotent_booking(db, clinic_id, idempotency_key, body_hash, request)
@@ -555,6 +579,10 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
             raise _error("APPOINTMENT_CONFLICT", "The selected time is no longer available.", status.HTTP_409_CONFLICT) from exc
         raise
     db.execute(text("INSERT INTO appointment_history (clinic_id, appointment_id, to_status, actor_user_id) VALUES (:clinic_id, :appointment_id, 'confirmed', :actor)"), {"clinic_id": clinic_id, "appointment_id": appointment["id"], "actor": session["user_id"]})
+    # Booking from a lead advances the lead to appointment_booked (idempotent, guarded) in the
+    # same transaction, so a rolled-back appointment never leaves a falsely "booked" lead.
+    if payload.lead_id is not None:
+        link_appointment_to_lead(db, clinic_id, payload.lead_id, session["user_id"])
     _audit(db, request, session, "appointment.create", appointment["id"])
     db.commit()
     return {"data": {"reference": appointment["reference"], "status": appointment["status"], "token_number": appointment["token_number"], "starts_at": starts_at.isoformat()}, "meta": {"request_id": request.state.request_id}}
@@ -913,11 +941,18 @@ def create_public_booking(payload: PublicBookingRequest, request: Request, db: S
             db.rollback()
             _record_public_booking_conflict(db, clinic_id, request)
         raise
-    normalized_email = _normalize_email(payload.email)
-    normalized_phone = _normalize_phone(payload.phone)
-    patient = db.execute(text("SELECT id FROM patients WHERE clinic_id = :clinic_id AND ((:email IS NOT NULL AND normalized_email = :email) OR (:phone IS NOT NULL AND normalized_phone = :phone)) ORDER BY created_at LIMIT 1"), {"clinic_id": clinic_id, "email": normalized_email, "phone": normalized_phone}).scalar_one_or_none()
-    if patient is None:
-        patient = db.execute(text("INSERT INTO patients (clinic_id, patient_number, full_name, normalized_email, normalized_phone, date_of_birth) VALUES (:clinic_id, :patient_number, :full_name, :email, :phone, :dob) RETURNING id"), {"clinic_id": clinic_id, "patient_number": f"P-{secrets.token_hex(6).upper()}", "full_name": payload.full_name.strip(), "email": normalized_email, "phone": normalized_phone, "dob": payload.date_of_birth}).scalar_one()
+    # Public, non-interactive path: a single unambiguous match is reused; a conflicting match
+    # (email and phone point to different active patients) creates a fresh patient rather than
+    # silently attaching to the wrong one. Archived/merged records are never matched.
+    patient = resolve_patient(
+        db, clinic_id,
+        full_name=payload.full_name.strip(),
+        email=_normalize_email(payload.email),
+        phone=_normalize_phone(payload.phone),
+        patient_number=f"P-{secrets.token_hex(6).upper()}",
+        date_of_birth=payload.date_of_birth,
+        interactive=False,
+    )
     reference = f"BK-{secrets.token_hex(5).upper()}"
     try:
         appointment = db.execute(text("""

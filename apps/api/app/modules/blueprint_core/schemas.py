@@ -39,7 +39,9 @@ class LeadUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
-    status: Literal['new', 'contacted', 'qualified', 'appointment_booked', 'visited', 'lost'] | None = None
+    # Only manual stages are accepted here. appointment_booked / visited / converted are event-only:
+    # they are set by the booking service, the arrival hook, and the convert endpoint respectively.
+    status: Literal['new', 'contacted', 'qualified', 'lost'] | None = None
     full_name: str | None = Field(default=None, min_length=1, max_length=160)
     email: str | None = Field(default=None, max_length=320)
     phone: str | None = Field(default=None, max_length=40)
@@ -76,6 +78,21 @@ class LeadActivityCreate(BaseModel):
         if (self.kind == 'follow_up') != (self.due_at is not None):
             raise ValueError('a due date is required only for follow-up activities')
         return self
+
+
+class LeadFollowUpCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    description: str = Field(min_length=1, max_length=2000)
+    due_at: AwareDatetime
+    assigned_to_user_id: UUID | None = None
+
+
+class LeadFollowUpUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    status: Literal['completed', 'cancelled']
 
 
 class LeadConvert(BaseModel):
