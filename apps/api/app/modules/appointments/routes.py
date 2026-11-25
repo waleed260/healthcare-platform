@@ -31,6 +31,7 @@ from app.modules.blueprint_core.lead_service import (
     mark_lead_visited,
     revert_lead_if_no_active_appointment,
 )
+from app.modules.blueprint_core.routes import _require_lead
 from app.modules.crm.identity import DuplicatePatientReview, resolve_patient
 
 router = APIRouter(prefix="/api/v1/public/bookings", tags=["public-bookings"])
@@ -486,10 +487,11 @@ def create_internal_booking(payload: InternalBookingRequest, request: Request, d
     session = _staff_authorized(db, session_token, "appointment.create", branch_id=payload.branch_id)
     _csrf(request, session, csrf_token)
     clinic_id = session["clinic_id"]
-    if payload.lead_id is not None and db.execute(text(
-        "SELECT 1 FROM leads WHERE clinic_id = :clinic_id AND id = :lead_id AND archived_at IS NULL"
-    ), {"clinic_id": clinic_id, "lead_id": payload.lead_id}).scalar_one_or_none() is None:
-        raise _error("NOT_FOUND", "Lead not found.", status.HTTP_404_NOT_FOUND)
+    # Enforce the SAME object scope the lead routes use (clinic + specialty + branch), not just
+    # tenancy: a branch/specialty-scoped user must not attach an appointment to — and advance the
+    # stage of — a lead outside their scope by supplying its id. Raises 404 if out of scope.
+    if payload.lead_id is not None:
+        _require_lead(db, session, payload.lead_id)
     service = db.execute(text("""
         SELECT s.id, s.duration_minutes, s.buffer_before_minutes, s.buffer_after_minutes
         FROM services s

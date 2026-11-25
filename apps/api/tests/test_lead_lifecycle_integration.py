@@ -7,10 +7,12 @@ safe patient resolver (D4). They auto-skip without the two integration DB URLs.
 """
 import os
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import psycopg
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 
@@ -71,7 +73,8 @@ def _seed_clinic(connection, clinic_id, user_id):
 def _cleanup(admin, clinic_id):
     with admin.begin() as c:
         for table in ("appointments", "lead_follow_ups", "lead_stage_history", "lead_activities", "leads",
-                      "patients", "services", "branches", "users", "clinics"):
+                      "patients", "services", "user_branch_scopes", "user_specialty_scopes", "branches",
+                      "users", "clinics"):
             key = "id" if table == "clinics" else "clinic_id"
             c.execute(text(f"DELETE FROM {table} WHERE {key} = :c"), {"c": clinic_id})
 
@@ -216,4 +219,52 @@ def test_new_tables_are_tenant_isolated():
     finally:
         _cleanup(admin, clinic_a)
         _cleanup(admin, clinic_b)
+        admin.dispose(); runtime.dispose()
+
+
+@pytestmark_integration
+def test_booking_rejects_a_lead_outside_the_users_scope(monkeypatch):
+    """A branch-scoped user cannot attach an appointment to a lead outside their scope by
+    supplying its id (intra-tenant object-level authorization). The in-scope lead passes the
+    gate and only fails later for an unrelated, non-security reason."""
+    from app.modules.appointments import routes as appointment_routes
+    from app.modules.appointments.schemas import InternalBookingRequest
+
+    admin, runtime = _engines()
+    clinic_id, user_id, lead_in, lead_out = uuid4(), uuid4(), uuid4(), uuid4()
+    try:
+        with admin.begin() as c:
+            _seed_clinic(c, clinic_id, user_id)
+            c.execute(text("INSERT INTO branches (clinic_id, code, name) VALUES (:c, 'SCOPE-A', 'Branch A')"), {"c": clinic_id})
+            c.execute(text("INSERT INTO branches (clinic_id, code, name) VALUES (:c, 'SCOPE-B', 'Branch B')"), {"c": clinic_id})
+            branch_a = c.execute(text("SELECT id FROM branches WHERE clinic_id = :c AND code = 'SCOPE-A'"), {"c": clinic_id}).scalar_one()
+            branch_b = c.execute(text("SELECT id FROM branches WHERE clinic_id = :c AND code = 'SCOPE-B'"), {"c": clinic_id}).scalar_one()
+            c.execute(text("INSERT INTO user_branch_scopes (clinic_id, user_id, branch_id) VALUES (:c, :u, :b)"), {"c": clinic_id, "u": user_id, "b": branch_a})
+            c.execute(text("INSERT INTO leads (id, clinic_id, full_name, source, status, branch_id) VALUES (:l, :c, 'In', 'call', 'qualified', :b)"), {"l": lead_in, "c": clinic_id, "b": branch_a})
+            c.execute(text("INSERT INTO leads (id, clinic_id, full_name, source, status, branch_id) VALUES (:l, :c, 'Out', 'call', 'qualified', :b)"), {"l": lead_out, "c": clinic_id, "b": branch_b})
+
+        # Auth/CSRF stubbed; the real set_tenant_context runs so _require_lead evaluates under RLS.
+        monkeypatch.setattr(appointment_routes, "_staff_authorized", lambda db, token, permission, branch_id=None: (set_tenant_context(db, clinic_id, user_id), {"clinic_id": clinic_id, "user_id": user_id})[1])
+        monkeypatch.setattr(appointment_routes, "_csrf", lambda *a, **k: None)
+        req = SimpleNamespace(state=SimpleNamespace(request_id=str(uuid4())))
+
+        def book(conn, lead_id):
+            payload = InternalBookingRequest(branch_id=branch_a, service_id=uuid4(),
+                                             starts_at=datetime.now(timezone.utc) + timedelta(days=1),
+                                             patient_id=uuid4(), lead_id=lead_id)
+            return appointment_routes.create_internal_booking(payload, req, db=conn, session_token="x", csrf_token="x", idempotency_key=f"idem-{uuid4()}")
+
+        with runtime.connect() as conn:
+            # Out-of-scope lead: blocked at the lead gate with "Lead not found".
+            with pytest.raises(HTTPException) as blocked:
+                book(conn, lead_out)
+            assert blocked.value.detail["error"]["message"] == "Lead not found."
+            conn.rollback()
+            # In-scope lead: passes the gate, then fails for an unrelated reason (no branch/service seeded).
+            with pytest.raises(HTTPException) as passed_gate:
+                book(conn, lead_in)
+            assert "branch or service" in passed_gate.value.detail["error"]["message"]
+            conn.rollback()
+    finally:
+        _cleanup(admin, clinic_id)
         admin.dispose(); runtime.dispose()
