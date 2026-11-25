@@ -19,7 +19,11 @@ def test_require_permission_rejects_unknown_codes_before_database_access() -> No
         require_permission(None, uuid4(), uuid4(), "patients.read.all")  # type: ignore[arg-type]
 
 
-def test_production_configuration_fails_closed_without_secrets() -> None:
+def test_production_configuration_fails_closed_without_secrets(monkeypatch) -> None:
+    # conftest.py supplies a development fallback for most tests. This assertion
+    # specifically verifies production fails closed when this secret is absent,
+    # independent of the invoking shell or CI runner environment.
+    monkeypatch.delenv("SESSION_HMAC_KEY", raising=False)
     with pytest.raises(ValueError, match="SESSION_HMAC_KEY"):
         Settings(app_env="production")
 
