@@ -151,7 +151,10 @@ export default function LeadsPage() {
     <AddAppointmentDrawer
       open={bookingLead !== null}
       onClose={() => setBookingLead(null)}
-      onCreated={() => { setBookingLead(null); void loadLeads(); }}
+      // Keep the drawer open on success so its token/confirmation screen shows (same as the
+      // schedule/dashboard booking entry points); refetch the pipeline in the background. The
+      // drawer's own Close button dismisses it. Closing here would hide the appointment token.
+      onCreated={() => { void loadLeads(); }}
       initialPatient={bookingLead ? (bookingLead.converted_to_patient_id
         ? { patient_id: bookingLead.converted_to_patient_id }
         : { full_name: bookingLead.full_name, email: bookingLead.normalized_email ?? "", phone: bookingLead.normalized_phone ?? "" }) : undefined}
