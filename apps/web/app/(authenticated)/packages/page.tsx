@@ -33,6 +33,8 @@ export default function PackagesPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [createDrawer, setCreateDrawer] = useState(false);
+  const [draftServices, setDraftServices] = useState<{ service_id: string; sessions_count: string }[]>([{ service_id: "", sessions_count: "1" }]);
+  const [draft, setDraft] = useState({ name: "", description: "", price: "", original_price: "", validity_days: "365" });
   const [manage, setManage] = useState<PackageDetail | null>(null);
   const [sellPkg, setSellPkg] = useState<Package | null>(null);
   const [sellKey, setSellKey] = useState<string>("");
@@ -96,17 +98,36 @@ export default function PackagesPage() {
 
   const field = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 
+  function openCreate() {
+    setDraft({ name: "", description: "", price: "", original_price: "", validity_days: "365" });
+    setDraftServices([{ service_id: "", sessions_count: "1" }]);
+    setCreateDrawer(true);
+  }
+
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const original = field(form, "original_price") ? Math.round(Number(field(form, "original_price")) * 100) : null;
+    const included = draftServices.filter((row) => row.service_id);
+    if (included.length === 0) {
+      toast.error("Add at least one included service — a package with no services cannot be sold.");
+      return;
+    }
+    if (new Set(included.map((row) => row.service_id)).size !== included.length) {
+      toast.error("Each service can only be included once. Set the sessions count on a single row.");
+      return;
+    }
+    if (included.some((row) => !(Number(row.sessions_count) >= 1))) {
+      toast.error("Every included service needs at least one session.");
+      return;
+    }
+    const dollars = (value: string) => Math.round(Number(value) * 100);
     void run(() => post("/api/v1/packages", {
-      name: field(form, "name"),
-      description: field(form, "description") || null,
-      total_price_minor: Math.round(Number(field(form, "price")) * 100),
-      original_value_minor: original,
+      name: draft.name.trim(),
+      description: draft.description.trim() || null,
+      total_price_minor: dollars(draft.price),
+      original_value_minor: draft.original_price ? dollars(draft.original_price) : null,
       currency: clinicCurrency,
-      validity_days: Number(field(form, "validity_days")),
+      validity_days: Number(draft.validity_days),
+      services: included.map((row) => ({ service_id: row.service_id, sessions_count: Number(row.sessions_count) })),
     }), "Package created.", "The package could not be created.").then((ok) => { if (ok) { setCreateDrawer(false); void load(); } });
   }
 
@@ -135,6 +156,19 @@ export default function PackagesPage() {
   async function confirmArchive() {
     const ok = await confirm({ title: `Archive ${manage?.name}`, message: "Archived packages can no longer be sold. Existing patient purchases keep their sessions and history.", danger: true, confirmLabel: "Archive" });
     if (ok) changeStatus("archive");
+  }
+
+  async function confirmDelete() {
+    if (!manage) return;
+    const ok = await confirm({
+      title: `Delete ${manage.name}`,
+      message: "This permanently removes the package definition. Packages with patient sales are protected — archive those instead so billing and session history are never deleted.",
+      danger: true,
+      confirmLabel: "Delete package",
+    });
+    if (!ok) return;
+    const done = await run(() => del(`/api/v1/packages/${manage.id}`), "Package deleted.", "The package could not be deleted.");
+    if (done) { setManage(null); void load(); }
   }
 
   function handleAddService(event: FormEvent<HTMLFormElement>) {
@@ -192,6 +226,10 @@ export default function PackagesPage() {
   }
 
   const priceLabel = `Price (${clinicCurrency})`;
+  const draftTotalSessions = draftServices.reduce((sum, row) => sum + (row.service_id ? Number(row.sessions_count) || 0 : 0), 0);
+  const draftPrice = Number(draft.price) || 0;
+  const draftOriginal = Number(draft.original_price) || 0;
+  const draftSaving = draftOriginal > draftPrice ? Math.round((draftOriginal - draftPrice) * 100) : 0;
   const kpis = overview && [
     { label: "ACTIVE PACKAGES", value: overview.active_definitions, note: `${overview.inactive_definitions} inactive` },
     { label: "PACKAGES SOLD", value: overview.total_sold, note: `${overview.active_patient_packages} active` },
@@ -208,7 +246,7 @@ export default function PackagesPage() {
       </div>
       <div className="header-actions">
         <button className="button button-secondary" onClick={() => void load()} disabled={loading}>Refresh <span>↻</span></button>
-        {can("package.manage") && <button className="button button-primary" onClick={() => setCreateDrawer(true)}>New package <span>＋</span></button>}
+        {can("package.manage") && <button className="button button-primary" onClick={openCreate}>New package <span>＋</span></button>}
       </div>
     </div>
 
@@ -242,7 +280,7 @@ export default function PackagesPage() {
           <div className="invoice-actions">
             <span className={`pipeline-status status-${pkg.status === "active" ? "paid" : pkg.status === "inactive" ? "pending" : "void"}`}>{pkg.status}</span>
             {can("package.manage") && <button className="text-control" disabled={busy} onClick={() => void refreshManage(pkg.id)}>Manage</button>}
-            {can("package.manage") && pkg.status === "active" && <button className="button button-secondary" disabled={busy} onClick={() => { setSellKey(crypto.randomUUID()); setSellMode("none"); setCollectNow(false); setSellPkg(pkg); }}>Sell</button>}
+            {can("package.manage") && pkg.status === "active" && <button className="button button-secondary" disabled={busy || pkg.total_sessions === 0} title={pkg.total_sessions === 0 ? "Add an included service before selling this package" : undefined} onClick={() => { setSellKey(crypto.randomUUID()); setSellMode("none"); setCollectNow(false); setSellPkg(pkg); }}>Sell</button>}
           </div>
         </article>)}
       </div>
@@ -277,34 +315,101 @@ export default function PackagesPage() {
     </section>
 
     {/* Create */}
-    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" undimmed
+    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" width={520} undimmed
       footer={<>
         <button className="button button-secondary" type="button" onClick={() => setCreateDrawer(false)} disabled={busy}>Cancel</button>
         <button className="button button-primary" type="submit" form="create-package-form" disabled={busy}>{busy ? "Saving…" : "Create package"} <span>↗</span></button>
       </>}>
       <form id="create-package-form" className="manage-form packages-form" onSubmit={handleCreate}>
-        <label>Name <span className="packages-req">required</span><input name="name" required maxLength={160} placeholder="Hair Transplant · 3 sessions" /></label>
-        <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={3} placeholder="What this package includes, terms, etc." /></label>
-        <div className="packages-grid-2">
-          <label>{priceLabel} <span className="packages-req">required</span><input name="price" type="number" min={0} step="0.01" required placeholder="0.00" /></label>
-          <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" placeholder="0.00" /></label>
-        </div>
-        <label>Validity (days) <span className="packages-req">required</span><input name="validity_days" type="number" min={1} max={3650} required defaultValue={365} /></label>
-        <p className="muted-mono packages-form-hint">Original value shows patients their savings — leave blank if there is none.</p>
+        <section className="packages-section">
+          <h3 className="packages-section-title">1 · Package information</h3>
+          <label>Name <span className="packages-req">required</span>
+            <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required maxLength={160} placeholder="Hair Transplant · 3 sessions" />
+          </label>
+          <label>Description <span className="field-optional">optional</span>
+            <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} maxLength={2000} rows={2} placeholder="What this package includes, terms, etc." />
+          </label>
+        </section>
+
+        <section className="packages-section">
+          <h3 className="packages-section-title">2 · Pricing &amp; billing</h3>
+          <div className="packages-grid-2">
+            <label>{priceLabel} <span className="packages-req">required</span>
+              <input value={draft.price} onChange={(e) => setDraft({ ...draft, price: e.target.value })} type="number" min={0} step="0.01" required placeholder="0.00" />
+            </label>
+            <label>Original value <span className="field-optional">optional</span>
+              <input value={draft.original_price} onChange={(e) => setDraft({ ...draft, original_price: e.target.value })} type="number" min={0} step="0.01" placeholder="0.00" />
+            </label>
+          </div>
+          <p className="packages-form-note">Billed in {clinicCurrency}. Original value shows the patient their saving — leave blank if there is none.</p>
+        </section>
+
+        <section className="packages-section">
+          <h3 className="packages-section-title">3 · Included services</h3>
+          {draftServices.map((row, index) => <div className="packages-service-row" key={index}>
+            <select aria-label={`Included service ${index + 1}`} value={row.service_id}
+              onChange={(e) => setDraftServices(draftServices.map((item, i) => i === index ? { ...item, service_id: e.target.value } : item))}>
+              <option value="">Choose service…</option>
+              {services.filter((s) => s.id === row.service_id || !draftServices.some((item) => item.service_id === s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <input aria-label={`Sessions for service ${index + 1}`} type="number" min={1} max={1000} value={row.sessions_count}
+              onChange={(e) => setDraftServices(draftServices.map((item, i) => i === index ? { ...item, sessions_count: e.target.value } : item))} />
+            <button type="button" className="text-control" aria-label="Remove service" disabled={draftServices.length === 1}
+              onClick={() => setDraftServices(draftServices.filter((_, i) => i !== index))}>×</button>
+          </div>)}
+          <div className="packages-section-actions">
+            <button type="button" className="button button-secondary" disabled={draftServices.length >= services.length}
+              onClick={() => setDraftServices([...draftServices, { service_id: "", sessions_count: "1" }])}>Add service</button>
+            <span className="muted-mono">{draftTotalSessions} session{draftTotalSessions === 1 ? "" : "s"} included</span>
+          </div>
+          <p className="packages-form-note">At least one service is required — it is what a sold package entitles the patient to.</p>
+        </section>
+
+        <section className="packages-section">
+          <h3 className="packages-section-title">4 · Validity &amp; usage</h3>
+          <div className="packages-grid-2">
+            <label>Validity (days) <span className="packages-req">required</span>
+              <input value={draft.validity_days} onChange={(e) => setDraft({ ...draft, validity_days: e.target.value })} type="number" min={1} max={3650} required />
+            </label>
+            <label>Total sessions
+              <input value={draftTotalSessions} readOnly tabIndex={-1} />
+            </label>
+          </div>
+          <p className="packages-form-note">The package expires after this many days from the sale date. Sessions are consumed one at a time from the patient&apos;s ledger.</p>
+        </section>
+
+        <section className="packages-section packages-review">
+          <h3 className="packages-section-title">5 · Review</h3>
+          <dl>
+            <div><dt>Package</dt><dd>{draft.name || "Untitled package"}</dd></div>
+            <div><dt>Price</dt><dd>{money(Math.round(draftPrice * 100), clinicCurrency)}{draftSaving > 0 ? ` · save ${money(draftSaving, clinicCurrency)}` : ""}</dd></div>
+            <div><dt>Services</dt><dd>{draftServices.filter((r) => r.service_id).length} included · {draftTotalSessions} sessions</dd></div>
+            <div><dt>Validity</dt><dd>{draft.validity_days || "—"} days</dd></div>
+          </dl>
+        </section>
       </form>
     </Drawer>
 
     {/* Manage */}
-    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={540} undimmed>
+    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={520} undimmed>
       {manage && <div className="packages-manage">
         <form className="manage-form packages-form" onSubmit={handleEdit}>
-          <label>Name<input name="name" required maxLength={160} defaultValue={manage.name} /></label>
-          <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} defaultValue={manage.description ?? ""} /></label>
-          <div className="packages-grid-2">
-            <label>{priceLabel}<input name="price" type="number" min={0} step="0.01" required defaultValue={(manage.total_price_minor / 100).toFixed(2)} /></label>
-            <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" defaultValue={manage.original_value_minor != null ? (manage.original_value_minor / 100).toFixed(2) : ""} /></label>
-          </div>
-          <label>Validity (days)<input name="validity_days" type="number" min={1} max={3650} required defaultValue={manage.validity_days} /></label>
+          <section className="packages-section">
+            <h3 className="packages-section-title">1 · Package information</h3>
+            <div className="packages-grid-2">
+              <label>Name<input name="name" required maxLength={160} defaultValue={manage.name} /></label>
+              <label>Validity (days)<input name="validity_days" type="number" min={1} max={3650} required defaultValue={manage.validity_days} /></label>
+            </div>
+            <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} defaultValue={manage.description ?? ""} /></label>
+          </section>
+          <section className="packages-section">
+            <h3 className="packages-section-title">2 · Pricing &amp; billing</h3>
+            <div className="packages-grid-2">
+              <label>{priceLabel}<input name="price" type="number" min={0} step="0.01" required defaultValue={(manage.total_price_minor / 100).toFixed(2)} /></label>
+              <label>Original value <span className="field-optional">optional</span><input name="original_price" type="number" min={0} step="0.01" defaultValue={manage.original_value_minor != null ? (manage.original_value_minor / 100).toFixed(2) : ""} /></label>
+            </div>
+            <p className="packages-form-note">Price and validity changes apply to future sales only; existing purchases keep their purchase-time entitlements.</p>
+          </section>
           <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Save changes<span>↗</span></button></div>
         </form>
 
@@ -312,7 +417,8 @@ export default function PackagesPage() {
           {manage.status !== "active" && manage.status !== "archived" && <button className="button button-secondary" disabled={busy} onClick={() => changeStatus("activate")}>Activate</button>}
           {manage.status === "active" && <button className="button button-secondary" disabled={busy} onClick={() => changeStatus("deactivate")}>Deactivate</button>}
           {manage.status === "archived" ? <button className="button button-secondary" disabled={busy} onClick={() => changeStatus("unarchive")}>Unarchive</button>
-            : <button className="button button-danger" disabled={busy} onClick={() => void confirmArchive()}>Archive</button>}
+            : <button className="button button-secondary" disabled={busy} onClick={() => void confirmArchive()}>Archive</button>}
+          <button className="button button-danger" disabled={busy} onClick={() => void confirmDelete()}>Delete</button>
           <span className="muted-mono">{manage.sold.total_sold} sold · {manage.sold.active_count} active</span>
         </div>
 
@@ -335,7 +441,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Sell */}
-    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={520} undimmed>
+    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={480} undimmed>
       {sellPkg && <form className="manage-form packages-form" onSubmit={handleSell}>
         <p className="packages-sell-summary">{money(sellPkg.total_price_minor, sellPkg.currency)} · {sellPkg.total_sessions} sessions · valid {sellPkg.validity_days} days</p>
         <label>Patient<select name="patient_id" required><option value="">Choose patient…</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}</select></label>
@@ -347,17 +453,17 @@ export default function PackagesPage() {
         {sellMode === "create" && <>
           <label className="packages-check"><input type="checkbox" checked={collectNow} onChange={(e) => setCollectNow(e.target.checked)} /> Collect payment now</label>
           {collectNow ? <div className="packages-grid-2">
-            <label>Amount ({sellPkg.currency})<input name="amount" type="number" min={0} step="0.01" defaultValue={(sellPkg.total_price_minor / 100).toFixed(2)} /></label>
+            <label>Amount ({sellPkg.currency})<input name="amount" type="number" min={0.01} step="0.01" required defaultValue={(sellPkg.total_price_minor / 100).toFixed(2)} /></label>
             <label>Method<select name="method" defaultValue="cash"><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option><option value="online">Online</option><option value="other">Other</option></select></label>
           </div> : <p className="muted-mono">The invoice is created as <strong>unpaid</strong> — collect payment later in Billing. Unpaid invoices are never counted as collected.</p>}
         </>}
-        {sellMode === "link" && <label>Existing invoice ID<input name="invoice_id" placeholder="Invoice UUID for this patient" /></label>}
+        {sellMode === "link" && <label>Existing invoice ID<input name="invoice_id" required placeholder="Invoice UUID for this patient" /></label>}
         <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>{busy ? "Processing…" : "Confirm sale"}<span>↗</span></button></div>
       </form>}
     </Drawer>
 
     {/* Purchase detail + consume */}
-    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={520} undimmed>
+    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={480} undimmed>
       {purchase && <div className="packages-manage">
         <span className={`pipeline-status status-${purchase.status === "active" ? "paid" : purchase.status === "exhausted" ? "pending" : "void"}`}>{purchase.status}</span>
         {can("package.manage") && purchase.status === "active" && <form className="manage-form packages-form" onSubmit={handleConsume}>

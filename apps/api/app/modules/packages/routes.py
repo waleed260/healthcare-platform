@@ -80,19 +80,39 @@ def package_overview(request: Request, db: Session = Depends(get_db), session_to
 @router.post("", status_code=status.HTTP_201_CREATED)
 def package_create(payload: PackageCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "package.manage", csrf_token)
+    values = payload.model_dump(exclude={"services"})
     row = db.execute(text("""
         INSERT INTO package_definitions (clinic_id, specialty_id, name, description, total_price_minor, original_value_minor, currency, validity_days)
         VALUES (:clinic_id, :specialty_id, :name, :description, :total_price_minor, :original_value_minor, UPPER(:currency), :validity_days)
         RETURNING id, name, description, specialty_id, total_price_minor, original_value_minor, currency, validity_days, status, version, created_at
-    """), {"clinic_id": session["clinic_id"], **payload.model_dump()}).mappings().one()
-    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="package.create", entity_type="package_definition", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id))
+    """), {"clinic_id": session["clinic_id"], **values}).mappings().one()
+    # Create the included services in the same transaction: a package with no services
+    # cannot be sold, so a partially-created shell is exactly the defect being fixed.
+    total_sessions = 0
+    for item in payload.services:
+        added = db.execute(text("""
+            INSERT INTO package_services (clinic_id, package_definition_id, service_id, sessions_count)
+            SELECT :clinic_id, :package_id, s.id, :sessions_count
+            FROM services s WHERE s.clinic_id = :clinic_id AND s.id = :service_id AND s.archived_at IS NULL
+            ON CONFLICT (clinic_id, package_definition_id, service_id) DO NOTHING
+            RETURNING service_id
+        """), {"clinic_id": session["clinic_id"], "package_id": row["id"], "service_id": item.service_id, "sessions_count": item.sessions_count}).scalar_one_or_none()
+        if added is None:
+            raise _error("INVALID_INPUT", "A selected service is not available in this clinic or is already included once.", status.HTTP_400_BAD_REQUEST, fields={"services": str(item.service_id)})
+        total_sessions += item.sessions_count
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="package.create", entity_type="package_definition", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"services": len(payload.services), "total_sessions": total_sessions})
     db.commit()
-    return {"data": dict(row), "meta": {"request_id": request.state.request_id}}
+    data = dict(row)
+    data["total_sessions"] = total_sessions
+    return {"data": data, "meta": {"request_id": request.state.request_id}}
 
 
 @router.post("/{package_id}/services", status_code=status.HTTP_201_CREATED)
 def package_service_add(package_id: UUID, payload: PackageServiceCreate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "package.manage", csrf_token)
+    already = db.execute(text("SELECT 1 FROM package_services WHERE clinic_id = :c AND package_definition_id = :p AND service_id = :s"), {"c": session["clinic_id"], "p": package_id, "s": payload.service_id}).scalar_one_or_none()
+    if already is not None:
+        raise _error("INVALID_STATE", "That service is already in this package; remove it first to change the session count.", status.HTTP_409_CONFLICT)
     row = db.execute(text("""
         INSERT INTO package_services (clinic_id, package_definition_id, service_id, sessions_count)
         SELECT :clinic_id, p.id, :service_id, :sessions_count
@@ -132,6 +152,11 @@ def package_update(package_id: UUID, payload: PackageUpdate, request: Request, d
         RETURNING id, name, description, specialty_id, total_price_minor, original_value_minor, currency, validity_days, status, version, created_at
     """), params).mappings().one_or_none()
     if updated is None:
+        existing = db.execute(text("SELECT version, archived_at FROM package_definitions WHERE clinic_id = :c AND id = :id"), {"c": session["clinic_id"], "id": package_id}).mappings().one_or_none()
+        if existing is None:
+            raise _error("NOT_FOUND", "Package not found.", status.HTTP_404_NOT_FOUND)
+        if existing["archived_at"] is not None:
+            raise _error("INVALID_STATE", "This package is archived; unarchive it before editing.", status.HTTP_409_CONFLICT)
         raise _error("VERSION_CONFLICT", "The package changed before this edit; reload and retry.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="package.update", entity_type="package_definition", entity_id=package_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
@@ -147,16 +172,27 @@ def package_status(package_id: UUID, payload: PackageStatusUpdate, request: Requ
         "activate": "status = 'active'",
         "deactivate": "status = 'inactive'",
     }[payload.action]
+    # Only valid transitions may run — deactivating an already-inactive package (or
+    # archiving twice) must report that state instead of bumping the version silently.
+    guard = {
+        "archive": "archived_at IS NULL",
+        "unarchive": "archived_at IS NOT NULL",
+        "activate": "status = 'inactive' AND archived_at IS NULL",
+        "deactivate": "status = 'active' AND archived_at IS NULL",
+    }[payload.action]
     updated = db.execute(text(f"""
         UPDATE package_definitions SET {set_clause}, version = version + 1, updated_at = now()
-        WHERE clinic_id = :c AND id = :id AND version = :ev
+        WHERE clinic_id = :c AND id = :id AND version = :ev AND {guard}
         RETURNING id, name, status, version
     """), {"c": session["clinic_id"], "id": package_id, "ev": payload.expected_version}).mappings().one_or_none()
     if updated is None:
-        existing = db.execute(text("SELECT 1 FROM package_definitions WHERE clinic_id = :c AND id = :id"), {"c": session["clinic_id"], "id": package_id}).scalar_one_or_none()
+        existing = db.execute(text("SELECT status, version, archived_at FROM package_definitions WHERE clinic_id = :c AND id = :id"), {"c": session["clinic_id"], "id": package_id}).mappings().one_or_none()
         if existing is None:
             raise _error("NOT_FOUND", "Package not found.", status.HTTP_404_NOT_FOUND)
-        raise _error("VERSION_CONFLICT", "The package changed before this action; reload and retry.", status.HTTP_409_CONFLICT)
+        if existing["version"] != payload.expected_version:
+            raise _error("VERSION_CONFLICT", "The package changed before this action; reload and retry.", status.HTTP_409_CONFLICT)
+        state = "archived" if existing["archived_at"] is not None else existing["status"]
+        raise _error("INVALID_STATE", f"This package is already {state}.", status.HTTP_409_CONFLICT)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action=f"package.{payload.action}", entity_type="package_definition", entity_id=package_id, outcome="success", request_id=UUID(request.state.request_id))
     db.commit()
     return {"data": dict(updated), "meta": {"request_id": request.state.request_id}}
@@ -175,22 +211,59 @@ def package_service_remove(package_id: UUID, service_id: UUID, request: Request,
     return {"data": {"removed": True, "service_id": removed}, "meta": {"request_id": request.state.request_id}}
 
 
+@router.delete("/{package_id}")
+def package_delete(package_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    """Hard-delete a package that was never sold. Anything with sales is refused
+    (409) so patient_packages/session history can never be cascaded away; archive
+    it instead (POST /{id}/status with action=archive) to hide it from the catalog."""
+    session = _write_authorized(db, request, session_token, "package.manage", csrf_token)
+    definition = db.execute(text("SELECT id FROM package_definitions WHERE clinic_id = :c AND id = :id FOR UPDATE"), {"c": session["clinic_id"], "id": package_id}).scalar_one_or_none()
+    if definition is None:
+        raise _error("NOT_FOUND", "Package not found.", status.HTTP_404_NOT_FOUND)
+    sold = db.execute(text("SELECT COUNT(*) FROM patient_packages WHERE clinic_id = :c AND package_definition_id = :id"), {"c": session["clinic_id"], "id": package_id}).scalar_one()
+    if sold > 0:
+        # DELETE on patient_packages is RESTRICTed by FK; block explicitly with a helpful message.
+        raise _error(
+            "PACKAGE_IN_USE",
+            f"This package has {sold} sale{'s' if sold != 1 else ''} in patient history and cannot be deleted. Archive it instead — existing purchases keep their sessions.",
+            status.HTTP_409_CONFLICT,
+            fields={"package_id": "archive instead of delete"},
+        )
+    db.execute(text("DELETE FROM package_services WHERE clinic_id = :c AND package_definition_id = :id"), {"c": session["clinic_id"], "id": package_id})
+    db.execute(text("DELETE FROM package_definitions WHERE clinic_id = :c AND id = :id"), {"c": session["clinic_id"], "id": package_id})
+    record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="package.delete", entity_type="package_definition", entity_id=package_id, outcome="success", request_id=UUID(request.state.request_id))
+    db.commit()
+    return {"data": {"id": str(package_id), "deleted": True}, "meta": {"request_id": request.state.request_id}}
+
+
 @router.post("/{package_id}/purchase", status_code=status.HTTP_201_CREATED)
 def package_purchase(package_id: UUID, payload: PackagePurchase, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "package.manage", csrf_token)
     # Idempotency: a repeated sell request with the same key returns the original
     # purchase instead of creating a duplicate (the partial unique index is the backstop).
+    # Reusing a key for a different patient/package is a conflict, not a replay.
     if payload.idempotency_key is not None:
         existing = db.execute(text("""
             SELECT id, patient_id, package_definition_id, invoice_id, purchased_at, expires_at, status, total_sessions, used_sessions, version
             FROM patient_packages WHERE clinic_id = :clinic_id AND idempotency_key = :key
         """), {"clinic_id": session["clinic_id"], "key": payload.idempotency_key}).mappings().one_or_none()
         if existing is not None:
+            if existing["patient_id"] != payload.patient_id or existing["package_definition_id"] != package_id:
+                raise _error("IDEMPOTENCY_CONFLICT", "This idempotency key was already used for a different package sale.", status.HTTP_409_CONFLICT)
             db.commit()
             return {"data": dict(existing), "meta": {"request_id": request.state.request_id}}
-    package = db.execute(text("SELECT id, validity_days, total_price_minor, currency, name FROM package_definitions WHERE clinic_id = :clinic_id AND id = :id AND status = 'active' AND archived_at IS NULL FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().one_or_none()
+    # The patient must always belong to this clinic — even when the sale records no invoice.
+    patient_ok = db.execute(text("SELECT 1 FROM patients WHERE clinic_id = :clinic_id AND id = :patient_id AND archived_at IS NULL AND duplicate_of IS NULL"), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id}).scalar_one_or_none()
+    if patient_ok is None:
+        raise _error("NOT_FOUND", "Patient not found in this clinic.", status.HTTP_404_NOT_FOUND)
+    package = db.execute(text("SELECT id, validity_days, total_price_minor, currency, name, status, archived_at FROM package_definitions WHERE clinic_id = :clinic_id AND id = :id FOR UPDATE"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().one_or_none()
     if package is None:
         raise _error("NOT_FOUND", "Package not found.", status.HTTP_404_NOT_FOUND)
+    # Inactive/archived packages must not be sold, and the caller deserves the real reason.
+    if package["archived_at"] is not None or package["status"] == "archived":
+        raise _error("INVALID_STATE", "This package is archived and can no longer be sold.", status.HTTP_409_CONFLICT)
+    if package["status"] != "active":
+        raise _error("INVALID_STATE", "This package is inactive and cannot be sold. Reactivate it first.", status.HTTP_409_CONFLICT)
     services = db.execute(text("SELECT service_id, sessions_count FROM package_services WHERE clinic_id = :clinic_id AND package_definition_id = :id ORDER BY service_id"), {"clinic_id": session["clinic_id"], "id": package_id}).mappings().all()
     if not services:
         raise _error("INVALID_STATE", "Add at least one service to the package before purchase.", status.HTTP_400_BAD_REQUEST)
@@ -212,9 +285,6 @@ def package_purchase(package_id: UUID, payload: PackagePurchase, request: Reques
         if invoice_ok is None:
             raise _error("NOT_FOUND", "The invoice is not associated with this patient.", status.HTTP_404_NOT_FOUND)
     if payload.create_invoice:
-        patient_ok = db.execute(text("SELECT 1 FROM patients WHERE clinic_id = :clinic_id AND id = :patient_id AND archived_at IS NULL AND duplicate_of IS NULL"), {"clinic_id": session["clinic_id"], "patient_id": payload.patient_id}).scalar_one_or_none()
-        if patient_ok is None:
-            raise _error("NOT_FOUND", "Patient not found.", status.HTTP_404_NOT_FOUND)
         total_minor = package["total_price_minor"]
         year = datetime.now(timezone.utc).year
         db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:k AS text), 0))"), {"k": f"invoice-sequence:{session['clinic_id']}:{year}"})
@@ -374,7 +444,9 @@ def package_consume(patient_package_id: UUID, payload: PackageConsume, request: 
         """), {"clinic_id": session["clinic_id"], "package_id": patient_package_id, "service_id": payload.service_id, "appointment_id": payload.appointment_id, "reason": payload.override_reason, "user_id": session["user_id"]}).mappings().one()
     else:
         row = db.execute(text("UPDATE package_sessions SET status = 'used', appointment_id = :appointment_id, used_at = now(), used_by_user_id = :user_id WHERE clinic_id = :clinic_id AND id = :id RETURNING id, service_id, appointment_id, status, override_reason, used_at"), {"clinic_id": session["clinic_id"], "id": session_row["id"], "appointment_id": payload.appointment_id, "user_id": session["user_id"]}).mappings().one()
-    db.execute(text("UPDATE patient_packages SET used_sessions = used_sessions + 1, status = CASE WHEN used_sessions + 1 >= total_sessions AND :override = false THEN 'exhausted' ELSE status END, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": patient_package_id, "override": override})
+    # ck_patient_packages_used caps used_sessions at total_sessions; an authorised override is
+    # still recorded in the session ledger, but the counter must not violate that check.
+    db.execute(text("UPDATE patient_packages SET used_sessions = CASE WHEN :override THEN LEAST(used_sessions + 1, total_sessions) ELSE used_sessions + 1 END, status = CASE WHEN used_sessions + 1 >= total_sessions AND :override = false THEN 'exhausted' ELSE status END, version = version + 1, updated_at = now() WHERE clinic_id = :clinic_id AND id = :id"), {"clinic_id": session["clinic_id"], "id": patient_package_id, "override": override})
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="package.session.consume", entity_type="package_session", entity_id=row["id"], outcome="success", request_id=UUID(request.state.request_id), metadata={"patient_package_id": str(patient_package_id), "override": override})
     db.commit()
     return {"data": dict(row), "meta": {"request_id": request.state.request_id}}

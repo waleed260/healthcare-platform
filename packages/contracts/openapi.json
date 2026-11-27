@@ -5132,6 +5132,13 @@
             ],
             "title": "Original Value Minor"
           },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/PackageServiceCreate"
+            },
+            "title": "Services",
+            "type": "array"
+          },
           "specialty_id": {
             "anyOf": [
               {
@@ -25474,6 +25481,82 @@
       }
     },
     "/api/v1/packages/{package_id}": {
+      "delete": {
+        "description": "Hard-delete a package that was never sold. Anything with sales is refused\n(409) so patient_packages/session history can never be cascaded away; archive\nit instead (POST /{id}/status with action=archive) to hide it from the catalog.",
+        "operationId": "package_delete_api_v1_packages__package_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "package_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Package Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Package Delete Api V1 Packages  Package Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Package Delete",
+        "tags": [
+          "packages"
+        ]
+      },
       "get": {
         "operationId": "package_detail_api_v1_packages__package_id__get",
         "parameters": [

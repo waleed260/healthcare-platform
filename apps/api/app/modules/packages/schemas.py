@@ -5,6 +5,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class PackageServiceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service_id: UUID
+    sessions_count: int = Field(gt=0, le=1000)
+
+
 class PackageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -15,6 +22,9 @@ class PackageCreate(BaseModel):
     original_value_minor: int | None = Field(default=None, ge=0)
     currency: str = Field(min_length=3, max_length=3)
     validity_days: int = Field(gt=0, le=3650)
+    # Optional at the API level (existing callers create the shell first); the UI sends the
+    # included services so a new package is immediately sellable instead of rejecting the sale.
+    services: list[PackageServiceCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _original_not_below_price(self):
@@ -52,13 +62,6 @@ class PackageStatusUpdate(BaseModel):
 
     action: Literal["activate", "deactivate", "archive", "unarchive"]
     expected_version: int = Field(ge=1)
-
-
-class PackageServiceCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    service_id: UUID
-    sessions_count: int = Field(gt=0, le=1000)
 
 
 class PackagePayment(BaseModel):
