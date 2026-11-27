@@ -8,7 +8,8 @@ import { useConfirm } from "../_lib/confirm";
 import { useClinicCurrency } from "../_lib/clinic-context";
 
 type Session = { permissions?: string[] };
-type Package = { id: string; name: string; description: string | null; total_price_minor: number; original_value_minor: number | null; currency: string; validity_days: number; status: string; version: number; total_sessions: number };
+type Package = { id: string; name: string; description: string | null; specialty_id: string | null; total_price_minor: number; original_value_minor: number | null; currency: string; validity_days: number; status: string; version: number; total_sessions: number };
+type Specialty = { id: string; name: string };
 type Service = { id: string; name: string; duration_minutes: number; amount_minor: number | null; currency: string | null };
 type Patient = { id: string; full_name: string; patient_number: string };
 type PatientPackage = { id: string; name: string; purchased_at: string; expires_at: string; status: string; total_sessions: number; used_sessions: number; remaining_sessions: number };
@@ -27,6 +28,7 @@ export default function PackagesPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -34,7 +36,7 @@ export default function PackagesPage() {
 
   const [createDrawer, setCreateDrawer] = useState(false);
   const [draftServices, setDraftServices] = useState<{ service_id: string; sessions_count: string }[]>([{ service_id: "", sessions_count: "1" }]);
-  const [draft, setDraft] = useState({ name: "", description: "", price: "", original_price: "", validity_days: "365" });
+  const [draft, setDraft] = useState({ name: "", description: "", specialty_id: "", price: "", original_price: "", validity_days: "365" });
   const [manage, setManage] = useState<PackageDetail | null>(null);
   const [sellPkg, setSellPkg] = useState<Package | null>(null);
   const [sellKey, setSellKey] = useState<string>("");
@@ -52,18 +54,20 @@ export default function PackagesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [session, over, pkgRows, svcRows, patRows] = await Promise.all([
+      const [session, over, pkgRows, svcRows, patRows, specialtyRows] = await Promise.all([
         api<Session>("/api/v1/auth/me"),
         api<Overview>("/api/v1/packages/overview").catch(() => null),
         api<Package[]>("/api/v1/packages"),
         api<Service[]>("/api/v1/services?limit=100").catch(() => []),
         api<Patient[]>("/api/v1/patients?limit=50").catch(() => []),
+        api<Specialty[]>("/api/v1/specialties").catch(() => []),
       ]);
       setPermissions(session.permissions ?? []);
       setOverview(over);
       setPackages(pkgRows ?? []);
       setServices(svcRows ?? []);
       setPatients(patRows ?? []);
+      setSpecialties(specialtyRows ?? []);
     } catch (reason) {
       setError(errorMessage(reason, "Packages could not be loaded."));
     } finally {
@@ -99,7 +103,7 @@ export default function PackagesPage() {
   const field = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 
   function openCreate() {
-    setDraft({ name: "", description: "", price: "", original_price: "", validity_days: "365" });
+    setDraft({ name: "", description: "", specialty_id: "", price: "", original_price: "", validity_days: "365" });
     setDraftServices([{ service_id: "", sessions_count: "1" }]);
     setCreateDrawer(true);
   }
@@ -123,6 +127,7 @@ export default function PackagesPage() {
     void run(() => post("/api/v1/packages", {
       name: draft.name.trim(),
       description: draft.description.trim() || null,
+      specialty_id: draft.specialty_id || null,
       total_price_minor: dollars(draft.price),
       original_value_minor: draft.original_price ? dollars(draft.original_price) : null,
       currency: clinicCurrency,
@@ -138,6 +143,7 @@ export default function PackagesPage() {
     void run(() => put(`/api/v1/packages/${manage.id}`, {
       name: field(form, "name"),
       description: field(form, "description") || null,
+      specialty_id: field(form, "specialty_id") || null,
       total_price_minor: Math.round(Number(field(form, "price")) * 100),
       original_value_minor: field(form, "original_price") ? Math.round(Number(field(form, "original_price")) * 100) : null,
       validity_days: Number(field(form, "validity_days")),
@@ -315,7 +321,7 @@ export default function PackagesPage() {
     </section>
 
     {/* Create */}
-    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" width={480}
+    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" width={430}
       footer={<>
         <button className="button button-secondary" type="button" onClick={() => setCreateDrawer(false)} disabled={busy}>Cancel</button>
         <button className="button button-primary" type="submit" form="create-package-form" disabled={busy}>{busy ? "Saving…" : "Create package"} <span>↗</span></button>
@@ -378,20 +384,32 @@ export default function PackagesPage() {
           <p className="packages-form-note">The package expires after this many days from the sale date. Sessions are consumed one at a time from the patient&apos;s ledger.</p>
         </section>
 
+        <section className="packages-section">
+          <h3 className="packages-section-title">5 · Additional settings</h3>
+          {specialties.length > 0 ? <label>Specialty <span className="field-optional">optional</span>
+            <select value={draft.specialty_id} onChange={(e) => setDraft({ ...draft, specialty_id: e.target.value })}>
+              <option value="">All specialties</option>
+              {specialties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label> : <p className="packages-form-note">No clinic specialties are enabled for this clinic.</p>}
+          <p className="packages-form-note">Restricts the package to one specialty in reports and filters. Leave it on “All specialties” unless the package only makes sense for one.</p>
+        </section>
+
         <section className="packages-section packages-review">
-          <h3 className="packages-section-title">5 · Review</h3>
+          <h3 className="packages-section-title">6 · Review</h3>
           <dl>
             <div><dt>Package</dt><dd>{draft.name || "Untitled package"}</dd></div>
             <div><dt>Price</dt><dd>{money(Math.round(draftPrice * 100), clinicCurrency)}{draftSaving > 0 ? ` · save ${money(draftSaving, clinicCurrency)}` : ""}</dd></div>
             <div><dt>Services</dt><dd>{draftServices.filter((r) => r.service_id).length} included · {draftTotalSessions} sessions</dd></div>
             <div><dt>Validity</dt><dd>{draft.validity_days || "—"} days</dd></div>
+            <div><dt>Specialty</dt><dd>{specialties.find((item) => item.id === draft.specialty_id)?.name ?? "All specialties"}</dd></div>
           </dl>
         </section>
       </form>
     </Drawer>
 
     {/* Manage */}
-    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={480}>
+    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={430}>
       {manage && <div className="packages-manage">
         <form className="manage-form packages-form" onSubmit={handleEdit}>
           <section className="packages-section">
@@ -400,7 +418,13 @@ export default function PackagesPage() {
               <label>Name<input name="name" required maxLength={160} defaultValue={manage.name} /></label>
               <label>Validity (days)<input name="validity_days" type="number" min={1} max={3650} required defaultValue={manage.validity_days} /></label>
             </div>
-            <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} defaultValue={manage.description ?? ""} /></label>
+                          <label>Description <span className="field-optional">optional</span><textarea name="description" maxLength={2000} rows={2} defaultValue={manage.description ?? ""} /></label>
+            {specialties.length > 0 && <label>Specialty <span className="field-optional">optional</span>
+              <select name="specialty_id" defaultValue={manage.specialty_id ?? ""}>
+                <option value="">All specialties</option>
+                {specialties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>}
           </section>
           <section className="packages-section">
             <h3 className="packages-section-title">2 · Pricing &amp; billing</h3>
@@ -441,7 +465,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Sell */}
-    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={480}>
+    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={430}>
       {sellPkg && <form className="manage-form packages-form" onSubmit={handleSell}>
         <p className="packages-sell-summary">{money(sellPkg.total_price_minor, sellPkg.currency)} · {sellPkg.total_sessions} sessions · valid {sellPkg.validity_days} days</p>
         <label>Patient<select name="patient_id" required><option value="">Choose patient…</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}</select></label>
@@ -463,7 +487,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Purchase detail + consume */}
-    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={480}>
+    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={430}>
       {purchase && <div className="packages-manage">
         <span className={`pipeline-status status-${purchase.status === "active" ? "paid" : purchase.status === "exhausted" ? "pending" : "void"}`}>{purchase.status}</span>
         {can("package.manage") && purchase.status === "active" && <form className="manage-form packages-form" onSubmit={handleConsume}>
