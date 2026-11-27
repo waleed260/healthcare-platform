@@ -33698,6 +33698,16 @@
             }
           },
           {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "cookie",
             "name": "healthcare_session",
             "required": false,

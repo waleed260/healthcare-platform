@@ -86,7 +86,7 @@ export default function ManagePage() {
       if (session.user_id) setCurrentUserId(session.user_id);
       const has = (code: string) => granted.includes(code);
       const [serviceRows, branchRows, staffRows, roleRows, specialtyRows, upgradeRows, templateRows, inviteRows, limitRows, subscriptionRow, permRows, accessRequestRows] = await Promise.all([
-        has("service.read") ? api<Service[]>("/api/v1/services?limit=100") : Promise.resolve([]),
+        has("service.read") ? api<Service[]>("/api/v1/services?limit=100&include_archived=true") : Promise.resolve([]),
         has("branch.read") ? api<Branch[]>("/api/v1/branches?limit=100") : Promise.resolve([]),
         has("staff.read") ? api<StaffUser[]>("/api/v1/staff/users?limit=100") : Promise.resolve([]),
         has("staff.read") ? api<Role[]>("/api/v1/staff/roles?limit=100") : Promise.resolve([]),
@@ -573,11 +573,15 @@ export default function ManagePage() {
     </section>}
 
     {/* ═══ SERVICE DRAWER ═══ */}
-    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG" width={480} opaque footer={<><button className="button button-secondary" type="button" onClick={() => { setServiceDrawer(false); setEditService(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="service-form" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button></>}>
+    <Drawer open={serviceDrawer} onClose={() => { setServiceDrawer(false); setEditService(null); }} title={editService ? "Edit service" : "Add service"} subtitle="SERVICE CATALOG">
       <form className="drawer-form" id="service-form" onSubmit={handleServiceSubmit}>
-        <label>Service name<input name="name" required maxLength={160} placeholder="e.g. HydraFacial, Teeth Cleaning" defaultValue={editService?.name ?? ""} key={editService?.id ?? "new"} /></label>
+        <label>Service name
+          <span className="drawer-note">required</span>
+          <input name="name" required maxLength={160} placeholder="e.g. HydraFacial, Teeth Cleaning" defaultValue={editService?.name ?? ""} key={editService?.id ?? "new"} />
+        </label>
         <div className="drawer-form-row drawer-form-row-2">
-          <label>Category <span className="field-optional">optional</span>
+          <label>Category
+            <span className="drawer-note">optional</span>
             <select name="category" defaultValue={editService?.category ?? ""} key={`cat-${editService?.id ?? "new"}`}>
               <option value="">None</option>
               {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -585,7 +589,10 @@ export default function ManagePage() {
           </label>
           <label>Duration (min)<input name="duration" type="number" min={5} max={1440} defaultValue={editService?.duration_minutes ?? 30} required key={`dur-${editService?.id ?? "new"}`} /></label>
         </div>
-        <label>Short description <span className="field-optional">optional</span><input name="short_description" maxLength={500} placeholder="Brief description for listings" defaultValue={editService?.short_description ?? ""} key={`desc-${editService?.id ?? "new"}`} /></label>
+        <label>Short description
+          <span className="drawer-note">optional</span>
+          <input name="short_description" maxLength={500} placeholder="Brief description for listings" defaultValue={editService?.short_description ?? ""} key={`desc-${editService?.id ?? "new"}`} />
+        </label>
         <p className="drawer-form-section-label">SCHEDULING</p>
         <div className="drawer-form-row drawer-form-row-2">
           <label>Buffer before (min)<input name="buffer_before" type="number" min={0} max={240} defaultValue={editService?.buffer_before_minutes ?? 0} key={`bb-${editService?.id ?? "new"}`} /></label>
@@ -601,11 +608,12 @@ export default function ManagePage() {
           <label>Approval<select name="approval_mode" defaultValue={editService?.approval_mode ?? "staff_approval"} key={`ap-${editService?.id ?? "new"}`}><option value="instant">Instant booking</option><option value="staff_approval">Staff approval</option></select></label>
           <label>Website visibility<select name="visibility" defaultValue={editService?.visibility ?? "public"} key={`vis-${editService?.id ?? "new"}`}><option value="public">Visible</option><option value="hidden">Hidden</option></select></label>
         </div>
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : editService ? "Update service" : "Save service"} <span>→</span></button>
       </form>
     </Drawer>
 
     {/* ═══ IMPORT DRAWER ═══ */}
-    <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES" opaque>
+    <Drawer open={importDrawer} onClose={() => setImportDrawer(false)} title="Import from master catalog" subtitle="SERVICE TEMPLATES">
       <div className="drawer-form">
         {templates.length === 0 && <p className="drawer-note">No templates available in the master catalog, or you&#39;ve imported them all.</p>}
         {templates.map((t) => <article className="invoice-row manage-page-role-row" key={t.id} role="button" tabIndex={0} onClick={() => importTemplate(t)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); importTemplate(t); } }}>
@@ -620,30 +628,37 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ STAFF INVITE DRAWER ═══ */}
-    <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION" opaque footer={<><button className="button button-secondary" type="button" onClick={() => setStaffDrawer(false)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="invite-form" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button></>}>
+    <Drawer open={staffDrawer} onClose={() => setStaffDrawer(false)} title="Invite staff member" subtitle="NEW INVITATION">
       <form className="drawer-form" id="invite-form" onSubmit={handleInvite}>
-        <label>Email address<input name="email" type="email" required placeholder="doctor@clinic.com" /></label>
-        <div className="manage-page-invite-prompt">
-          <p className="drawer-note">An invitation link will be generated and copied to your clipboard. Roles and branch scopes can be assigned after the staff member accepts.</p>
-        </div>
+        <label>Email address
+          <span className="drawer-note">required</span>
+          <input name="email" type="email" required placeholder="doctor@clinic.com" />
+        </label>
+        <p className="drawer-note">An invitation link will be generated and copied to your clipboard. Roles and branch scopes can be assigned after the staff member accepts.</p>
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Sending…" : "Send invitation"} <span>→</span></button>
       </form>
     </Drawer>
 
     {/* ═══ APPROVE ACCESS REQUEST DRAWER ═══ */}
-    <Drawer open={!!approveReq} onClose={() => setApproveReq(null)} title={approveReq ? `Approve ${approveReq.email}` : "Approve request"} subtitle="GRANT ACCESS" opaque footer={<><button className="button button-secondary" type="button" onClick={() => setApproveReq(null)} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="approve-form" disabled={busy}>{busy ? "Approving…" : "Approve & invite"} <span>→</span></button></>}>
+    <Drawer open={!!approveReq} onClose={() => setApproveReq(null)} title={approveReq ? `Approve ${approveReq.email}` : "Approve request"} subtitle="GRANT ACCESS">
       {approveReq && <form className="drawer-form" id="approve-form" onSubmit={handleApprove}>
-        <div className="manage-page-invite-prompt"><p className="drawer-note">Choose the role this person will get. Approving issues a secure invitation link (copied to your clipboard); they set their own password when they accept. You can refine roles and branch scopes afterwards.</p></div>
-        <label>Role<select name="role_name" required defaultValue="receptionist">
-          {systemRoles.map((r) => <option key={r.id} value={r.name}>{label(r.name)}</option>)}
-        </select></label>
+        <p className="drawer-note">Choose the role this person will get. Approving issues a secure invitation link (copied to your clipboard); they set their own password when they accept. You can refine roles and branch scopes afterwards.</p>
+        <label>Role
+          <span className="drawer-note">required</span>
+          <select name="role_name" required defaultValue="receptionist">
+            {systemRoles.map((r) => <option key={r.id} value={r.name}>{label(r.name)}</option>)}
+          </select>
+        </label>
         {approveReq.reason && <p className="drawer-note">Reason given: {approveReq.reason}</p>}
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Approving…" : "Approve & invite"} <span>→</span></button>
       </form>}
     </Drawer>
 
     {/* ═══ ROLE DRAWER ═══ */}
-    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"} subtitle="ACCESS CONTROL" opaque footer={<><button className="button button-secondary" type="button" onClick={() => { setRoleDrawer(false); setEditRole(null); }} disabled={busy}>Cancel</button><button className="button button-primary" type="submit" form="role-form" disabled={busy}>{busy ? "Saving…" : editRole ? "Update role" : "Create role"} <span>→</span></button></>}>
+    <Drawer open={roleDrawer} onClose={() => { setRoleDrawer(false); setEditRole(null); }} title={editRole ? `Edit ${label(editRole.name)}` : "Create role"} subtitle="ACCESS CONTROL">
       <RoleEditor
         role={editRole}
+        busy={busy}
         allPermissions={allPermissions}
         onSave={(name, perms) => {
           if (editRole) {
@@ -664,7 +679,7 @@ export default function ManagePage() {
     </Drawer>
 
     {/* ═══ STAFF DETAIL DRAWER ═══ */}
-    <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"} subtitle="TEAM MEMBER" opaque footer={can("staff.manage") ? <><button className="button button-secondary" type="button" onClick={() => setStaffDetail(null)}>Close</button><button className="button button-secondary" disabled={busy} onClick={() => { if (staffDetail) void resetStaffPassword(staffDetail); }}>Reset password</button></> : undefined}>
+    <Drawer open={!!staffDetail} onClose={() => setStaffDetail(null)} title={staffDetail ? `Manage ${staffDetail.display_name}` : "Staff detail"} subtitle="TEAM MEMBER">
       {staffDetail && <div className="drawer-form staff-info">
         <div>
           <p className="drawer-note">{staffDetail.normalized_email}</p>
@@ -683,7 +698,7 @@ export default function ManagePage() {
               </span>)}
             </div>}
           {can("staff.manage") && staffDetail.id !== currentUserId && <div className="manage-page-staff-add">
-            <select className="staff-scope-select" onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
+            <select onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add role…</option>
               {roles.filter((r) => !(staffDetail.roles ?? []).some((ur) => ur.id === r.id)).map((r) => <option key={r.id} value={r.id}>{label(r.name)}</option>)}
             </select>
@@ -702,20 +717,23 @@ export default function ManagePage() {
               </span>)}
             </div>}
           {can("staff.manage") && <div className="manage-page-staff-add">
-            <select className="staff-scope-select" onChange={(e) => { if (e.target.value) { void assignBranchScope(staffDetail.id, e.target.value); e.target.value = ""; } }}>
+            <select onChange={(e) => { if (e.target.value) { void assignBranchScope(staffDetail.id, e.target.value); e.target.value = ""; } }}>
               <option value="">+ Add branch scope…</option>
               {branches.filter((b) => !(staffDetail.branch_scopes ?? []).some((bs) => bs.id === b.id)).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>}
         </div>
+
+        {can("staff.manage") && <button className="button button-secondary" type="button" disabled={busy} onClick={() => { if (staffDetail) void resetStaffPassword(staffDetail); }}>Reset password</button>}
       </div>}
     </Drawer>
   </main>;
 }
 
-function RoleEditor({ role, allPermissions, onSave }: {
+function RoleEditor({ role, allPermissions, busy, onSave }: {
   role: Role | null;
   allPermissions: { code: string; description: string }[];
+  busy: boolean;
   onSave: (name: string, permissions: string[]) => void;
 }) {
   const [name, setName] = useState(role?.name ?? "");
@@ -784,5 +802,6 @@ function RoleEditor({ role, allPermissions, onSave }: {
         ))}
       </div>
     </div>
+    <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Saving…" : role ? "Update role" : "Create role"} <span>→</span></button>
   </form>;
 }

@@ -409,7 +409,13 @@ def user_role_remove(user_id: UUID, role_id: UUID, request: Request, db: Session
 @router.get("/users/{user_id}/branch-scopes")
 def branch_scope_list(user_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "staff.read")
-    rows = db.execute(text("SELECT branch_id, created_at FROM user_branch_scopes WHERE clinic_id = :clinic_id AND user_id = :user_id ORDER BY branch_id"), {"clinic_id": session["clinic_id"], "user_id": user_id}).mappings().all()
+    rows = db.execute(text("""
+        SELECT s.branch_id AS id, b.name, s.branch_id, s.created_at
+        FROM user_branch_scopes s
+        JOIN branches b ON b.id = s.branch_id AND b.clinic_id = s.clinic_id
+        WHERE s.clinic_id = :clinic_id AND s.user_id = :user_id
+        ORDER BY b.name
+    """), {"clinic_id": session["clinic_id"], "user_id": user_id}).mappings().all()
     db.commit()
     return {"data": [dict(row) for row in rows], "meta": {"request_id": request.state.request_id}}
 

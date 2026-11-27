@@ -782,8 +782,9 @@ def unassign_branch_service(branch_id: str, service_id: str, request: Request, d
 
 
 @router.get("")
-def list_services(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
+def list_services(request: Request, cursor: str | None = Query(default=None, max_length=512), limit: int = Query(default=50, ge=1, le=100), include_archived: bool = Query(default=False), db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session")) -> dict:
     session = _authorized(db, session_token, "service.read")
+    archived_filter = "" if include_archived else "AND archived_at IS NULL"
     cursor_values = decode_cursor(cursor, "services") if cursor else None
     if cursor and cursor_values is None:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST)
@@ -792,12 +793,12 @@ def list_services(request: Request, cursor: str | None = Query(default=None, max
         after_id = cursor_values["id"] if cursor_values else None
     except (KeyError, TypeError, ValueError) as exc:
         raise _error("INVALID_INPUT", "The page cursor is invalid.", status.HTTP_400_BAD_REQUEST) from exc
-    rows = db.execute(text("""
+    rows = db.execute(text(f"""
         SELECT id, name, category, short_description, duration_minutes, buffer_before_minutes,
                buffer_after_minutes, price_mode, amount_minor, currency, approval_mode, visibility,
                status, version, created_at, updated_at
         FROM services
-        WHERE clinic_id = :clinic_id AND archived_at IS NULL
+        WHERE clinic_id = :clinic_id {archived_filter}
           AND (:after_name IS NULL OR name > :after_name OR (name = :after_name AND id > :after_id))
         ORDER BY name, id
         LIMIT :page_size
