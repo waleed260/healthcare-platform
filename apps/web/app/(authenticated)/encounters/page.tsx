@@ -258,10 +258,18 @@ export default function EncountersPage() {
 
       {showForm && (
         <form className="surface-card enc-form" onSubmit={(e) => void createEncounter(e)}>
-          <div className="surface-card-heading"><div><p className="eyebrow">NEW ENCOUNTER</p><h2>Start documentation</h2></div></div>
-          <div className="form-grid">
+          <div className="surface-card-heading">
+            <div>
+              <p className="eyebrow">NEW ENCOUNTER</p>
+              <h2>Start documentation</h2>
+              <p className="enc-form-hint">Pick the patient, assign the doctor and note the chief complaint to open a draft encounter.</p>
+            </div>
+            <button className="button button-secondary" type="button" onClick={() => setShowForm(false)}>Close</button>
+          </div>
+          <div className="drawer-form enc-form-fields">
             <label>
-              Patient *
+              Patient
+              <span className="drawer-note">required</span>
               {selectedPatient ? (
                 <>
                   <div className="enc-selected-patient">
@@ -270,12 +278,12 @@ export default function EncountersPage() {
                     <button className="ghost-button" type="button" onClick={() => { setSelectedPatient(null); setPatientSearch(""); setLastEncounter(null); }}>Change</button>
                   </div>
                   {lastEncounter ? (
-                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)", padding: "6px 10px", background: "var(--paper, #f9f9f6)", borderRadius: 6, border: "1px solid var(--line, #e5e5e3)" }}>
-                      Last visit: {fmtDateTime(lastEncounter.created_at)} with <strong>{lastEncounter.doctor_name}</strong> · {typeLabel(lastEncounter.encounter_type)} · {statusLabel(lastEncounter.status)}{lastEncounter.chief_complaint ? ` — ${lastEncounter.chief_complaint}` : ""}
-                      <br /><Link href={`/encounters/${lastEncounter.id}`} className="enc-d-hint-link">Open previous encounter →</Link>
+                    <div className="enc-last-visit">
+                      Last visit {fmtDateTime(lastEncounter.created_at)} with <strong>{lastEncounter.doctor_name}</strong> · {typeLabel(lastEncounter.encounter_type)} · {statusLabel(lastEncounter.status)}{lastEncounter.chief_complaint ? ` — ${lastEncounter.chief_complaint}` : ""}
+                      <Link href={`/encounters/${lastEncounter.id}`} className="enc-d-hint-link">Open previous encounter →</Link>
                     </div>
                   ) : (
-                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>No previous encounters for this patient.</div>
+                    <span className="enc-empty-visit">No previous encounters for this patient.</span>
                   )}
                 </>
               ) : (
@@ -283,7 +291,7 @@ export default function EncountersPage() {
                   <input value={patientSearch} onChange={(e) => void searchPatients(e.target.value)} placeholder="Search patient by name…" />
                   {patientResults.length > 0 && (
                     <div className="enc-patient-dropdown">
-                      <div className="enc-dropdown-hint">Click to select:</div>
+                      <div className="enc-dropdown-hint">Click to select</div>
                       {patientResults.map((p) => (
                         <button key={p.id} type="button" className="enc-dropdown-item" onClick={() => { setSelectedPatient(p); setPatientResults([]); }}>
                           {p.full_name} {p.mrn && <span className="enc-mrn">· {p.mrn}</span>}
@@ -294,24 +302,33 @@ export default function EncountersPage() {
                   {patientSearch.length >= 2 && patientResults.length === 0 && (
                     <span className="enc-no-results">No patients found for &ldquo;{patientSearch}&rdquo;</span>
                   )}
-                  <button className="ghost-button" type="button" onClick={() => setShowAddPatient(true)} style={{ marginTop: 4, textAlign: "left" }}>+ Add new patient (name, phone, email)</button>
+                  <button className="enc-add-patient" type="button" onClick={() => setShowAddPatient(true)}>＋ Add new patient (name, phone, email)</button>
                 </>
               )}
             </label>
-            <label>Doctor *
-              <select required value={selectedDoctor} onChange={(e) => setSelectedDoctor(e.target.value)}>
-                <option value="">Select doctor</option>
-                {doctors.map((d) => <option key={d.id} value={d.id}>{d.public_name}</option>)}
-              </select>
+            <div className="drawer-form-row drawer-form-row-2">
+              <label>Doctor
+                <span className="drawer-note">required</span>
+                <select required value={selectedDoctor} onChange={(e) => setSelectedDoctor(e.target.value)}>
+                  <option value="">Select doctor</option>
+                  {doctors.map((d) => <option key={d.id} value={d.id}>{d.public_name}</option>)}
+                </select>
+              </label>
+              <label>Type
+                <span className="drawer-note">optional</span>
+                <select value={encType} onChange={(e) => setEncType(e.target.value)}>
+                  {encounterTypes.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
+                </select>
+              </label>
+            </div>
+            <label>Chief complaint
+              <span className="drawer-note">optional — the patient&apos;s own words</span>
+              <textarea className="enc-complaint-input" value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="Patient's chief complaint" rows={5} />
             </label>
-            <label>Type
-              <select value={encType} onChange={(e) => setEncType(e.target.value)}>
-                {encounterTypes.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
-              </select>
-            </label>
-            <label className="enc-full-width">Chief complaint<textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} placeholder="Patient's chief complaint" rows={2} /></label>
+            <div className="enc-form-actions">
+              <button className="button button-primary" type="submit" disabled={busy === "create"}>{busy === "create" ? "Creating…" : "Create encounter"} <span>→</span></button>
+            </div>
           </div>
-          <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy === "create"}>{busy === "create" ? "Creating…" : "Create encounter"}</button></div>
         </form>
       )}
 

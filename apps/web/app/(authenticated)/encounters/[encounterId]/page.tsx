@@ -776,7 +776,7 @@ export default function EncounterDetailPage() {
               {treatments.length === 0 && <div className="dashboard-empty"><strong>No administered treatments</strong></div>}
               {treatments.map((t, idx) => (
                 <div key={idx} className="enc-detail-item-row">
-                  <label className="enc-detail-field-label-wide">Name <span className="enc-d-required">*</span>
+                  <label className="enc-detail-field-label-wide"><span>Name <span className="enc-d-required">*</span></span>
                     <div className="enc-detail-name-flex">
                       <input value={t.name} onChange={(e) => updateTreatment(idx, "name", e.target.value)} disabled={readonly} placeholder="Treatment name (required)" className="enc-d-name-input" />
                       {t.service_id && <span className="enc-detail-badge-svc">Service</span>}
@@ -819,7 +819,7 @@ export default function EncounterDetailPage() {
               {adminProcedures.length === 0 && <div className="dashboard-empty"><strong>No administered procedures</strong></div>}
               {adminProcedures.map((p, idx) => (
                 <div key={idx} className="enc-detail-item-row">
-                  <label className="enc-detail-field-label-wide">Name <span className="enc-d-required">*</span>
+                  <label className="enc-detail-field-label-wide"><span>Name <span className="enc-d-required">*</span></span>
                     <div className="enc-detail-name-flex">
                       <input value={p.name} onChange={(e) => updateProcedure(idx, "name", e.target.value)} disabled={readonly} placeholder="Procedure name (required)" className="enc-d-name-input" />
                       {p.service_id && <span className="enc-detail-badge-svc">Service</span>}
@@ -900,7 +900,7 @@ export default function EncounterDetailPage() {
             {meds.length === 0 && <div className="dashboard-empty"><strong>No medications</strong></div>}
             {meds.map((med, idx) => (
               <div key={idx} className="enc-detail-item-row">
-                <label className="enc-detail-field-label-wide">Name <span className="enc-d-required">*</span>
+                <label className="enc-detail-field-label-wide"><span>Name <span className="enc-d-required">*</span></span>
                   <div className="enc-detail-name-flex">
                     <input value={med.name} onChange={(e) => updateMed(idx, "name", e.target.value)} disabled={readonly} placeholder="Medication name (required)" className="enc-d-name-input" />
                     {med.inventory_product_id && <span className="enc-detail-badge-inv">Inventory</span>}
