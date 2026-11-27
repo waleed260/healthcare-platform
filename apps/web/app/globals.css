@@ -459,32 +459,39 @@
 .packages-progress{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:6px 0;max-width:260px}
 .packages-progress>div{height:100%;background:var(--leaf);border-radius:3px}
 .packages-progress>div[data-full="true"]{background:var(--coral)}
-.packages-form{display:flex;flex-direction:column;gap:12px}
-.packages-section{display:flex;flex-direction:column;gap:9px;padding-top:12px;border-top:1px solid var(--line)}
+.packages-form{display:flex;flex-direction:column;gap:6px}
+.packages-section{display:flex;flex-direction:column;gap:4px;padding-top:6px;border-top:1px solid var(--line)}
 .packages-section:first-child{padding-top:0;border-top:0}
 .packages-section-title{margin:0;font:600 10px 'DM Mono',monospace;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
-.packages-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.packages-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .packages-service-row{display:grid;grid-template-columns:1fr 82px 26px;gap:8px;align-items:center}
 .packages-service-row .text-control{font-size:16px;line-height:1;justify-self:center}
 .packages-section-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.packages-review dl{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:0}
+.packages-review dl{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 10px;margin:0}
 .packages-review dt{font:9px 'DM Mono',monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .packages-review dd{margin:2px 0 0;font:13px 'DM Sans',sans-serif;color:var(--ink);overflow-wrap:anywhere}
 .packages-manage{display:flex;flex-direction:column;gap:14px}
 .packages-status-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .packages-sub{margin:4px 0 0}
 .packages-sell-summary{font:500 14px Fraunces,serif;color:var(--leaf);margin:0}
-.packages-form label{display:grid;gap:5px;font:10px 'DM Mono',monospace;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
-.packages-form input:not([type="checkbox"]),.packages-form select,.packages-form textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:13px 'DM Sans',sans-serif}
+.packages-form label{display:grid;gap:3px;font:10px 'DM Mono',monospace;letter-spacing:.04em;color:var(--muted);text-transform:uppercase}
+.packages-form input:not([type="checkbox"]),.packages-form select,.packages-form textarea{width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:13px 'DM Sans',sans-serif}
 .packages-form input[readonly]{background:var(--surface-muted,#f6f4ef);color:var(--muted)}
-.packages-form textarea{resize:vertical;min-height:54px}
-.packages-form-note{margin:0;font:11px/1.4 'DM Sans',sans-serif;color:var(--muted)}
+.packages-form textarea{resize:vertical;min-height:30px}
+.packages-form-note{margin:0;font:10px/1.3 'DM Sans',sans-serif;color:var(--muted)}
 .packages-form input:focus,.packages-form select:focus,.packages-form textarea:focus{outline:3px solid rgba(231,123,92,.25);border-color:var(--coral)}
 .packages-form .field-optional{text-transform:none;color:var(--muted)}
 .packages-req{text-transform:none;color:var(--coral);font:9px 'DM Mono',monospace;letter-spacing:.04em}
 .packages-form-hint{margin:2px 0 0}
 .packages-check{display:flex;align-items:center;gap:9px;text-transform:none;font:13px 'DM Sans',sans-serif;color:var(--ink)}
 .packages-check input{width:auto}
+.packages-drawer{padding:16px 24px}
+.packages-drawer .drawer-title{font-size:22px;margin-bottom:8px}
+.packages-drawer .drawer-footer{padding-top:10px;margin-top:10px}
+.packages-drawer .packages-section-actions .button{padding:6px 10px;font-size:11px}
+.packages-drawer .packages-status-actions{padding:6px 0}
+.packages-drawer .packages-manage{gap:10px}
+.packages-drawer .invoice-row{padding-top:6px;padding-bottom:6px}
 .report-builder select,.report-filter input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:14px 'DM Sans',sans-serif}
 .report-builder select:focus,.report-filter input:focus{outline:3px solid rgba(231,123,92,.25);border-color:var(--coral)}
 @media(max-width:700px){.packages-grid-2{grid-template-columns:1fr}.packages-review dl{grid-template-columns:1fr}}

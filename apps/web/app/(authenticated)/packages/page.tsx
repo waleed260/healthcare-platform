@@ -321,7 +321,7 @@ export default function PackagesPage() {
     </section>
 
     {/* Create */}
-    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" width={430}
+    <Drawer open={createDrawer} onClose={() => setCreateDrawer(false)} title="New package" subtitle="PACKAGE CATALOG" width={430} className="packages-drawer"
       footer={<>
         <button className="button button-secondary" type="button" onClick={() => setCreateDrawer(false)} disabled={busy}>Cancel</button>
         <button className="button button-primary" type="submit" form="create-package-form" disabled={busy}>{busy ? "Saving…" : "Create package"} <span>↗</span></button>
@@ -333,7 +333,7 @@ export default function PackagesPage() {
             <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required maxLength={160} placeholder="Hair Transplant · 3 sessions" />
           </label>
           <label>Description <span className="field-optional">optional</span>
-            <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} maxLength={2000} rows={2} placeholder="What this package includes, terms, etc." />
+            <textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} maxLength={2000} rows={1} placeholder="What this package includes, terms, etc." />
           </label>
         </section>
 
@@ -347,7 +347,6 @@ export default function PackagesPage() {
               <input value={draft.original_price} onChange={(e) => setDraft({ ...draft, original_price: e.target.value })} type="number" min={0} step="0.01" placeholder="0.00" />
             </label>
           </div>
-          <p className="packages-form-note">Billed in {clinicCurrency}. Original value shows the patient their saving — leave blank if there is none.</p>
         </section>
 
         <section className="packages-section">
@@ -368,48 +367,36 @@ export default function PackagesPage() {
               onClick={() => setDraftServices([...draftServices, { service_id: "", sessions_count: "1" }])}>Add service</button>
             <span className="muted-mono">{draftTotalSessions} session{draftTotalSessions === 1 ? "" : "s"} included</span>
           </div>
-          <p className="packages-form-note">At least one service is required — it is what a sold package entitles the patient to.</p>
         </section>
 
         <section className="packages-section">
-          <h3 className="packages-section-title">4 · Validity &amp; usage</h3>
+          <h3 className="packages-section-title">4 · Validity &amp; settings</h3>
           <div className="packages-grid-2">
             <label>Validity (days) <span className="packages-req">required</span>
               <input value={draft.validity_days} onChange={(e) => setDraft({ ...draft, validity_days: e.target.value })} type="number" min={1} max={3650} required />
             </label>
-            <label>Total sessions
-              <input value={draftTotalSessions} readOnly tabIndex={-1} />
-            </label>
+            {specialties.length > 0 ? <label>Specialty <span className="field-optional">optional</span>
+              <select value={draft.specialty_id} onChange={(e) => setDraft({ ...draft, specialty_id: e.target.value })}>
+                <option value="">All specialties</option>
+                {specialties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label> : <label>Total sessions<input value={draftTotalSessions} readOnly tabIndex={-1} /></label>}
           </div>
-          <p className="packages-form-note">The package expires after this many days from the sale date. Sessions are consumed one at a time from the patient&apos;s ledger.</p>
-        </section>
-
-        <section className="packages-section">
-          <h3 className="packages-section-title">5 · Additional settings</h3>
-          {specialties.length > 0 ? <label>Specialty <span className="field-optional">optional</span>
-            <select value={draft.specialty_id} onChange={(e) => setDraft({ ...draft, specialty_id: e.target.value })}>
-              <option value="">All specialties</option>
-              {specialties.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label> : <p className="packages-form-note">No clinic specialties are enabled for this clinic.</p>}
-          <p className="packages-form-note">Restricts the package to one specialty in reports and filters. Leave it on “All specialties” unless the package only makes sense for one.</p>
         </section>
 
         <section className="packages-section packages-review">
-          <h3 className="packages-section-title">6 · Review</h3>
+          <h3 className="packages-section-title">5 · Review</h3>
           <dl>
             <div><dt>Package</dt><dd>{draft.name || "Untitled package"}</dd></div>
             <div><dt>Price</dt><dd>{money(Math.round(draftPrice * 100), clinicCurrency)}{draftSaving > 0 ? ` · save ${money(draftSaving, clinicCurrency)}` : ""}</dd></div>
             <div><dt>Services</dt><dd>{draftServices.filter((r) => r.service_id).length} included · {draftTotalSessions} sessions</dd></div>
-            <div><dt>Validity</dt><dd>{draft.validity_days || "—"} days</dd></div>
-            <div><dt>Specialty</dt><dd>{specialties.find((item) => item.id === draft.specialty_id)?.name ?? "All specialties"}</dd></div>
           </dl>
         </section>
       </form>
     </Drawer>
 
     {/* Manage */}
-    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={430}>
+    <Drawer open={!!manage} onClose={() => setManage(null)} title={manage?.name ?? ""} subtitle={manage ? `${manage.status} · v${manage.version}` : undefined} width={430} className="packages-drawer">
       {manage && <div className="packages-manage">
         <form className="manage-form packages-form" onSubmit={handleEdit}>
           <section className="packages-section">
@@ -465,7 +452,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Sell */}
-    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={430}>
+    <Drawer open={!!sellPkg} onClose={() => setSellPkg(null)} title="Sell package" subtitle={sellPkg?.name} width={430} className="packages-drawer">
       {sellPkg && <form className="manage-form packages-form" onSubmit={handleSell}>
         <p className="packages-sell-summary">{money(sellPkg.total_price_minor, sellPkg.currency)} · {sellPkg.total_sessions} sessions · valid {sellPkg.validity_days} days</p>
         <label>Patient<select name="patient_id" required><option value="">Choose patient…</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} ({p.patient_number})</option>)}</select></label>
@@ -487,7 +474,7 @@ export default function PackagesPage() {
     </Drawer>
 
     {/* Purchase detail + consume */}
-    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={430}>
+    <Drawer open={!!purchase} onClose={() => setPurchase(null)} title={purchase?.name ?? ""} subtitle={purchase ? `${purchase.used_sessions}/${purchase.total_sessions} used · ${purchase.remaining_sessions} left` : undefined} width={430} className="packages-drawer">
       {purchase && <div className="packages-manage">
         <span className={`pipeline-status status-${purchase.status === "active" ? "paid" : purchase.status === "exhausted" ? "pending" : "void"}`}>{purchase.status}</span>
         {can("package.manage") && purchase.status === "active" && <form className="manage-form packages-form" onSubmit={handleConsume}>
