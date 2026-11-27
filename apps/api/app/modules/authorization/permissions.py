@@ -51,6 +51,7 @@ PERMISSIONS = {
     "specialty.manage",
     "lead.read",
     "lead.manage",
+    "lead.convert",
     "billing.read",
     "billing.manage",
     "clinical.read",

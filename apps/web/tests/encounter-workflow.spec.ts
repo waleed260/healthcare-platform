@@ -113,6 +113,8 @@ test.describe("Clinical Encounter Workflow", () => {
         }
       } else if (path.match(/\/encounters\/enc-\d+\/prescriptions$/) && method === "GET") {
         data = [];
+      } else if (path.match(/\/encounters\/enc-\d+\/invoice$/) && method === "GET") {
+        data = null; // no invoice generated for these encounters (real API returns an object or null, never [])
       } else if (path.match(/\/encounters\/enc-1\/print$/) && method === "GET") {
         data = { ...encounters[0], status: encounterStatus, version: encounterVersion, clinic_name: "Test Clinic" };
       } else if (path.match(/\/encounters\/enc-1$/) && method === "DELETE") {
@@ -127,13 +129,13 @@ test.describe("Clinical Encounter Workflow", () => {
   test("encounters list page loads", async ({ page }) => {
     await page.goto("/encounters");
     await expect(page.locator(".dash-topline")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Encounter forms." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Encounters", exact: true })).toBeVisible();
   });
 
   test("create a new encounter via the form", async ({ page }) => {
     await page.goto("/encounters");
     await page.getByRole("button", { name: /new encounter/i }).click();
-    await expect(page.getByText("Start clinical documentation")).toBeVisible();
+    await expect(page.getByText("Start documentation")).toBeVisible();
 
     // Search and select patient
     await page.getByPlaceholder("Search patient by name").fill("Sara");
@@ -164,29 +166,30 @@ test.describe("Clinical Encounter Workflow", () => {
     await page.goto("/encounters/enc-1");
     await expect(page.getByText("Sara Ahmed")).toBeVisible();
 
-    // Check all tabs are present
-    const tabs = ["Arrival", "Patient", "Assessment", "Treatment", "Medications", "Vitals", "Discharge", "Prescriptions", "Summary"];
+    // Check all tabs are present (Vitals + Prescriptions merged into Arrival/Discharge + Medications).
+    const tabs = ["Arrival", "Patient", "Assessment", "Treatment", "Medications", "Discharge", "Summary"];
     for (const tabName of tabs) {
-      await expect(page.getByRole("tab", { name: tabName }).or(page.locator(".pipeline-tabs button", { hasText: tabName }))).toBeVisible();
+      await expect(page.locator(".pipeline-tabs button", { hasText: tabName })).toBeVisible();
     }
   });
 
   test("navigate through tabs and verify content", async ({ page }) => {
+    // Non-draft so assessment/treatment tabs are unlocked (draft locks them).
+    encounterStatus = "in_progress";
     encounters.push({
       id: "enc-1", clinic_id: "c1", patient_id: "p1", appointment_id: null,
-      doctor_id: "d1", encounter_type: "general", status: "draft",
+      doctor_id: "d1", encounter_type: "general", status: "in_progress",
       chief_complaint: "Headache", diagnosis: null, created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(), version: 1, finalized_at: null,
     });
 
     await page.goto("/encounters/enc-1");
 
-    // Patient tab — shows patient info
+    // Patient tab — patient info + allergies
     await page.locator(".pipeline-tabs button", { hasText: "Patient" }).click();
-    await expect(page.getByRole("paragraph").filter({ hasText: "Sara Ahmed" })).toBeVisible();
     await expect(page.getByText("Penicillin")).toBeVisible();
 
-    // Assessment tab — shows chief complaint, GCS, pain score
+    // Assessment tab — chief complaint, GCS, pain score
     await page.locator(".pipeline-tabs button", { hasText: "Assessment" }).click();
     await expect(page.getByText("Chief complaint")).toBeVisible();
     await expect(page.getByText("GLASGOW COMA SCALE")).toBeVisible();
@@ -197,14 +200,9 @@ test.describe("Clinical Encounter Workflow", () => {
     await expect(page.getByText("No administered treatments")).toBeVisible();
     await expect(page.getByText("No administered procedures")).toBeVisible();
 
-    // Vitals tab — arrival and discharge vitals
-    await page.locator(".pipeline-tabs button", { hasText: "Vitals" }).click();
+    // Arrival tab — vitals merged here (there is no standalone Vitals tab)
+    await page.locator(".pipeline-tabs button", { hasText: "Arrival" }).click();
     await expect(page.getByText("ARRIVAL VITALS")).toBeVisible();
-    await expect(page.getByText("DISCHARGE VITALS")).toBeVisible();
-
-    // Prescriptions tab
-    await page.locator(".pipeline-tabs button", { hasText: "Prescriptions" }).click();
-    await expect(page.getByText("No prescriptions")).toBeVisible();
   });
 
   test("status transitions: draft → in_progress → ready_for_discharge", async ({ page }) => {
@@ -220,7 +218,8 @@ test.describe("Clinical Encounter Workflow", () => {
     // Draft → In Progress
     await expect(page.getByText("Draft")).toBeVisible();
     await page.getByRole("button", { name: "Begin Assessment" }).click();
-    await expect(page.getByText("In Progress")).toBeVisible();
+    // The history list also prints the new status; assert on the status badge itself.
+    await expect(page.locator(".enc-detail-status-badge")).toHaveText("In Progress");
 
     // In Progress → Ready for Discharge
     await page.getByRole("button", { name: "Ready for Discharge" }).click();

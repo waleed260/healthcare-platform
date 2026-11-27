@@ -1,4 +1,9 @@
 fastapi==0.141.1
+# pydantic/pydantic-core pinned: the committed OpenAPI contract is generated from
+# the FastAPI schema, whose JSON output varies by pydantic version (e.g. Decimal
+# string patterns). An unpinned generator makes the CI contract-diff check flaky.
+pydantic==2.14.4
+pydantic-core==2.50.5
 uvicorn[standard]==0.34.2
 pydantic-settings==2.8.1
 pytest==9.1.1
@@ -10,7 +15,7 @@ argon2-cffi==23.1.0
 cryptography==50.0.1
 pyotp==2.9.0
 bleach==6.4.0
-dnspython==2.7.0
+dnspython==2.9.2
 sentry-sdk[fastapi]>=2.22,<3
 cachetools>=5.3,<6
 gunicorn>=22,<23

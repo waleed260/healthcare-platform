@@ -52,6 +52,7 @@ test("a lead's call and follow-up appear in the timeline, newest first", async (
   // Create a lead.
   await page.getByRole("button", { name: /new lead/i }).click();
   await page.getByLabel("Full name").fill("Prospect Zero");
+  await page.getByLabel(/phone/i).fill("+92 300 1234567"); // Phone is also required
   await page.getByRole("button", { name: /add lead/i }).click();
   await expect(page.getByRole("heading", { name: "Prospect Zero" })).toBeVisible();
 

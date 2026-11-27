@@ -13,10 +13,10 @@ import type { PatientSummary } from "../_lib/contracts";
 const statuses = ["active", "inactive", "discharged", "deceased"];
 
 const patientCols: Column<PatientSummary>[] = [
-  { key: "initial", header: "", width: "34px", srOnly: true, render: (p) => <span className="patient-initial" aria-hidden="true">{p.full_name.trim().charAt(0).toUpperCase()}</span> },
+  { key: "initial", header: "Patient", width: "34px", srOnly: true, render: (p) => <span className="patient-initial" aria-hidden="true">{p.full_name.trim().charAt(0).toUpperCase()}</span> },
   { key: "name", header: "Name", width: "1.3fr", sortable: true, sortFn: (a, b) => a.full_name.localeCompare(b.full_name), render: (p) => <span className="patient-main"><strong>{p.full_name}</strong><small>{p.patient_number} · {p.status}</small></span> },
   { key: "contact", header: "Contact", width: "1fr", render: (p) => <span className="patient-contact">{p.normalized_email ?? p.normalized_phone ?? "No contact"}</span> },
-  { key: "arrow", header: "", width: "15px", srOnly: true, render: () => <span className="row-arrow" aria-hidden="true">→</span> },
+  { key: "arrow", header: "Open record", width: "15px", srOnly: true, render: () => <span className="row-arrow" aria-hidden="true">→</span> },
 ];
 
 export default function PatientsPage() {

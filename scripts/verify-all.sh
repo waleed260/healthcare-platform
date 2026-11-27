@@ -20,6 +20,9 @@ for required_var in DATABASE_MIGRATION_URL DATABASE_URL SEED_DATABASE_URL TEST_A
   if [[ -z "${!required_var:-}" ]]; then echo "Run setup-local-postgres.sh first or populate .env" >&2; exit 1; fi
 done
 export APP_ENV="${APP_ENV:-test}"
+# seed_demo.py requires OWNER_PASSWORD; dev defaults for the synthetic local/test seed.
+export OWNER_PASSWORD="${OWNER_PASSWORD:-ci-seed-owner-pw}"
+export OWNER_EMAIL="${OWNER_EMAIL:-owner@synthetic.example.test}"
 
 if [[ "${APP_ENV}" != "test" && "${APP_ENV}" != "local" ]]; then
   echo "APP_ENV must be test or local for deterministic seed verification." >&2

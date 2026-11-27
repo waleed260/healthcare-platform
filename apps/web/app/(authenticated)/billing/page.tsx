@@ -19,7 +19,12 @@ type LineInput = { description: string; quantity: number; unitPrice: string; tax
 type Appointment = { id: string; patient_id: string; service_id: string | null; doctor_id: string | null; status: string; starts_at: string };
 
 const emptyLine = (): LineInput => ({ description: "", quantity: 1, unitPrice: "", taxMinor: 0, serviceId: "", providerId: "" });
-const formatDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
+// Guard date formatting: a single invalid/missing date must not throw and white-screen billing.
+const fmtDate = (v: string, opts: Intl.DateTimeFormatOptions) => {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, opts).format(d);
+};
+const formatDate = (v: string) => fmtDate(v, { dateStyle: "medium", timeStyle: "short" });
 
 export default function BillingPage() {
   const clinicCurrency = useClinicCurrency();
@@ -123,7 +128,7 @@ export default function BillingPage() {
             <h3><button className="text-control" type="button" onClick={() => void openDetail(inv.id)}>{inv.invoice_number}</button></h3>
             <span className={`pipeline-status status-${inv.status}`}>{label(inv.status)}</span>
           </div>
-          <p>{patientNames.get(inv.patient_id) ?? "Patient"} · Issued {new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(inv.issued_at))}</p>
+          <p>{patientNames.get(inv.patient_id) ?? "Patient"} · Issued {fmtDate(inv.issued_at, { month: "short", day: "numeric" })}</p>
           <small>{money(inv.paid_minor, inv.currency)} paid of {money(inv.total_minor, inv.currency)} · {money(balance, inv.currency)} remaining</small>
         </div>
       );

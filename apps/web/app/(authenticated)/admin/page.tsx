@@ -23,11 +23,15 @@ type ClinicOverview = {
 
 type Tab = "clinics" | "metrics" | "support" | "audit" | "plans" | "announcements" | "business";
 
+// A single malformed/missing date must not throw ("Invalid time value") and
+// white-screen the whole admin panel, so fall back to an em dash.
 function date(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 function shortDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "short" }).format(new Date(value));
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "short" }).format(parsed);
 }
 
 export default function AdminPage() {
@@ -219,10 +223,12 @@ export default function AdminPage() {
       </div>}
 
       {/* Tab bar */}
-      <div className="pipeline-tabs admin-tab-bar" role="tablist">
-        {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
-          {t.label}{t.count !== undefined ? ` (${t.count})` : ""}
-        </button>)}
+      <div className="pipeline-toolbar admin-tab-bar">
+        <div className="pipeline-tabs" role="tablist">
+          {tabs.map((t) => <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>
+            {t.label}{t.count !== undefined ? ` (${t.count})` : ""}
+          </button>)}
+        </div>
       </div>
 
       {/* === Clinics tab === */}

@@ -27,9 +27,14 @@ test("two simultaneous requests for one doctor slot produce one booking and one 
     });
   }
   await Promise.all(pages.map((page, index) => page.goto("/book/synthetic-care").then(async () => {
-    await page.getByLabel("Date").fill(day);
-    await page.locator(".slot").click();
+    // Walk the 5-step wizard: Service → Provider → Date & Time → Your Details → Confirm.
+    await page.getByText("Synthetic consultation").click();
+    await page.getByRole("button", { name: /next/i }).click();
+    await page.getByRole("button", { name: /next/i }).click();
+    await page.locator(".slot").first().click();
+    await page.getByRole("button", { name: /next/i }).click();
     await page.getByLabel("Full name").fill(`Synthetic Booker ${index + 1}`);
+    await page.getByRole("button", { name: /next/i }).click();
     await page.getByRole("button", { name: /request appointment/i }).click();
   })));
   expect(winner).not.toBeNull();

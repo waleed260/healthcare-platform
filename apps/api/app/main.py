@@ -12,6 +12,7 @@ from app.modules.identity.routes import router as identity_router
 from app.modules.authorization.routes import router as authorization_router
 from app.modules.catalog.routes import router as catalog_router, catalog_router as catalog_setup_router
 from app.modules.staff.routes import router as staff_router
+from app.modules.access_requests.routes import admin_router as access_requests_admin_router, public_router as access_requests_public_router
 from app.modules.websites.routes import router as websites_router, public_router as public_websites_router
 from app.modules.appointments.routes import router as appointments_router, availability_router, catalog_router as public_catalog_router, appointment_router, management_router, question_router
 from app.modules.operations.routes import router as operations_router
@@ -101,6 +102,8 @@ app.include_router(authorization_router)
 app.include_router(catalog_router)
 app.include_router(catalog_setup_router)
 app.include_router(staff_router)
+app.include_router(access_requests_admin_router)
+app.include_router(access_requests_public_router)
 app.include_router(websites_router)
 app.include_router(public_websites_router)
 app.include_router(appointments_router)

@@ -4,6 +4,11 @@ const clinicA = { id: "clinic-a", name: "Synthetic Clinic A", slug: "synthetic-a
 const siteA = { id: "site-a", name: "Clinic A website", template_key: "calm_clinic", status: "draft", version: 1, draft_version_id: "version-a", live_version_id: null, brand: {} };
 const pageA = { id: "page-a", slug: "home", title: "Clinic A home", version: 1 };
 const sectionA = { id: "section-a", section_type: "hero", layout_key: "split", position: 0, content: { heading: "Clinic A care", body: "Synthetic A copy." }, is_visible: true, version: 1 };
+// The calendar opens on the current week, so the fixture must live in it: a fixed date
+// silently drops out of view as soon as that week passes.
+const today = new Date();
+const appointmentStarts = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9, 0).toISOString();
+const appointmentEnds = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 9, 30).toISOString();
 
 test("Clinic A staff cannot see Clinic B patients, appointments, or website", async ({ page }) => {
   await page.route("**/api/v1/**", async (route) => {
@@ -13,7 +18,7 @@ test("Clinic A staff cannot see Clinic B patients, appointments, or website", as
     if (path.endsWith("/auth/me")) data = { clinic_id: clinicA.id, display_name: "Synthetic A staff", permissions: ["patient.read", "appointment.read", "website.read", "website.edit"] };
     else if (path.endsWith("/patients")) data = process.env.BREAK_TENANT_ISOLATION === "1" ? [{ id: "patient-a", patient_number: "A-0001", full_name: "Synthetic Patient A", normalized_email: null, normalized_phone: null, status: "active", version: 1 }, { id: "patient-b", patient_number: "B-0001", full_name: "Synthetic Patient B", normalized_email: null, normalized_phone: null, status: "active", version: 1 }] : [{ id: "patient-a", patient_number: "A-0001", full_name: "Synthetic Patient A", normalized_email: null, normalized_phone: null, status: "active", version: 1 }];
     else if (path.endsWith("/patient-b")) { status = 404; data = null; }
-    else if (path.endsWith("/appointments")) data = [{ id: "appointment-a", reference: "A-0001", branch_id: "branch-a", doctor_id: null, service_id: "service-a", patient_id: "patient-a", starts_at: "2026-09-29T09:00:00Z", ends_at: "2026-09-29T09:30:00Z", status: "confirmed", version: 1 }];
+    else if (path.endsWith("/appointments")) data = [{ id: "appointment-a", reference: "A-0001", patient_name: null, branch_id: "branch-a", doctor_id: null, service_id: "service-a", patient_id: "patient-a", starts_at: appointmentStarts, ends_at: appointmentEnds, status: "confirmed", version: 1 }];
     else if (path.endsWith("/websites")) data = [siteA];
     else if (path.endsWith("/websites/domains")) data = [];
     else if (path.endsWith("/pages")) data = [pageA];

@@ -25,8 +25,9 @@ const statusLabels: Record<string, string> = {
   all: "All", draft: "Draft", in_progress: "In Progress", ready_for_discharge: "Ready", discharged: "Discharged", finalized: "Finalized", referred: "Referred", transferred: "Transferred",
 };
 const statusLabel = (v: string) => statusLabels[v] ?? v.charAt(0).toUpperCase() + v.slice(1);
-const fmtDate = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(v));
-const fmtDateTime = (v: string) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(v));
+// Guard date formatting: a missing/invalid date must not throw and white-screen the page.
+const fmtDate = (v: string) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(d); };
+const fmtDateTime = (v: string) => { const d = new Date(v); return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(d); };
 const typeLabel = (v: string) => v.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const statusToClass = (s: string) => `pipeline-status status-${s.replaceAll("_", "-")}`;
 const filterTabs = ["all", "draft", "in_progress", "ready_for_discharge", "discharged", "finalized"];

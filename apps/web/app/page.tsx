@@ -100,7 +100,7 @@ function DashboardPreview() {
           <span>Monday · clinic time</span>
           <b>VC</b>
         </div>
-        <h3>Good morning, <i>team.</i></h3>
+        <p className="lp-mock-title">Good morning, <i>team.</i></p>
         <div className="lp-dash-kpis">
           <span><small>Today</small><strong>12</strong><em>appointments</em></span>
           <span><small>Waiting</small><strong>03</strong><em>in queue</em></span>
@@ -126,7 +126,7 @@ function WebsitePreview() {
       </div>
       <div className="lp-site-body">
         <small>VALE FAMILY CLINIC</small>
-        <h3>Care that<br /><i>keeps pace.</i></h3>
+        <p className="lp-mock-title">Care that<br /><i>keeps pace.</i></p>
         <p>Thoughtful primary care for busy lives.</p>
         <button type="button">Book a visit</button>
         <div className="lp-site-sun" />
@@ -142,7 +142,7 @@ function PhonePreview() {
       <div className="lp-phone-screen">
         <span className="lp-phone-brand">care/fully</span>
         <small>BOOK A VISIT</small>
-        <h3>Choose a time<br /><i>that works.</i></h3>
+        <p className="lp-mock-title">Choose a time<br /><i>that works.</i></p>
         <div className="lp-phone-doctor">
           <span>DV</span>
           <p><b>Dr. Vale</b><small>General medicine</small></p>
@@ -380,11 +380,11 @@ export default function HomePage() {
             <p>Clinic operations, with room to breathe.</p>
           </div>
           <div className="lp-footer-col">
-            <h4>Product</h4>
+            <h3>Product</h3>
             {footerLinks.product.map((l) => <a key={l.label} href={l.href}>{l.label}</a>)}
           </div>
           <div className="lp-footer-col">
-            <h4>Company</h4>
+            <h3>Company</h3>
             {footerLinks.company.map((l) => l.href.startsWith("/") ? <Link key={l.label} href={l.href}>{l.label}</Link> : <a key={l.label} href={l.href}>{l.label}</a>)}
           </div>
         </div>

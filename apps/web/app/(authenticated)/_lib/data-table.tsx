@@ -98,7 +98,7 @@ export default function DataTable<T>({
   const showEmpty = !loading && rows.length === 0;
 
   return (
-    <div className="dt-wrap">
+    <div className="dt-wrap" tabIndex={0}>
       <table
         className={`dt${className ? ` ${className}` : ""}`}
         style={{ gridTemplateColumns: gridCols }}

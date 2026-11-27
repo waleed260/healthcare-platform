@@ -1,6 +1,10 @@
 import { test, expect } from "./fixtures";
 
-test.describe("tenant isolation verification panel", () => {
+// The admin "Tenant isolation verification" panel was removed in the Developer Console
+// redesign (the admin page no longer renders or calls /admin/tenant-isolation). Data-level
+// tenant isolation is still enforced by RLS and covered by tenant-isolation.spec.ts. Skipped
+// (not deleted) so the panel's coverage is easy to reinstate if the UI returns.
+test.describe.skip("tenant isolation verification panel", () => {
   async function install(page: import("@playwright/test").Page) {
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname;

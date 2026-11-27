@@ -50,6 +50,7 @@ class InternalBookingRequest(BaseModel):
     date_of_birth: date | None = None
     appointment_type: str | None = Field(default=None, max_length=20)
     payment_method: str | None = Field(default=None, max_length=40)
+    lead_id: UUID | None = None  # when booking from a lead, links the appointment and advances the lead
 
     @model_validator(mode="after")
     def _require_phone_for_new_patient(self) -> "InternalBookingRequest":

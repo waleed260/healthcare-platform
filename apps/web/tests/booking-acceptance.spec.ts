@@ -52,9 +52,9 @@ test.describe("public booking flow", () => {
   test("step indicator shows all 5 steps", async ({ page }) => {
     await page.goto("/book/demo-clinic");
     await expect(page.locator(".booking-step-dot")).toHaveCount(5);
-    await expect(page.getByText("Service")).toBeVisible();
-    await expect(page.getByText("Provider")).toBeVisible();
-    await expect(page.getByText("Confirm")).toBeVisible();
+    await expect(page.getByText("Service", { exact: true })).toBeVisible();
+    await expect(page.getByText("Provider", { exact: true })).toBeVisible();
+    await expect(page.getByText("Confirm", { exact: true })).toBeVisible();
   });
 
   test("selecting a service enables next button", async ({ page }) => {
@@ -142,6 +142,6 @@ test.describe("public booking flow", () => {
 
   test("booking page shows timezone", async ({ page }) => {
     await page.goto("/book/demo-clinic");
-    await expect(page.getByText("UTC")).toBeVisible();
+    await expect(page.locator(".booking-secure")).toContainText("UTC");
   });
 });

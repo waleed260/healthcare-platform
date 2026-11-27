@@ -21,6 +21,8 @@ type Props = {
   onCreated?: () => void;
   // Seed the patient step from a lead so staff don't re-key name/phone.
   initialPatient?: { patient_id?: string; full_name?: string; email?: string; phone?: string };
+  // When launched from a lead, links the resulting appointment to it and advances the lead.
+  leadId?: string;
 };
 
 function todayStr(): string {
@@ -34,7 +36,7 @@ function dobFromAge(age: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function AddAppointmentDrawer({ open, onClose, onCreated, initialPatient }: Props) {
+export default function AddAppointmentDrawer({ open, onClose, onCreated, initialPatient, leadId }: Props) {
   const toast = useToast();
   const clinicName = useClinicName();
   const [form, setForm, dirty, resetDirty] = useDirty({
@@ -205,6 +207,7 @@ export default function AddAppointmentDrawer({ open, onClose, onCreated, initial
       }
       body.appointment_type = form.appointment_type;
       body.payment_method = form.payment_method;
+      if (leadId) body.lead_id = leadId;
 
       const result = await api<{ reference?: string; token_number?: number; starts_at?: string }>("/api/v1/appointments", {
         method: "POST",

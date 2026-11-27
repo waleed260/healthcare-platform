@@ -6,10 +6,10 @@ from app.core.security import hash_token
 from app.modules.identity.service import authenticate, create_manual_reset
 
 
-def test_platform_admin_uses_short_session_and_mandatory_mfa(monkeypatch):
-    # Platform admins are MFA-mandatory: an un-enrolled platform admin must enroll an
-    # authenticator before reaching the workspace, so the session starts un-verified and
-    # flags enrollment. Short-session enforcement (30min idle / 24h absolute) holds too.
+def test_platform_admin_uses_short_session_and_opt_in_mfa(monkeypatch):
+    # Platform admins keep short-session enforcement (30min idle / 24h absolute), but MFA
+    # is opt-in: an un-enrolled platform admin is not forced to enroll and logs straight
+    # into the workspace (session starts mfa_verified).
     user_id = uuid4()
     db = Mock()
     db.execute.side_effect = [
@@ -34,10 +34,10 @@ def test_platform_admin_uses_short_session_and_mandatory_mfa(monkeypatch):
 
     result = authenticate(db, "operator@example.test", "StrongPassword1", "192.0.2.1", None)
 
-    assert result.mfa_required is True
-    assert result.mfa_enrollment_required is True
+    assert result.mfa_required is False
+    assert result.mfa_enrollment_required is False
     session_params = db.execute.call_args_list[4].args[1]
-    assert session_params["mfa_verified"] is False
+    assert session_params["mfa_verified"] is True
     assert session_params["absolute_expires_at"] - session_params["idle_expires_at"] == timedelta(hours=23, minutes=30)
 
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type DrawerProps = {
   open: boolean;
@@ -11,15 +12,18 @@ type DrawerProps = {
   children: ReactNode;
   footer?: ReactNode;
   width?: number;
+  className?: string;
   opaque?: boolean;
   /** Transparent scrim: the drawer stays a solid-white right-edge panel but the page behind
    *  is NOT dimmed (no grey overlay). Click-outside-to-close still works via the invisible scrim. */
   undimmed?: boolean;
 };
 
-export default function Drawer({ open, onClose, title, subtitle, dirty, children, footer, width = 430, opaque, undimmed }: DrawerProps) {
+export default function Drawer({ open, onClose, title, subtitle, dirty, children, footer, width = 430, className, opaque, undimmed }: DrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const requestClose = useCallback(() => {
     if (dirty) { setConfirmClose(true); return; }
@@ -54,13 +58,13 @@ export default function Drawer({ open, onClose, title, subtitle, dirty, children
     return () => panel.removeEventListener("keydown", trap);
   }, [open]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div className={`drawer-scrim${opaque ? " drawer-scrim-opaque" : ""}${undimmed ? " drawer-scrim-undimmed" : ""}`} onClick={requestClose}>
       <aside
         ref={panelRef}
-        className="drawer-panel"
+        className={`drawer-panel${className ? ` ${className}` : ""}`}
         style={{ width: `min(${width}px, 100%)` }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -87,7 +91,8 @@ export default function Drawer({ open, onClose, title, subtitle, dirty, children
           </div>
         )}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
