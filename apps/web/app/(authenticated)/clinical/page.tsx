@@ -256,7 +256,7 @@ export default function ClinicalPage() {
                 : <span className="pipeline-status status-contacted">Website media consent missing</span>}
             </div>
             {can("consent.manage") && patientId && (
-              <form className="drawer-form clinical-form" onSubmit={addConsent}>
+              <form className="drawer-form clinical-form clinical-form-compact" onSubmit={addConsent}>
                 <label><span className="clinical-field-label">Consent type <span className="drawer-note">required</span></span>
                   <select name="type" defaultValue="website_media" required>
                     {CONSENT_TYPES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -290,6 +290,7 @@ export default function ClinicalPage() {
               {media.length > 0 && <span className="clinical-count">{media.length} uploaded</span>}
             </div>
             {can("patient.media.write") && patientId && <MediaUpload patientId={patientId} onUploaded={() => void run(() => Promise.resolve(), "Upload complete — scanning.")} />}
+            {!grantedConsent && <p className="media-gate">Website approval is locked until a granted <strong>website media</strong> consent is recorded above.</p>}
             <div className="clinical-list">
               {media.length === 0 && <div className="clinical-empty"><strong>No patient media</strong><span>Uploaded before/after photos appear here for review.</span></div>}
               {media.map((item) => (
@@ -297,7 +298,10 @@ export default function ClinicalPage() {
                   <div className="clinical-row-mark">{item.media_kind.slice(0, 3).toUpperCase()}</div>
                   <div className="clinical-row-main">
                     <h3>{label(item.media_kind)} photo</h3>
-                    <p>Scan: {item.scan_status === "pending_scan" ? "scanning" : label(item.scan_status)} · Approval: {label(item.approval_status)}</p>
+                    <div className="media-tags">
+                      <span className={`media-tag media-tag-${item.scan_status === "clean" ? "ok" : item.scan_status === "pending_scan" ? "wait" : "warn"}`}>Scan: {item.scan_status === "pending_scan" ? "scanning" : label(item.scan_status)}</span>
+                      <span className={`media-tag media-tag-${item.approval_status === "approved" ? "ok" : item.approval_status === "revoked" ? "warn" : "wait"}`}>Approval: {label(item.approval_status)}</span>
+                    </div>
                     <small>{item.captured_on ?? "No capture date"}{item.approved_for_website ? " · on website" : ""}</small>
                   </div>
                   <div className="clinical-row-actions">
