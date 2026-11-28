@@ -28,6 +28,12 @@ class RoleAssignment(BaseModel):
     role_id: UUID
 
 
+class RoleSetUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role_ids: list[UUID] = Field(default_factory=list, max_length=50)
+
+
 class RoleCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
