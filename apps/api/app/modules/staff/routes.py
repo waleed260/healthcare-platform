@@ -17,7 +17,7 @@ from app.modules.authorization.service import ForbiddenError, require_permission
 from app.modules.identity.routes import _error, _session_or_401, _validate_origin
 from app.modules.identity.service import SessionError, create_manual_reset, create_staff_invitation, verify_csrf
 from app.modules.audit.service import record_event
-from app.modules.staff.schemas import BranchScopeCreate, ManualResetCreate, RoleAssignment, RoleCreate, RoleUpdate, StaffInvitationCreate, StaffStatusUpdate
+from app.modules.staff.schemas import BranchScopeCreate, ManualResetCreate, RoleAssignment, RoleCreate, RoleSetUpdate, RoleUpdate, StaffInvitationCreate, StaffStatusUpdate
 from app.core.security import decode_cursor, encode_cursor
 
 router = APIRouter(prefix="/api/v1/staff", tags=["staff"])
@@ -29,6 +29,24 @@ def _revoke_user_sessions(db: Session, user_id: UUID) -> None:
         text("UPDATE sessions SET revoked_at = now() WHERE user_id = :user_id AND revoked_at IS NULL"),
         {"user_id": user_id},
     )
+
+
+def _is_owner(db: Session, clinic_id: UUID, user_id: UUID) -> bool:
+    return db.execute(text("""
+        SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
+        WHERE ur.clinic_id = :clinic_id AND ur.user_id = :user_id
+          AND r.name = 'owner' AND r.clinic_id IS NULL
+    """), {"clinic_id": clinic_id, "user_id": user_id}).scalar_one_or_none() is not None
+
+
+def _active_owner_count(db: Session, clinic_id: UUID) -> int:
+    return db.execute(text("""
+        SELECT COUNT(DISTINCT u.id)
+        FROM users u
+        JOIN user_roles ur ON ur.clinic_id = u.clinic_id AND ur.user_id = u.id
+        JOIN roles r ON r.id = ur.role_id AND r.name = 'owner'
+        WHERE u.clinic_id = :clinic_id AND u.status = 'active' AND u.archived_at IS NULL
+    """), {"clinic_id": clinic_id}).scalar_one()
 
 
 @router.get("/roles")
@@ -351,12 +369,14 @@ def user_roles(user_id: UUID, request: Request, db: Session = Depends(get_db), s
 @router.post("/users/{user_id}/roles", status_code=status.HTTP_201_CREATED)
 def user_role_add(user_id: UUID, payload: RoleAssignment, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
-    if user_id == session["user_id"]:
-        raise _error("FORBIDDEN", "You cannot modify your own roles.", status.HTTP_403_FORBIDDEN)
-    if db.execute(text("SELECT 1 FROM roles WHERE id = :role_id AND clinic_id IS NULL AND name = 'owner'"), {"role_id": payload.role_id}).scalar_one_or_none() is not None:
-        actor_is_owner = db.execute(text("SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.clinic_id = :clinic_id AND ur.user_id = :actor AND r.name = 'owner' AND r.clinic_id IS NULL"), {"clinic_id": session["clinic_id"], "actor": session["user_id"]}).scalar_one_or_none() is not None
-        if not actor_is_owner:
-            raise _error("FORBIDDEN", "Only an owner can assign the owner role.", status.HTTP_403_FORBIDDEN)
+    # An owner may change their own roles (e.g. hand the clinic to a co-owner); the remove and
+    # set paths still guarantee one active owner. Everyone else still needs a second person.
+    actor_is_owner = _is_owner(db, session["clinic_id"], session["user_id"])
+    if user_id == session["user_id"] and not actor_is_owner:
+        raise _error("FORBIDDEN", "Only an owner can change their own roles.", status.HTTP_403_FORBIDDEN)
+    assigns_owner = db.execute(text("SELECT 1 FROM roles WHERE id = :role_id AND clinic_id IS NULL AND name = 'owner'"), {"role_id": payload.role_id}).scalar_one_or_none() is not None
+    if assigns_owner and not actor_is_owner:
+        raise _error("FORBIDDEN", "Only an owner can assign the owner role.", status.HTTP_403_FORBIDDEN)
     try:
         inserted = db.execute(text("""
             INSERT INTO user_roles (clinic_id, user_id, role_id, assigned_by)
@@ -381,21 +401,15 @@ def user_role_add(user_id: UUID, payload: RoleAssignment, request: Request, db: 
 @router.delete("/users/{user_id}/roles/{role_id}")
 def user_role_remove(user_id: UUID, role_id: UUID, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
     session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
-    if user_id == session["user_id"]:
-        raise _error("FORBIDDEN", "You cannot modify your own roles.", status.HTTP_403_FORBIDDEN)
+    actor_is_owner = _is_owner(db, session["clinic_id"], session["user_id"])
+    if user_id == session["user_id"] and not actor_is_owner:
+        raise _error("FORBIDDEN", "Only an owner can change their own roles.", status.HTTP_403_FORBIDDEN)
     owner_state = db.execute(text("""
-        SELECT r.name = 'owner' AS is_owner,
-               (
-                   SELECT COUNT(*)
-                   FROM users u
-                   JOIN user_roles active_ur ON active_ur.clinic_id = u.clinic_id AND active_ur.user_id = u.id
-                   JOIN roles active_r ON active_r.id = active_ur.role_id AND active_r.name = 'owner'
-                   WHERE u.clinic_id = :clinic_id AND u.status = 'active' AND u.archived_at IS NULL
-               ) AS active_owner_count
+        SELECT r.name = 'owner' AS is_owner
         FROM roles r
         WHERE r.id = :role_id AND (r.clinic_id = :clinic_id OR r.clinic_id IS NULL)
     """), {"clinic_id": session["clinic_id"], "role_id": role_id}).mappings().one_or_none()
-    if owner_state and owner_state["is_owner"] and owner_state["active_owner_count"] <= 1:
+    if owner_state and owner_state["is_owner"] and _active_owner_count(db, session["clinic_id"]) <= 1:
         raise _error("LAST_OWNER_REQUIRED", "A clinic must retain one active owner.", status.HTTP_409_CONFLICT)
     deleted = db.execute(text("DELETE FROM user_roles WHERE clinic_id = :clinic_id AND user_id = :user_id AND role_id = :role_id RETURNING role_id"), {"clinic_id": session["clinic_id"], "user_id": user_id, "role_id": role_id}).scalar_one_or_none()
     if deleted is None:
@@ -404,6 +418,54 @@ def user_role_remove(user_id: UUID, role_id: UUID, request: Request, db: Session
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="staff.role_remove", entity_type="user_role", entity_id=user_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"role_id": str(role_id)})
     db.commit()
     return {"data": {"user_id": user_id, "role_id": role_id, "assigned": False}, "meta": {"request_id": request.state.request_id}}
+
+
+@router.put("/users/{user_id}/roles")
+def user_roles_set(user_id: UUID, payload: RoleSetUpdate, request: Request, db: Session = Depends(get_db), session_token: str | None = Cookie(default=None, alias="healthcare_session"), csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict:
+    """Replace a staff member's whole role set in one transaction, so a move from owner to
+    manager never leaves the account briefly without access."""
+    session = _write_authorized(db, request, session_token, "staff.manage", csrf_token)
+    clinic_id = session["clinic_id"]
+    target = db.execute(text("""
+        SELECT id FROM users
+        WHERE clinic_id = :clinic_id AND id = :user_id AND status = 'active' AND archived_at IS NULL
+    """), {"clinic_id": clinic_id, "user_id": user_id}).scalar_one_or_none()
+    if target is None:
+        raise _error("NOT_FOUND", "Staff member not found or inactive.", status.HTTP_404_NOT_FOUND)
+    role_names = {row["id"]: row["name"] for row in db.execute(text("""
+        SELECT id, name FROM roles WHERE clinic_id IS NULL OR clinic_id = :clinic_id
+    """), {"clinic_id": clinic_id}).mappings().all()}
+    requested = set(payload.role_ids)
+    if requested - role_names.keys():
+        raise _error("INVALID_INPUT", "One or more roles do not exist in this clinic.", status.HTTP_400_BAD_REQUEST)
+    actor_is_owner = _is_owner(db, clinic_id, session["user_id"])
+    if user_id == session["user_id"] and not actor_is_owner:
+        raise _error("FORBIDDEN", "Only an owner can change their own roles.", status.HTTP_403_FORBIDDEN)
+    if "owner" in {role_names[role_id] for role_id in requested} and not actor_is_owner:
+        raise _error("FORBIDDEN", "Only an owner can assign the owner role.", status.HTTP_403_FORBIDDEN)
+    current = set(db.execute(text("""
+        SELECT role_id FROM user_roles WHERE clinic_id = :clinic_id AND user_id = :user_id
+    """), {"clinic_id": clinic_id, "user_id": user_id}).scalars().all())
+    added, removed = requested - current, current - requested
+    owner_role_ids = {role_id for role_id, name in role_names.items() if name == "owner"}
+    if removed & owner_role_ids and _active_owner_count(db, clinic_id) <= 1:
+        raise _error("LAST_OWNER_REQUIRED", "A clinic must retain one active owner.", status.HTTP_409_CONFLICT)
+    for role_id in removed:
+        db.execute(text("""
+            DELETE FROM user_roles WHERE clinic_id = :clinic_id AND user_id = :user_id AND role_id = :role_id
+        """), {"clinic_id": clinic_id, "user_id": user_id, "role_id": role_id})
+    for role_id in added:
+        db.execute(text("""
+            INSERT INTO user_roles (clinic_id, user_id, role_id, assigned_by)
+            VALUES (:clinic_id, :user_id, :role_id, :actor)
+            ON CONFLICT DO NOTHING
+        """), {"clinic_id": clinic_id, "user_id": user_id, "role_id": role_id, "actor": session["user_id"]})
+    changed = bool(added or removed)
+    if changed:
+        _revoke_user_sessions(db, user_id)
+        record_event(db, clinic_id=clinic_id, actor_user_id=session["user_id"], action="staff.roles_set", entity_type="user_role", entity_id=user_id, outcome="success", request_id=UUID(request.state.request_id), metadata={"role_ids": sorted(str(role_id) for role_id in requested), "added": sorted(str(role_id) for role_id in added), "removed": sorted(str(role_id) for role_id in removed)})
+    db.commit()
+    return {"data": {"user_id": user_id, "role_ids": sorted(str(role_id) for role_id in requested), "changed": changed}, "meta": {"request_id": request.state.request_id}}
 
 
 @router.get("/users/{user_id}/branch-scopes")

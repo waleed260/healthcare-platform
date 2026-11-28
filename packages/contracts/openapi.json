@@ -7149,6 +7149,22 @@
         "title": "RoleCreate",
         "type": "object"
       },
+      "RoleSetUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "role_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Role Ids",
+            "type": "array"
+          }
+        },
+        "title": "RoleSetUpdate",
+        "type": "object"
+      },
       "RoleUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -36013,6 +36029,92 @@
           }
         },
         "summary": "User Role Add",
+        "tags": [
+          "staff"
+        ]
+      },
+      "put": {
+        "description": "Replace a staff member's whole role set in one transaction, so a move from owner to\nmanager never leaves the account briefly without access.",
+        "operationId": "user_roles_set_api_v1_staff_users__user_id__roles_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthcare_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthcare Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleSetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response User Roles Set Api V1 Staff Users  User Id  Roles Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "User Roles Set",
         "tags": [
           "staff"
         ]

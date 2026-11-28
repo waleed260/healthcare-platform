@@ -276,20 +276,32 @@ export default function ManagePage() {
     }
   }
 
-  async function assignRole(userId: string, roleId: string) {
-    await run(
-      () => post(`/api/v1/staff/users/${userId}/roles`, { role_id: roleId }),
-      "Role assigned.", "The role could not be assigned."
-    );
-    if (staffDetail) void loadStaffDetail(staffDetail);
-  }
-
-  async function removeRole(userId: string, roleId: string) {
-    await run(
-      () => api(`/api/v1/staff/users/${userId}/roles/${roleId}`, { method: "DELETE", headers: writeHeaders() }),
-      "Role removed.", "The role could not be removed."
-    );
-    if (staffDetail) void loadStaffDetail(staffDetail);
+  async function saveRoles(userId: string, roleIds: string[]) {
+    const isSelf = userId === currentUserId;
+    if (isSelf) {
+      const ok = await confirm({ message: "Changing your own roles signs you out so the new access takes effect. Continue?", danger: true });
+      if (!ok) return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v1/staff/users/${userId}/roles`, {
+        method: "PUT",
+        headers: writeHeaders(),
+        body: JSON.stringify({ role_ids: roleIds }),
+      });
+      if (isSelf) {
+        toast.success("Roles updated. Sign in again with your new access.");
+        window.location.assign("/login");
+        return;
+      }
+      toast.success("Roles updated.");
+      if (staffDetail) await loadStaffDetail(staffDetail);
+    } catch (reason) {
+      toast.error(errorMessage(reason, "The roles could not be updated."));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function assignBranchScope(userId: string, branchId: string) {
@@ -688,21 +700,15 @@ export default function ManagePage() {
 
         <div>
           <p className="section-label">ASSIGNED ROLES</p>
-          {currentUserId && staffDetail.id === currentUserId && <p className="drawer-note">You cannot modify your own roles.</p>}
-          {(staffDetail.roles ?? []).length === 0
-            ? <p className="drawer-note">No roles assigned</p>
-            : <div className="manage-page-staff-tags">
-              {(staffDetail.roles ?? []).map((r) => <span key={r.id} className="tag-pill">
-                {label(r.name)}
-                {can("staff.manage") && staffDetail.id !== currentUserId && <button className="tag-pill-remove" disabled={busy} onClick={(e) => { e.stopPropagation(); void removeRole(staffDetail.id, r.id); }} title="Remove role">×</button>}
-              </span>)}
-            </div>}
-          {can("staff.manage") && staffDetail.id !== currentUserId && <div className="manage-page-staff-add">
-            <select onChange={(e) => { if (e.target.value) { void assignRole(staffDetail.id, e.target.value); e.target.value = ""; } }}>
-              <option value="">+ Add role…</option>
-              {roles.filter((r) => !(staffDetail.roles ?? []).some((ur) => ur.id === r.id)).map((r) => <option key={r.id} value={r.id}>{label(r.name)}</option>)}
-            </select>
-          </div>}
+          <StaffRolesForm
+            key={`${staffDetail.id}:${(staffDetail.roles ?? []).map((r) => r.id).sort().join(",")}`}
+            userRoles={(staffDetail.roles ?? []).map((r) => r.id)}
+            roles={roles}
+            canManage={can("staff.manage")}
+            isSelf={!!currentUserId && staffDetail.id === currentUserId}
+            busy={busy}
+            onSave={(roleIds) => void saveRoles(staffDetail.id, roleIds)}
+          />
         </div>
 
         <div>
@@ -728,6 +734,35 @@ export default function ManagePage() {
       </div>}
     </Drawer>
   </main>;
+}
+
+function StaffRolesForm({ userRoles, roles, canManage, isSelf, busy, onSave }: {
+  userRoles: string[];
+  roles: Role[];
+  canManage: boolean;
+  isSelf: boolean;
+  busy: boolean;
+  onSave: (roleIds: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>(userRoles);
+  const dirty = selected.length !== userRoles.length || selected.some((id) => !userRoles.includes(id));
+  const toggle = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  return <>
+    <p className="drawer-note">Pick every role this person should have, then save. All changes apply together.</p>
+    <div className="staff-role-list">
+      {roles.map((role) => <label key={role.id} className="staff-role-option">
+        <input type="checkbox" checked={selected.includes(role.id)} disabled={!canManage || busy} onChange={() => toggle(role.id)} />
+        <span>{label(role.name)}</span>
+        {role.is_system && <span className="staff-role-tag">system</span>}
+      </label>)}
+      {roles.length === 0 && <p className="drawer-note">No roles available.</p>}
+    </div>
+    {isSelf && <p className="drawer-note">This is your own account. Saving signs you out so the new access takes effect.</p>}
+    {canManage && <button className="button button-primary" type="button" disabled={busy || !dirty} onClick={() => onSave(selected)}>
+      {busy ? "Saving…" : "Save roles"}
+    </button>}
+  </>;
 }
 
 function RoleEditor({ role, allPermissions, busy, onSave }: {
