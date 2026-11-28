@@ -48,11 +48,15 @@ export default function MediaUpload({ patientId, onUploaded }: { patientId: stri
   }
 
   return <div className="media-upload">
-    <div className="form-grid">
-      <label>Media type<select value={kind} onChange={(e) => setKind(e.target.value as (typeof KINDS)[number])} disabled={busy}>{KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</select></label>
-      <label>Upload photos<input ref={inputRef} type="file" accept={ACCEPT} multiple disabled={busy} onChange={(e) => void onFiles(e.target.files)} /></label>
+    <div className="drawer-form-row drawer-form-row-2 media-upload-fields">
+      <label>Media type
+        <select value={kind} onChange={(e) => setKind(e.target.value as (typeof KINDS)[number])} disabled={busy}>{KINDS.map((k) => <option key={k} value={k}>{k[0].toUpperCase() + k.slice(1)}</option>)}</select>
+      </label>
+      <label>Upload photos
+        <input ref={inputRef} className="media-file" type="file" accept={ACCEPT} multiple disabled={busy} onChange={(e) => void onFiles(e.target.files)} />
+      </label>
     </div>
     {items.length > 0 && <ul className="media-upload-list">{items.map((it) => <li key={it.name} className={`media-upload-${it.status}`}><span>{it.name}</span><small>{it.status === "uploading" ? "uploading…" : it.detail}</small></li>)}</ul>}
-    <p className="field-note">JPEG, PNG or WebP up to 8 MiB. Uploads are scanned before they can be approved for the website.</p>
+    <p className="drawer-note">JPEG, PNG or WebP up to 8 MiB each, 20 files at a time. Uploads are scanned before they can be approved for the website.</p>
   </div>;
 }

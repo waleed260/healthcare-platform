@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, writeHeaders } from "../_lib/client";
 
 type ToolState = { tool_key: string; state: Record<string, unknown>; version: number; updated_at: string };
- 
+
 type OnError = (message: string) => void;
 type Props = { patientId: string; permissions: string[]; onError: OnError };
 
@@ -22,6 +22,13 @@ const NORWOOD = ["I","II","IIa","III","IIIa","III_vertex","IV","IVa","V","Va","V
 const GRAFT_ZONES = [["hairline","Hairline"],["temporal_left","Temporal L"],["temporal_right","Temporal R"],["midscalp","Mid-scalp"],["crown","Crown"]];
 const SKIN_REGIONS = [["forehead","Forehead"],["glabella","Glabella"],["nose","Nose"],["cheek_left","Cheek L"],["cheek_right","Cheek R"],["perioral","Perioral"],["chin","Chin"],["jaw_left","Jaw L"],["jaw_right","Jaw R"],["neck","Neck"]];
 const SKIN_CONCERNS = ["acne","scarring","pigmentation","redness","wrinkles","dryness","oiliness","laxity","pores"];
+
+const TOOL_HINTS: Record<string, string> = {
+  dental_chart: "Click a tooth to cycle through its condition; the chart saves per patient.",
+  norwood: "Record the hair-loss stage from the Norwood scale.",
+  graft_plan: "Plan graft counts per zone; the total updates as you type.",
+  skin_map: "Mark the concerns observed in each facial region.",
+};
 
 export default function ToolsPanel({ patientId, permissions, onError }: Props) {
   const canEdit = permissions.includes("clinical.manage");
@@ -52,7 +59,7 @@ export default function ToolsPanel({ patientId, permissions, onError }: Props) {
       const saved = await api<ToolState>(`/api/v1/patients/${patientId}/tool-states/${active}`, { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ tool_key: active, state: draft }) });
       setStates((s) => ({ ...s, [active]: saved }));
       setDraft((saved.state as Record<string, unknown>) ?? {});
-      setNotice("Saved.");
+      setNotice("Assessment saved.");
     } catch (reason) { onError(errorMessage(reason, "The tool state could not be saved.")); } finally { setBusy(false); }
   };
 
@@ -69,23 +76,52 @@ export default function ToolsPanel({ patientId, permissions, onError }: Props) {
   // skin
   const regions = (draft.regions as Record<string, string[]>) ?? {};
   const toggleConcern = (region: string, concern: string) => { const cur = regions[region] ?? []; const next = cur.includes(concern) ? cur.filter((c) => c !== concern) : [...cur, concern]; setDraft((d) => ({ ...d, regions: { ...regions, [region]: next } })); };
+  const markedRegions = SKIN_REGIONS.filter(([r]) => (regions[r] ?? []).length > 0).length;
+  const markedTeeth = Object.keys(teeth).length;
 
-  if (!canRead) return <section className="surface-card"><div className="dashboard-empty"><strong>No access</strong><span>Your role cannot view clinical tools.</span></div></section>;
+  if (!canRead) return <section className="surface-card clinical-panel"><div className="clinical-empty"><strong>No access</strong><span>Your role cannot view clinical tools.</span></div></section>;
 
-  return <section className="surface-card tools-panel">
-    <div className="surface-card-heading"><div><p className="eyebrow">SPECIALTY TOOLS</p><h2>Structured clinical assessments.</h2></div></div>
-    {notice && <div className="permission-strip" aria-live="polite"><span className="permission-ok">{notice}</span></div>}
-    <div className="pipeline-toolbar"><div className="pipeline-tabs" role="tablist">{TOOLS.map((t) => <button key={t.key} role="tab" aria-selected={active === t.key} className={active === t.key ? "active" : ""} onClick={() => { setActive(t.key); setDraft((states[t.key]?.state as Record<string, unknown>) ?? {}); setNotice(null); }}>{t.label}{states[t.key] ? " ✓" : ""}</button>)}</div></div>
+  return <section className="surface-card clinical-panel tools-panel">
+    <div className="surface-card-heading">
+      <div><p className="eyebrow">SPECIALTY TOOLS</p><h2>Structured clinical assessments.</h2>
+        <p className="clinical-hint">Specialty-specific charts that save per patient and are available across visits.</p></div>
+      {notice && <span className="pipeline-status status-paid" aria-live="polite">{notice}</span>}
+    </div>
 
-    {active === "dental_chart" && <div className="dental-chart">{QUADRANTS.map((q, qi) => <div className="dental-row" key={qi}>{q.map((n) => { const st = teeth[String(n)] ?? "healthy"; return <button key={n} type="button" className={`tooth tooth-${st}`} disabled={!canEdit} title={`Tooth ${n}: ${st.replace("_", " ")}`} onClick={() => cycleTooth(n)}><b>{n}</b><span>{TOOTH_ABBR[st]}</span></button>; })}</div>)}<p className="field-note">Click a tooth to cycle: healthy → caries → filled → crown → implant → root canal → missing.</p></div>}
+    <div className="pipeline-toolbar clinical-tool-tabs"><div className="pipeline-tabs" role="tablist">{TOOLS.map((t) => <button key={t.key} role="tab" aria-selected={active === t.key} className={active === t.key ? "active" : ""} onClick={() => { setActive(t.key); setDraft((states[t.key]?.state as Record<string, unknown>) ?? {}); setNotice(null); }}>{t.label}{states[t.key] ? " ✓" : ""}</button>)}</div></div>
+    <p className="clinical-hint clinical-tool-hint">{TOOL_HINTS[active]}</p>
 
-    {active === "norwood" && <div className="form-grid"><label>Hair-loss stage<select value={(draft.stage as string) ?? ""} disabled={!canEdit} onChange={(e) => setDraft((d) => ({ ...d, stage: e.target.value || null }))}><option value="">Not set</option>{NORWOOD.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}</select></label></div>}
+    {active === "dental_chart" && <div className="clinical-tool-body">
+      <div className="dental-legend">
+        {TOOTH_STATES.map((s) => <span key={s} className="dental-legend-item"><i className={`tooth-${s}`}>{TOOTH_ABBR[s]}</i>{s.replace("_", " ")}</span>)}
+        <span className="clinical-count">{markedTeeth} marked</span>
+      </div>
+      <div className="dental-chart" role="group" aria-label="Dental chart">
+        {QUADRANTS.map((q, qi) => <div className="dental-row" key={qi}>{q.map((n) => { const st = teeth[String(n)] ?? "healthy"; return <button key={n} type="button" className={`tooth tooth-${st}`} disabled={!canEdit} title={`Tooth ${n}: ${st.replace("_", " ")}`} onClick={() => cycleTooth(n)}><b>{n}</b><span>{TOOTH_ABBR[st]}</span></button>; })}</div>)}
+      </div>
+    </div>}
 
-    {active === "graft_plan" && <div><div className="form-grid">{GRAFT_ZONES.map(([z, lbl]) => <label key={z}>{lbl}<input type="number" min={0} max={20000} value={zones[z] ?? ""} disabled={!canEdit} onChange={(e) => setZone(z, Math.max(0, Math.min(20000, Number(e.target.value) || 0)))} /></label>)}</div><p className="field-note">Total grafts: <strong>{graftTotal}</strong></p></div>}
+    {active === "norwood" && <div className="drawer-form clinical-tool-body clinical-tool-narrow">
+      <label>Hair-loss stage
+        <select value={(draft.stage as string) ?? ""} disabled={!canEdit} onChange={(e) => setDraft((d) => ({ ...d, stage: e.target.value || null }))}><option value="">Not set</option>{NORWOOD.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}</select>
+      </label>
+    </div>}
 
-    {active === "skin_map" && <div className="skin-map">{SKIN_REGIONS.map(([r, lbl]) => <div className="skin-region" key={r}><strong>{lbl}</strong><div className="skin-chips">{SKIN_CONCERNS.map((c) => <button key={c} type="button" disabled={!canEdit} className={`chip ${(regions[r] ?? []).includes(c) ? "chip-on" : ""}`} onClick={() => toggleConcern(r, c)}>{c}</button>)}</div></div>)}</div>}
+    {active === "graft_plan" && <div className="drawer-form clinical-tool-body">
+      <div className="drawer-form-row drawer-form-row-3">
+        {GRAFT_ZONES.map(([z, lbl]) => <label key={z}>{lbl}<input type="number" min={0} max={20000} value={zones[z] ?? ""} disabled={!canEdit} onChange={(e) => setZone(z, Math.max(0, Math.min(20000, Number(e.target.value) || 0)))} /></label>)}
+      </div>
+      <p className="clinical-total">Total grafts <strong>{graftTotal.toLocaleString()}</strong></p>
+    </div>}
 
-    <label className="font-field" style={{ marginTop: 14 }}>Notes<textarea rows={3} value={notes} maxLength={5000} disabled={!canEdit} onChange={(e) => setNotes(e.target.value)} /></label>
-    {canEdit && <div className="form-actions"><button className="button button-primary" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save assessment"}</button></div>}
+    {active === "skin_map" && <div className="clinical-tool-body">
+      <div className="skin-map">{SKIN_REGIONS.map(([r, lbl]) => <div className="skin-region" key={r}><div className="skin-region-head"><strong>{lbl}</strong><span className="clinical-count">{(regions[r] ?? []).length || "—"}</span></div><div className="skin-chips">{SKIN_CONCERNS.map((c) => <button key={c} type="button" disabled={!canEdit} className={`chip ${(regions[r] ?? []).includes(c) ? "chip-on" : ""}`} onClick={() => toggleConcern(r, c)}>{c}</button>)}</div></div>)}</div>
+      <p className="clinical-total">{markedRegions} of {SKIN_REGIONS.length} regions marked</p>
+    </div>}
+
+    <label className="clinical-notes"><span className="clinical-field-label">Notes <span className="drawer-note">optional</span></span>
+      <textarea rows={3} value={notes} maxLength={5000} disabled={!canEdit} onChange={(e) => setNotes(e.target.value)} placeholder="Anything the chart cannot capture" />
+    </label>
+    {canEdit && <div className="clinical-actions"><button className="button button-primary" type="button" onClick={() => void save()} disabled={busy}>{busy ? "Saving…" : "Save assessment"} <span>→</span></button></div>}
   </section>;
 }

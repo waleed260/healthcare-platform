@@ -20,8 +20,18 @@ const TABS = ["plans", "prescriptions", "forms", "tools", "consent"] as const;
 type Tab = (typeof TABS)[number];
 const list = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 
+const CONSENT_TYPES = [
+  { value: "website_media", label: "Website media (before / after photos)" },
+  { value: "treatment", label: "Treatment consent" },
+  { value: "photography", label: "Clinical photography" },
+  { value: "data_sharing", label: "Data sharing" },
+];
+
+const planStatusTone = (status: string) => status === "completed" ? "paid" : status === "cancelled" ? "void" : status === "active" ? "paid" : "contacted";
+const stepStatusTone = (status: string) => status === "completed" ? "paid" : status === "cancelled" || status === "skipped" ? "void" : "contacted";
+
 export default function ClinicalPage() {
-  const toast = useToast();
+  const { success: toastSuccess, error: toastError } = useToast();
   const confirm = useConfirm();
   const [permissions, setPermissions] = useState<string[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -63,23 +73,24 @@ export default function ClinicalPage() {
         rows.sort((a, b) => a.full_name.localeCompare(b.full_name));
         setPatients(rows);
         if (rows[0]) { setPatientId(rows[0].id); await loadPatient(rows[0].id, granted); }
-      } catch (reason) { toast.error(errorMessage(reason, "Clinical records could not be loaded.")); }
+      } catch (reason) { toastError(errorMessage(reason, "Clinical records could not be loaded.")); }
       finally { setLoading(false); }
     })();
-  }, [loadPatient, toast]);
+  }, [loadPatient, toastError]);
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     setBusy(true);
-    try { await action(); toast.success(success); await loadPatient(patientId, permissions); } catch (reason) { toast.error(errorMessage(reason, "That change could not be saved.")); } finally { setBusy(false); }
+    try { await action(); toastSuccess(success); await loadPatient(patientId, permissions); } catch (reason) { toastError(errorMessage(reason, "That change could not be saved.")); } finally { setBusy(false); }
   };
-  const choosePatient = (id: string) => { setPatientId(id); setPlans([]); setPrescriptions([]); setConsents([]); setMedia([]); setMediaCursor(null); void loadPatient(id, permissions).catch((reason) => toast.error(errorMessage(reason, "Records could not be loaded."))); };
+  const choosePatient = (id: string) => { setPatientId(id); setPlans([]); setPrescriptions([]); setConsents([]); setMedia([]); setMediaCursor(null); void loadPatient(id, permissions).catch((reason) => toastError(errorMessage(reason, "Records could not be loaded."))); };
   const loadMoreMedia = useCallback(async () => {
     if (!mediaCursor) return;
     try {
       const page = await apiPage<Media>(`/api/v1/patients/${patientId}/media?cursor=${encodeURIComponent(mediaCursor)}`);
       setMedia((current) => [...current, ...page.data]); setMediaCursor(page.nextCursor);
-    } catch (reason) { toast.error(errorMessage(reason, "More media could not be loaded.")); }
-  }, [mediaCursor, patientId, toast]);
+    } catch (reason) { toastError(errorMessage(reason, "More media could not be loaded.")); }
+  }, [mediaCursor, patientId, toastError]);
+  const notifyError = useCallback((message: string) => toastError(message), [toastError]);
   const text = (event: FormEvent<HTMLFormElement>, key: string) => String(new FormData(event.currentTarget).get(key) ?? "").trim();
 
   const addPlan = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const title = text(event, "title"); const diagnosis = text(event, "diagnosis"); void run(async () => { await post("/api/v1/treatment-plans", { patient_id: patientId, title, diagnosis: diagnosis || null }); target.reset(); }, "Treatment plan created."); };
@@ -93,79 +104,92 @@ export default function ClinicalPage() {
 
   const addRx = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const body = { medication_name: text(event, "medication"), dosage: text(event, "dosage") || null, frequency: text(event, "frequency") || null, duration: text(event, "duration") || null }; void run(async () => { await post(`/api/v1/patients/${patientId}/prescriptions`, body); target.reset(); }, "Prescription recorded."); };
   const addConsent = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const target = event.currentTarget; const consentType = text(event, "type"); void run(async () => { await post(`/api/v1/patients/${patientId}/consents`, { consent_type: consentType, status: "granted", version: "1" }); target.reset(); }, "Consent recorded."); };
-  const grantedConsent = consents.find((item) => item.status === "granted");
+  const grantedConsent = consents.find((item) => item.status === "granted" && item.consent_type === "website_media");
+  const selectedPatient = patients.find((p) => p.id === patientId);
+  const activePlans = plans.filter((p) => p.status === "active").length;
+
   return (
     <main className="dash-content clinical-content" aria-busy={loading}>
-      <div className="dash-topline">
+      <div className="dash-topline clinical-topline">
         <div>
           <p className="eyebrow">CLINICAL · CARE RECORDS</p>
           <h1>The treatment, <em>in one place.</em></h1>
           <p className="workspace-page-intro">Treatment plans, prescriptions, consent and patient media. Media only reaches your website after explicit consent and approval.</p>
         </div>
-        <div className="header-actions">
-          <label className="report-period">Patient
-            <select value={patientId} onChange={(e) => choosePatient(e.target.value)}>
-              {patients.length === 0 && <option value="">No patients</option>}
-              {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} · {p.patient_number}</option>)}
-            </select>
-          </label>
-        </div>
+        <label className="clinical-patient-picker">
+          <span className="eyebrow">PATIENT</span>
+          <select value={patientId} onChange={(e) => choosePatient(e.target.value)}>
+            {patients.length === 0 && <option value="">No patients</option>}
+            {patients.map((p) => <option key={p.id} value={p.id}>{p.full_name} · {p.patient_number}</option>)}
+          </select>
+          {selectedPatient && <small>Records below belong to {selectedPatient.full_name}.</small>}
+        </label>
       </div>
 
-      <div className="pipeline-toolbar">
+      <div className="pipeline-toolbar clinical-tabs">
         <div className="pipeline-tabs" role="tablist">
           {TABS.map((item) => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "consent" ? "Consent & media" : label(item)}</button>)}
         </div>
+        {!loading && <span className="clinical-tab-note">{plans.length} plan{plans.length === 1 ? "" : "s"} · {prescriptions.length} prescription{prescriptions.length === 1 ? "" : "s"} · {media.length} media</span>}
       </div>
 
       {tab === "plans" && (
-        <section className="surface-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">TREATMENT PLANS</p><h2>What happens next.</h2></div></div>
+        <section className="surface-card clinical-panel">
+          <div className="surface-card-heading">
+            <div><p className="eyebrow">TREATMENT PLANS</p><h2>What happens next.</h2>
+              <p className="clinical-hint">Break the treatment into steps, then tick them off as the patient progresses.</p></div>
+            {plans.length > 0 && <span className="clinical-count">{activePlans} active / {plans.length} total</span>}
+          </div>
           {can("clinical.manage") && patientId && (
-            <form className="manage-form" onSubmit={addPlan}>
-              <div className="form-grid">
-                <label>Title <input name="title" required maxLength={200} placeholder="Implant — lower left" /></label>
-                <label>Diagnosis <span className="field-optional">optional</span> <input name="diagnosis" maxLength={500} /></label>
+            <form className="drawer-form clinical-form" onSubmit={addPlan}>
+              <div className="drawer-form-row drawer-form-row-2">
+                <label><span className="clinical-field-label">Plan title <span className="drawer-note">required</span></span>
+                  <input name="title" required maxLength={200} placeholder="Implant — lower left" /></label>
+                <label><span className="clinical-field-label">Working diagnosis <span className="drawer-note">optional</span></span>
+                  <input name="diagnosis" maxLength={500} placeholder="e.g. Missing 36, bone graft needed" /></label>
               </div>
-              <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Create plan</button></div>
+              <div className="clinical-actions"><button className="button button-primary" type="submit" disabled={busy}>Create plan <span>→</span></button></div>
             </form>
           )}
-          <div className="invoice-list">
-            {plans.length === 0 && <div className="dashboard-empty"><strong>No treatment plans</strong></div>}
+          <div className="clinical-list">
+            {plans.length === 0 && <div className="clinical-empty"><strong>No treatment plans</strong><span>Create the first plan above to start documenting steps.</span></div>}
             {plans.map((plan) => (
-              <article className="invoice-row" key={plan.id}>
-                <div className="invoice-mark">PLN</div>
-                <div className="invoice-main">
-                  <h3>{plan.title}</h3>
-                  <p>{plan.diagnosis ?? "No diagnosis recorded"}</p>
+              <article className="clinical-plan" key={plan.id}>
+                <div className="clinical-plan-head">
+                  <div>
+                    <h3>{plan.title}</h3>
+                    <p>{plan.diagnosis ?? "No working diagnosis recorded"}</p>
+                  </div>
+                  <span className={`pipeline-status status-${planStatusTone(plan.status)}`}>{label(plan.status)}</span>
+                </div>
+                <ol className="clinical-steps">
                   {(items[plan.id] ?? []).map((item) => (
-                    <div className="theme-row" key={item.id}>
-                      <span>{item.title}</span>
-                      <span className={`pipeline-status status-${item.status === "completed" ? "paid" : item.status === "cancelled" ? "void" : "contacted"}`}>{label(item.status)}</span>
-                      {can("clinical.manage") && item.status !== "completed" && item.status !== "cancelled" && (
-                        <>
+                    <li className={`clinical-step is-${item.status}`} key={item.id}>
+                      <span className="clinical-step-dot" aria-hidden="true" />
+                      <span className="clinical-step-title">{item.title}</span>
+                      <span className={`pipeline-status status-${stepStatusTone(item.status)}`}>{label(item.status)}</span>
+                      {can("clinical.manage") && item.status !== "completed" && item.status !== "cancelled" && item.status !== "skipped" && (
+                        <span className="clinical-step-actions">
                           <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => patch(`/api/v1/treatment-plans/${plan.id}/items/${item.id}`, { expected_version: item.version, status: "completed" }), "Item completed.")}>Done</button>
-                          <button className="text-control" type="button" disabled={busy} onClick={() => void cancelItem(plan, item)}>Cancel</button>
-                        </>
+                          <button className="text-control danger-control" type="button" disabled={busy} onClick={() => void cancelItem(plan, item)}>Skip</button>
+                        </span>
                       )}
-                    </div>
+                    </li>
                   ))}
-                  {can("clinical.manage") && (
-                    <form className="theme-row" onSubmit={(e) => addItem(e, plan)}>
-                      <input name="title" required maxLength={200} placeholder="Add step, e.g. Crown fitting" aria-label={`New step for ${plan.title}`} />
-                      <button className="text-control" type="submit" disabled={busy}>Add step</button>
-                    </form>
-                  )}
-                </div>
-                <div className="invoice-actions">
-                  <span className={`pipeline-status status-${plan.status === "completed" ? "paid" : plan.status === "cancelled" ? "void" : "contacted"}`}>{plan.status}</span>
-                  {can("clinical.manage") && plan.status !== "completed" && plan.status !== "cancelled" && (
-                    <>
-                      <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: plan.status === "draft" ? "active" : "completed" }), "Plan updated.")}>{plan.status === "draft" ? "Activate" : "Complete"}</button>
-                      <button className="text-control danger-control" type="button" disabled={busy} onClick={async () => { const ok = await confirm({ message: `Cancel plan "${plan.title}"?`, danger: true }); if (ok) void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: "cancelled" }), "Plan cancelled."); }}>Cancel</button>
-                    </>
-                  )}
-                </div>
+                  {(items[plan.id] ?? []).length === 0 && <li className="clinical-step-empty">No steps yet — add the first one below.</li>}
+                </ol>
+                {can("clinical.manage") && (
+                  <form className="clinical-add-step" onSubmit={(e) => addItem(e, plan)}>
+                    <input name="title" required maxLength={200} placeholder="Add step, e.g. Crown fitting" aria-label={`New step for ${plan.title}`} />
+                    <button className="button button-secondary" type="submit" disabled={busy}>Add step</button>
+                  </form>
+                )}
+                {can("clinical.manage") && plan.status !== "completed" && plan.status !== "cancelled" && (
+                  <div className="clinical-plan-actions">
+                    <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: plan.status === "draft" ? "active" : "completed" }), "Plan updated.")}>{plan.status === "draft" ? "Activate plan" : "Complete plan"}</button>
+                    <button className="text-control danger-control" type="button" disabled={busy} onClick={async () => { const ok = await confirm({ message: `Cancel plan "${plan.title}"?`, danger: true }); if (ok) void run(() => patch(`/api/v1/treatment-plans/${plan.id}`, { expected_version: plan.version, status: "cancelled" }), "Plan cancelled."); }}>Cancel plan</button>
+                  </div>
+                )}
               </article>
             ))}
           </div>
@@ -173,31 +197,41 @@ export default function ClinicalPage() {
       )}
 
       {tab === "prescriptions" && (
-        <section className="surface-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">PRESCRIPTIONS</p><h2>Medication instructions.</h2></div></div>
+        <section className="surface-card clinical-panel">
+          <div className="surface-card-heading">
+            <div><p className="eyebrow">PRESCRIPTIONS</p><h2>Medication instructions.</h2>
+              <p className="clinical-hint">Record what the patient is taking; mark a course complete once it finishes.</p></div>
+            {prescriptions.length > 0 && <span className="clinical-count">{prescriptions.length} recorded</span>}
+          </div>
           {can("clinical.manage") && patientId && (
-            <form className="manage-form" onSubmit={addRx}>
-              <div className="form-grid">
-                <label>Medication <input name="medication" required maxLength={200} /></label>
-                <label>Dosage <input name="dosage" maxLength={200} placeholder="500 mg" /></label>
-                <label>Frequency <input name="frequency" maxLength={200} placeholder="Twice daily" /></label>
-                <label>Duration <input name="duration" maxLength={200} placeholder="7 days" /></label>
+            <form className="drawer-form clinical-form" onSubmit={addRx}>
+              <div className="drawer-form-row drawer-form-row-2">
+                <label><span className="clinical-field-label">Medication <span className="drawer-note">required</span></span>
+                  <input name="medication" required maxLength={200} placeholder="Amoxicillin" /></label>
+                <label><span className="clinical-field-label">Dosage <span className="drawer-note">optional</span></span>
+                  <input name="dosage" maxLength={200} placeholder="500 mg" /></label>
               </div>
-              <div className="form-actions"><button className="button button-primary" type="submit" disabled={busy}>Record prescription</button></div>
+              <div className="drawer-form-row drawer-form-row-2">
+                <label><span className="clinical-field-label">Frequency <span className="drawer-note">optional</span></span>
+                  <input name="frequency" maxLength={200} placeholder="Twice daily" /></label>
+                <label><span className="clinical-field-label">Duration <span className="drawer-note">optional</span></span>
+                  <input name="duration" maxLength={200} placeholder="7 days" /></label>
+              </div>
+              <div className="clinical-actions"><button className="button button-primary" type="submit" disabled={busy}>Record prescription <span>→</span></button></div>
             </form>
           )}
-          <div className="invoice-list">
-            {prescriptions.length === 0 && <div className="dashboard-empty"><strong>No prescriptions</strong></div>}
+          <div className="clinical-list">
+            {prescriptions.length === 0 && <div className="clinical-empty"><strong>No prescriptions</strong><span>Medication instructions you record appear here.</span></div>}
             {prescriptions.map((rx) => (
-              <article className="invoice-row" key={rx.id}>
-                <div className="invoice-mark">Rx</div>
-                <div className="invoice-main">
+              <article className="clinical-row" key={rx.id}>
+                <div className="clinical-row-mark">Rx</div>
+                <div className="clinical-row-main">
                   <h3>{rx.medication_name}</h3>
-                  <p>{[rx.dosage, rx.frequency, rx.duration].filter(Boolean).join(" · ") || "No details"}</p>
-                  <small>{new Date(rx.prescribed_at).toLocaleDateString()}</small>
+                  <p>{[rx.dosage, rx.frequency, rx.duration].filter(Boolean).join(" · ") || "No dosage details"}</p>
+                  <small>Prescribed {new Date(rx.prescribed_at).toLocaleDateString()}</small>
                 </div>
-                <div className="invoice-actions">
-                  <span className={`pipeline-status status-${rx.status === "active" ? "contacted" : "paid"}`}>{rx.status}</span>
+                <div className="clinical-row-actions">
+                  <span className={`pipeline-status status-${rx.status === "active" ? "contacted" : "paid"}`}>{label(rx.status)}</span>
                   {can("clinical.manage") && rx.status === "active" && (
                     <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => patch(`/api/v1/patients/${patientId}/prescriptions/${rx.id}/status`, { expected_version: rx.version, status: "completed" }), "Prescription completed.")}>Complete</button>
                   )}
@@ -208,54 +242,78 @@ export default function ClinicalPage() {
         </section>
       )}
 
-      {tab === "forms" && <FormsPanel patientId={patientId} permissions={permissions} onError={(msg) => toast.error(msg)} />}
-      {tab === "tools" && <ToolsPanel patientId={patientId} permissions={permissions} onError={(msg) => toast.error(msg)} />}
+      {tab === "forms" && <FormsPanel patientId={patientId} permissions={permissions} onError={notifyError} />}
+      {tab === "tools" && <ToolsPanel patientId={patientId} permissions={permissions} onError={notifyError} />}
 
       {tab === "consent" && (
-        <section className="surface-card">
-          <div className="surface-card-heading"><div><p className="eyebrow">CONSENT &amp; MEDIA</p><h2>Nothing public without consent.</h2></div></div>
-          {can("consent.manage") && patientId && (
-            <form className="manage-form" onSubmit={addConsent}>
-              <div className="form-grid">
-                <label>Consent type <input name="type" required maxLength={80} placeholder="website_media" /></label>
-              </div>
-              <div className="form-actions"><button className="button button-secondary" type="submit" disabled={busy}>Record granted consent</button></div>
-            </form>
-          )}
-          <div className="invoice-list">
-            {consents.map((consent) => (
-              <article className="invoice-row" key={consent.id}>
-                <div className="invoice-mark">✓</div>
-                <div className="invoice-main"><h3>{consent.consent_type}</h3><small>{new Date(consent.recorded_at).toLocaleString()}</small></div>
-                <div className="invoice-actions">
-                  <span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{consent.status}</span>
-                  {consent.status === "granted" && can("consent.manage") && <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/consents/${consent.id}/revoke`, { expected_version: consent.version }), "Consent withdrawn.")}>Withdraw</button>}
-                </div>
-              </article>
-            ))}
-            {can("patient.media.write") && <MediaUpload patientId={patientId} onUploaded={() => void run(() => Promise.resolve(), "Upload complete — scanning.")} />}
-            {media.length === 0 && <div className="dashboard-empty"><strong>No patient media</strong><span>Uploaded before/after photos appear here for review.</span></div>}
-            {media.map((item) => (
-              <article className="invoice-row" key={item.id}>
-                <div className="invoice-mark">{item.media_kind.slice(0, 3).toUpperCase()}</div>
-                <div className="invoice-main">
-                  <h3>{label(item.media_kind)} photo</h3>
-                  <p>Scan: {item.scan_status} · Approval: {item.approval_status}</p>
-                  <small>{item.captured_on ?? "No capture date"}{item.approved_for_website ? " · on website" : ""}</small>
-                </div>
-                <div className="invoice-actions">
-                  {can("patient.media.write") && item.approval_status !== "approved" && (
-                    <button className="text-control" type="button" disabled={busy || !grantedConsent || item.scan_status !== "clean"} title={!grantedConsent ? "Record granted consent first" : undefined} onClick={() => grantedConsent && void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/approve`, { expected_version: item.version, consent_record_id: grantedConsent.id }), "Approved for website.")}>Approve for website</button>
-                  )}
-                  {can("patient.media.write") && item.approval_status === "approved" && (
-                    <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/revoke`, { expected_version: item.version }), "Approval revoked.")}>Revoke</button>
-                  )}
-                </div>
-              </article>
-            ))}
+        <div className="clinical-stack">
+          <section className="surface-card clinical-panel">
+            <div className="surface-card-heading">
+              <div><p className="eyebrow">CONSENT</p><h2>Nothing public without consent.</h2>
+                <p className="clinical-hint">A granted <strong>website media</strong> consent is required before any photo can be approved for the website.</p></div>
+              {grantedConsent
+                ? <span className="pipeline-status status-paid">Website media consent granted</span>
+                : <span className="pipeline-status status-contacted">Website media consent missing</span>}
+            </div>
+            {can("consent.manage") && patientId && (
+              <form className="drawer-form clinical-form" onSubmit={addConsent}>
+                <label><span className="clinical-field-label">Consent type <span className="drawer-note">required</span></span>
+                  <select name="type" defaultValue="website_media" required>
+                    {CONSENT_TYPES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </label>
+                <div className="clinical-actions"><button className="button button-secondary" type="submit" disabled={busy}>Record granted consent <span>→</span></button></div>
+              </form>
+            )}
+            <div className="clinical-list">
+              {consents.length === 0 && <div className="clinical-empty"><strong>No consents recorded</strong><span>Record the patient&apos;s consent before uploading or publishing media.</span></div>}
+              {consents.map((consent) => (
+                <article className="clinical-row" key={consent.id}>
+                  <div className="clinical-row-mark">✓</div>
+                  <div className="clinical-row-main">
+                    <h3>{CONSENT_TYPES.find((c) => c.value === consent.consent_type)?.label ?? consent.consent_type.replaceAll("_", " ")}</h3>
+                    <small>Recorded {new Date(consent.recorded_at).toLocaleString()}</small>
+                  </div>
+                  <div className="clinical-row-actions">
+                    <span className={`pipeline-status status-${consent.status === "granted" ? "paid" : "void"}`}>{label(consent.status)}</span>
+                    {consent.status === "granted" && can("consent.manage") && <button className="text-control danger-control" type="button" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/consents/${consent.id}/revoke`, { expected_version: consent.version }), "Consent withdrawn.")}>Withdraw</button>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="surface-card clinical-panel">
+            <div className="surface-card-heading">
+              <div><p className="eyebrow">PATIENT MEDIA</p><h2>Photos, reviewed before publishing.</h2>
+                <p className="clinical-hint">Uploads are scanned first. Only clean, consented photos can be approved for the website.</p></div>
+              {media.length > 0 && <span className="clinical-count">{media.length} uploaded</span>}
+            </div>
+            {can("patient.media.write") && patientId && <MediaUpload patientId={patientId} onUploaded={() => void run(() => Promise.resolve(), "Upload complete — scanning.")} />}
+            <div className="clinical-list">
+              {media.length === 0 && <div className="clinical-empty"><strong>No patient media</strong><span>Uploaded before/after photos appear here for review.</span></div>}
+              {media.map((item) => (
+                <article className="clinical-row" key={item.id}>
+                  <div className="clinical-row-mark">{item.media_kind.slice(0, 3).toUpperCase()}</div>
+                  <div className="clinical-row-main">
+                    <h3>{label(item.media_kind)} photo</h3>
+                    <p>Scan: {item.scan_status === "pending_scan" ? "scanning" : label(item.scan_status)} · Approval: {label(item.approval_status)}</p>
+                    <small>{item.captured_on ?? "No capture date"}{item.approved_for_website ? " · on website" : ""}</small>
+                  </div>
+                  <div className="clinical-row-actions">
+                    {can("patient.media.write") && item.approval_status !== "approved" && (
+                      <button className="text-control" type="button" disabled={busy || !grantedConsent || item.scan_status !== "clean"} title={!grantedConsent ? "Record a granted website media consent first" : item.scan_status !== "clean" ? "Photo must pass the scan first" : undefined} onClick={() => grantedConsent && void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/approve`, { expected_version: item.version, consent_record_id: grantedConsent.id }), "Approved for website.")}>Approve for website</button>
+                    )}
+                    {can("patient.media.write") && item.approval_status === "approved" && (
+                      <button className="text-control" type="button" disabled={busy} onClick={() => void run(() => post(`/api/v1/patients/${patientId}/media/${item.id}/revoke`, { expected_version: item.version }), "Approval revoked.")}>Revoke</button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
             {mediaCursor && <button className="button button-secondary" type="button" disabled={busy} onClick={() => void loadMoreMedia()}>Load more media</button>}
-          </div>
-        </section>
+          </section>
+        </div>
       )}
     </main>
   );

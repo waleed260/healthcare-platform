@@ -752,15 +752,15 @@ def consent_revoke(patient_id: UUID, consent_id: UUID, payload: ConsentRevoke, r
     _require_patient(db, session, patient_id)
     row = db.execute(text("""
         UPDATE consent_records
-        SET status = 'withdrawn', withdrawn_at = COALESCE(withdrawn_at, now()), version = version + 1
-        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id AND version = :expected_version AND status <> 'withdrawn'
+        SET status = 'withdrawn', withdrawn_at = COALESCE(withdrawn_at, now()), version = ((version)::int + 1)::text
+        WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id AND version = CAST(:expected_version AS text) AND status <> 'withdrawn'
         RETURNING id, consent_type, status, version, withdrawn_at
     """), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "id": consent_id, "expected_version": payload.expected_version}).mappings().one_or_none()
     if row is None:
         exists = db.execute(text("SELECT version, status FROM consent_records WHERE clinic_id = :clinic_id AND patient_id = :patient_id AND id = :id"), {"clinic_id": session["clinic_id"], "patient_id": patient_id, "id": consent_id}).mappings().one_or_none()
         if exists is None:
             raise _error("NOT_FOUND", "Consent record not found.", status.HTTP_404_NOT_FOUND)
-        if exists["version"] != payload.expected_version:
+        if int(exists["version"]) != payload.expected_version:
             raise _error("VERSION_CONFLICT", "The consent record changed before revocation.", status.HTTP_409_CONFLICT)
         raise _error("INVALID_STATE", "The consent record is already withdrawn.", status.HTTP_400_BAD_REQUEST)
     record_event(db, clinic_id=session["clinic_id"], actor_user_id=session["user_id"], action="consent.revoke", entity_type="consent_record", entity_id=consent_id, outcome="success", request_id=UUID(request.state.request_id))

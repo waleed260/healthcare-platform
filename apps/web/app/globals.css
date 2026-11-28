@@ -1568,3 +1568,140 @@ legend{font-size:var(--text-xs)}
 .enc-detail-main .enc-detail-picker-item:hover{background:var(--cream)}
 .enc-detail-main .enc-detail-picker-empty{padding:12px 14px;color:var(--muted);font:12px 'DM Sans',sans-serif}
 @media(max-width:760px){.enc-detail-main .enc-detail-field-label-wide{grid-column:1/-1}.enc-detail-main .enc-detail-gcs-grid{grid-template-columns:1fr}}
+
+/* ---- clinical workspace (plans / prescriptions / forms / tools / consent) ---- */
+.clinical-content{--clinical-card:#fff}
+.clinical-topline{align-items:flex-start;gap:32px}
+.clinical-patient-picker{display:grid;gap:6px;min-width:280px;max-width:320px;padding:14px 16px;background:#fff;border:1px solid var(--line);border-radius:8px}
+.clinical-patient-picker .eyebrow{margin:0}
+.clinical-patient-picker select{margin:0;background:#fafaf8}
+.clinical-patient-picker small{font:10px 'DM Mono',monospace;color:var(--muted);line-height:1.5}
+.clinical-tabs{align-items:center;justify-content:space-between;gap:16px}
+.clinical-tab-note{font:10px 'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.clinical-panel{padding:24px 26px}
+.clinical-panel .surface-card-heading{align-items:flex-start;gap:16px;margin-bottom:18px}
+.clinical-panel .surface-card-heading h2{margin:2px 0 6px}
+.clinical-hint{margin:0;max-width:60ch;font-size:12px;line-height:1.6;color:var(--muted)}
+.clinical-count{font:10px 'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:4px 10px;white-space:nowrap}
+.clinical-stack{display:grid;gap:18px}
+.clinical-form{margin:0 0 6px;padding:18px;border:1px solid var(--line);border-radius:8px;background:#fafaf8}
+.clinical-form .drawer-form-row{margin-bottom:14px}
+.clinical-form label{font:10px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#6d6a60;gap:6px}
+.clinical-form input,.clinical-form select,.clinical-form textarea{font:13px 'DM Sans',sans-serif;letter-spacing:normal;text-transform:none}
+.clinical-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:10px;margin-top:6px}
+.clinical-actions .button{display:inline-flex;align-items:center;gap:8px}
+.clinical-actions .button span{font-size:14px;line-height:1}
+.clinical-list{display:grid;gap:10px;margin-top:16px}
+.clinical-empty{display:grid;gap:4px;place-items:center;text-align:center;padding:26px 20px;border:1px dashed var(--line);border-radius:8px;background:#fcfbf8}
+.clinical-empty strong{font:500 13px 'DM Sans',sans-serif;color:var(--ink)}
+.clinical-empty span{font-size:12px;color:var(--muted)}
+.clinical-plan{border:1px solid var(--line);border-radius:8px;padding:16px 18px;background:#fff}
+.clinical-plan-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.clinical-plan-head h3{margin:0 0 3px;font:500 16px 'DM Sans',sans-serif;letter-spacing:-.01em}
+.clinical-plan-head p{margin:0;font-size:12px;color:var(--muted)}
+.clinical-steps{list-style:none;margin:14px 0 0;padding:10px 0 0;border-top:1px solid var(--line);display:grid;gap:2px}
+.clinical-step{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:7px 4px;border-radius:6px}
+.clinical-step:hover{background:#fbfaf7}
+.clinical-step-dot{width:8px;height:8px;border-radius:50%;background:#c9a227;box-shadow:0 0 0 3px #f6f0dc}
+.clinical-step.is-completed .clinical-step-dot{background:var(--leaf);box-shadow:0 0 0 3px #e5efe7}
+.clinical-step.is-skipped .clinical-step-dot,.clinical-step.is-cancelled .clinical-step-dot{background:#c2705c;box-shadow:0 0 0 3px #f6e4de}
+.clinical-step-title{font-size:13px;color:var(--ink)}
+.clinical-step.is-completed .clinical-step-title{color:var(--muted);text-decoration:line-through}
+.clinical-step-actions{display:flex;gap:10px}
+.clinical-step-empty{padding:8px 4px;font-size:12px;color:var(--muted)}
+.clinical-add-step{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.clinical-add-step input{margin:0;background:#fafaf8}
+.clinical-plan-actions{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.clinical-row{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.clinical-row-mark{display:grid;place-items:center;width:44px;height:44px;border-radius:8px;background:#f5f1e8;font:11px 'DM Mono',monospace;color:#6d6a60;letter-spacing:.04em}
+.clinical-row-main h3{margin:0 0 2px;font:500 14px 'DM Sans',sans-serif}
+.clinical-row-main p{margin:0 0 2px;font-size:12px;color:#53504a}
+.clinical-row-main small{font:10px 'DM Mono',monospace;color:var(--muted)}
+.clinical-row-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.clinical-builder-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0 10px}
+.clinical-builder-head .drawer-form-section-label{margin:0}
+.clinical-builder-list{display:grid;gap:10px}
+.clinical-builder-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fcfbf8}
+.clinical-builder-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end;gap:12px}
+.clinical-builder-grid label{display:grid;gap:6px;margin:0;font:10px 'DM Mono',monospace;letter-spacing:.07em;text-transform:uppercase;color:#6d6a60}
+.clinical-builder-wide{grid-column:1 / -1}
+.clinical-builder-grid .clinical-check{display:flex;align-items:center;gap:8px}
+.clinical-check input[type="checkbox"]{width:15px;height:15px;margin:0;accent-color:var(--leaf)}
+.clinical-fill-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:6px}
+.clinical-fill-head label{display:grid;gap:6px;margin:0;font:10px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#6d6a60;max-width:340px;width:100%}
+.clinical-fill-head select{margin:0;background:#fafaf8}
+.clinical-fields{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;margin:16px 0 0!important;padding:18px!important;border:1px solid var(--line);border-radius:8px;background:#fff}
+.clinical-fields label{font:10px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#6d6a60;gap:6px}
+.clinical-fields input,.clinical-fields select,.clinical-fields textarea{font:13px 'DM Sans',sans-serif;letter-spacing:normal;text-transform:none;margin:0}
+.clinical-fields label:has(textarea){grid-column:1 / -1}
+.clinical-tool-tabs{margin:0 0 6px}
+.clinical-tool-hint{margin:0 0 16px}
+.clinical-tool-body{margin-bottom:16px}
+.clinical-tool-narrow{max-width:380px}
+.dental-legend{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px}
+.dental-legend-item{display:inline-flex;align-items:center;gap:6px;font:10px 'DM Mono',monospace;letter-spacing:.04em;text-transform:capitalize;color:#53504a}
+.dental-legend-item i{display:grid;place-items:center;width:20px;height:20px;border-radius:5px;border:1px solid var(--line);background:#fff;font-style:normal;font-size:9px}
+.dental-chart{display:grid;gap:10px;padding:16px;border:1px solid var(--line);border-radius:8px;background:#fcfbf8}
+.dental-row{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px}
+.tooth{display:grid;place-items:center;gap:2px;width:100%;height:60px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;color:var(--ink);transition:border-color .15s,transform .15s}
+.tooth b{font:500 12px 'DM Mono',monospace}
+.tooth span{font:9px 'DM Mono',monospace;color:var(--muted)}
+.tooth:hover:not(:disabled){border-color:var(--leaf);transform:translateY(-1px)}
+.tooth:disabled{cursor:default}
+.tooth-caries{background:#fbe6dc;border-color:#e2b6a2}
+.tooth-filled{background:#e8efe9;border-color:#c3d3c7}
+.tooth-crown{background:#f6edd6;border-color:#ddc99a}
+.tooth-implant{background:#e4ecf4;border-color:#b9cbd9}
+.tooth-root_canal{background:#f7e2de;border-color:#e0b5ab}
+.tooth-missing{background:#f2f0ea;border-style:dashed;color:var(--muted)}
+.skin-map{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.skin-region{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fcfbf8}
+.skin-region-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.skin-region-head strong{font:500 12px 'DM Sans',sans-serif}
+.skin-chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:3px 8px;font:10px 'DM Mono',monospace;color:#53504a;cursor:pointer}
+.chip:hover{border-color:var(--leaf)}
+.chip-on{background:var(--leaf);border-color:var(--leaf);color:#fff}
+.clinical-total{margin:12px 0 0;font:11px 'DM Mono',monospace;letter-spacing:.04em;color:var(--muted)}
+.clinical-total strong{color:var(--ink);font-size:13px}
+.clinical-notes{display:grid;gap:7px;margin:4px 0 0;font:10px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#6d6a60}
+.clinical-notes textarea{font:13px 'DM Sans',sans-serif;letter-spacing:normal;text-transform:none;background:#fafaf8;min-height:88px;resize:vertical}
+.media-upload{padding:16px;border:1px solid var(--line);border-radius:8px;background:#fafaf8;margin-bottom:6px}
+.media-upload-fields{margin-bottom:10px}
+.media-upload-fields label{font:10px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#6d6a60;gap:6px;display:grid;margin:0}
+.media-upload-fields select{margin:0}
+.media-file{width:100%;margin:0;padding:9px 10px;background:#fff;border:1px dashed #cdc7b8;border-radius:6px;font:12px 'DM Sans',sans-serif;color:var(--muted);cursor:pointer}
+.media-file::file-selector-button{margin-right:10px;padding:6px 12px;border:1px solid var(--leaf);border-radius:5px;background:var(--leaf);color:#fff;font:11px 'DM Sans',sans-serif;cursor:pointer}
+.media-upload .drawer-note{display:block;margin-top:8px}
+.media-upload-list{margin:10px 0 0}
+.media-upload-list li{padding:5px 0;border-top:1px solid var(--line)}
+.clinical-row + .button-secondary,.clinical-list + .button-secondary{margin-top:14px}
+@media(max-width:1100px){
+  .clinical-topline{flex-direction:column}
+  .clinical-patient-picker{max-width:none;width:100%}
+  .clinical-fields,.skin-map,.clinical-builder-grid{grid-template-columns:minmax(0,1fr)}
+  .clinical-builder-wide{grid-column:auto}
+  .clinical-step{grid-template-columns:auto minmax(0,1fr) auto;row-gap:6px}
+  .clinical-step-actions{grid-column:2 / -1;justify-content:flex-start}
+}
+
+/* clinical polish pass */
+.clinical-tabs{display:flex;align-items:center;justify-content:space-between;gap:18px;overflow:visible}
+.clinical-tab-note{margin-left:auto;padding-bottom:2px}
+.clinical-patient-picker{width:340px;max-width:100%}
+.clinical-patient-picker select{font-size:12px;padding:9px 10px}
+.clinical-form{gap:14px}
+.clinical-form .drawer-form-row{margin-bottom:0}
+.clinical-actions{margin-top:0}
+.clinical-field-label{display:flex;align-items:baseline;gap:6px}
+.clinical-field-label .drawer-note{text-transform:none;letter-spacing:normal;font:11px/1.4 'DM Sans',sans-serif;color:var(--muted)}
+.clinical-form label > .clinical-field-label{color:#6d6a60}
+.clinical-notes .clinical-field-label{margin-bottom:1px}
+.clinical-fields label > .clinical-field-label{color:#6d6a60}
+.media-upload-fields label{font:10px 'DM Mono',monospace}
+@media(max-width:820px){
+  .clinical-tabs{flex-wrap:wrap}
+  .clinical-tab-note{margin-left:0;width:100%}
+}
+.dental-legend-item{flex:0 0 auto;white-space:nowrap}
+.dental-legend .clinical-count{margin-left:auto}
